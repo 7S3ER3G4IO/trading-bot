@@ -96,10 +96,11 @@ class TradingBot:
         self.initial_balance  = bal
         self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
 
-        self.last_reset_day      = datetime.now(timezone.utc).date()
-        self.last_report_hour    = -1
-        self._manual_pause       = False
+        self.last_reset_day       = datetime.now(timezone.utc).date()
+        self.last_report_hour     = -1
+        self._manual_pause        = False
         self._news_pause_notified = False
+        self._last_wallet_post    = datetime.now(timezone.utc)  # wallet stats timer
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -214,6 +215,12 @@ class TradingBot:
             f"[{now.strftime('%H:%M:%S')}] Solde={balance:.2f} USDT | "
             f"Trades={sum(1 for t in self.trades.values() if t)}/{len(SYMBOLS)}"
         )
+
+        # Wallet stats auto-post toutes les 30 min dans le groupe dédié
+        wallet_interval = timedelta(minutes=30)
+        if now - self._last_wallet_post >= wallet_interval:
+            self._post_wallet_stats(balance)
+            self._last_wallet_post = now
 
         # Refresh Fear & Greed une fois par tick
         self.context.refresh_fear_greed()
@@ -398,7 +405,37 @@ class TradingBot:
             label = "Break Even 🛡️" if t.be_active else "Stop-Loss 🛑"
             self._finalize_trade(t, price, label, balance)
 
+    def _post_wallet_stats(self, balance: float):
+        """Poste les stats wallet toutes les 30 min dans le groupe dédié."""
+        try:
+            open_trades = []
+            for sym, t in self.trades.items():
+                if t:
+                    ticker = self.fetcher.get_ticker(sym)
+                    price  = ticker["last"]
+                    pnl    = (price - t.entry) * t.remaining * (1 if t.side == "BUY" else -1)
+                    open_trades.append({"symbol": sym, "side": t.side, "pnl": pnl})
+
+            daily_pnl  = sum(tr.pnl_net for tr in self.reporter._trades)
+            total_pnl  = balance - self.initial_balance
+            nb_trades  = len(self.reporter._trades)
+            wins       = sum(1 for tr in self.reporter._trades if tr.result != "SL")
+            win_rate   = (wins / nb_trades * 100) if nb_trades > 0 else 0
+
+            self.telegram.post_wallet_stats(
+                balance=balance,
+                initial_balance=self.initial_balance,
+                open_trades=open_trades,
+                daily_pnl=daily_pnl,
+                total_pnl=total_pnl,
+                win_rate=win_rate,
+                nb_trades=nb_trades,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️  Wallet stats : {e}")
+
     def _finalize_trade(self, t: TradeState, exit_price: float, reason: str, balance: float):
+
         result   = "BE" if "BE" in reason else ("TP3" if "TP3" in reason else "SL")
         net      = t.total_pnl - t.total_fees
         day_summ = f"PnL net du jour estimé : {net:+.2f} USDT"

@@ -55,9 +55,9 @@ DAILY_REPORT_HOUR_UTC = 20    # 21h CET = 20h UTC
 LOOP_INTERVAL_SECONDS = 60
 
 # ─── TELEGRAM CHANNELS ──────────────────────────────────────────────────────
-# Lien vers votre canal/groupe Telegram de stats wallet en temps réel
-# Exemple : "https://t.me/+XXXXXXXXXXXX" (lien d'invitation) ou "https://t.me/votre_canal"
-WALLET_CHANNEL_URL = "https://t.me/+placeholder"  # ← remplacez par votre vrai lien
+# Groupe Telegram créé pour les stats wallet en temps réel
+WALLET_CHANNEL_URL = "https://t.me/+kXWR58eDOGYxZDNk"  # AlphaTrader Wallet group
+WALLET_CHAT_ID     = "-5200613208"                       # Chat ID du groupe wallet
 
 # ─── LOGS ────────────────────────────────────────────────────────────────────
 LOG_DIR   = "logs"

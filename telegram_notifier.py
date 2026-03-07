@@ -283,9 +283,60 @@ class TelegramNotifier:
     def notify_error(self, error: str):
         self._send(f"⚠️ *Erreur bot*\n```{error[:200]}```")
 
+    def post_wallet_stats(
+        self, balance: float, initial_balance: float,
+        open_trades: list, daily_pnl: float, total_pnl: float,
+        win_rate: float, nb_trades: int
+    ):
+        """
+        Poste les stats wallet en temps réel dans le groupe dédié.
+        open_trades = [{"symbol": "BTC/USDT", "side": "BUY", "pnl": 42.0}, ...]
+        """
+        try:
+            from config import WALLET_CHAT_ID
+        except ImportError:
+            return
+
+        pct_day = (daily_pnl / initial_balance * 100) if initial_balance > 0 else 0
+        pct_all = ((balance - initial_balance) / initial_balance * 100) if initial_balance > 0 else 0
+        trend   = "📈" if daily_pnl >= 0 else "📉"
+
+        trades_block = ""
+        for t in open_trades:
+            emoji = "🟢" if t["pnl"] >= 0 else "🔴"
+            trades_block += f"{emoji} {t['symbol'].replace('/USDT','')}  {t['pnl']:+.2f} USDT\n"
+        if not trades_block:
+            trades_block = "Aucun trade ouvert\n"
+
+        msg = (
+            f"⚡ *AlphaTrader — Wallet Live*\n"
+            f"```\n"
+            f"Capital       : {balance:,.2f} USDT\n"
+            f"PnL du jour   : {daily_pnl:+.2f} USDT  ({pct_day:+.2f}%)\n"
+            f"PnL total     : {total_pnl:+.2f} USDT  ({pct_all:+.2f}%)\n"
+            f"\n"
+            f"Trades ouverts:\n"
+            f"{trades_block}"
+            f"\n"
+            f"Winrate       : {win_rate:.0f}%  ({nb_trades} trades)\n"
+            f"```\n"
+            f"{trend} Mise à jour automatique toutes les 30min"
+        )
+
+        if not self.bot:
+            return
+        async def _go():
+            await self.bot.send_message(
+                chat_id=WALLET_CHAT_ID,
+                text=msg,
+                parse_mode="Markdown",
+            )
+        self._run(_go())
+
     # Legacy aliases (compatibilité)
     def notify(self, text: str, markup=None):
         self._send(text, markup)
 
     def send_photo(self, image_bytes: bytes, caption: str, markup=None):
         self._send_photo(image_bytes, caption, markup)
+
