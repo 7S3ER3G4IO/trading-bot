@@ -12,7 +12,7 @@ import numpy as np
 from strategy import Strategy, SIGNAL_BUY, SIGNAL_SELL, SIGNAL_HOLD
 
 
-def make_ohlcv(n=100, trend="up", base=50000.0) -> pd.DataFrame:
+def make_ohlcv(n=210, trend="up", base=50000.0) -> pd.DataFrame:
     """Génère des données OHLCV synthétiques."""
     np.random.seed(42)
     prices = [base]
@@ -87,7 +87,7 @@ class TestStrategy:
 
     def test_ema9_below_ema21_in_downtrend(self):
         """Dans une tendance baissière, EMA9 devrait être < EMA21 en fin de période."""
-        df = make_ohlcv(n=150, trend="down")
+        df = make_ohlcv(n=220, trend="down")
         df = self.strat.compute_indicators(df)
         last = df.iloc[-1]
         # Cette assertion peut ne pas tenir à chaque fois (données aléatoires)

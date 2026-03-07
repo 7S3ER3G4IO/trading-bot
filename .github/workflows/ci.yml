@@ -1,0 +1,73 @@
+name: ⚡ AlphaTrader CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install numpy pandas ta python-dotenv loguru ccxt
+          pip install pytest pytest-cov
+
+      - name: 🔐 Create dummy .env for tests
+        run: |
+          echo "BINANCE_API_KEY=test_key" > .env
+          echo "BINANCE_SECRET=test_secret" >> .env
+          echo "TELEGRAM_BOT_TOKEN=test_token" >> .env
+          echo "TELEGRAM_CHAT_ID=123456789" >> .env
+
+      - name: 🧪 Run unit tests
+        run: |
+          pytest tests/ -v \
+            --tb=short \
+            --cov=. \
+            --cov-omit="tests/*,venv/*,backtester.py" \
+            --cov-report=term-missing \
+            2>&1
+        env:
+          MPLBACKEND: Agg
+
+      - name: 📊 Coverage summary
+        if: always()
+        run: |
+          echo "✅ Tests terminés"
+
+  lint:
+    name: 🔍 Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check Python syntax
+        run: |
+          python -m py_compile strategy.py
+          python -m py_compile risk_manager.py
+          python -m py_compile daily_reporter.py
+          python -m py_compile database.py
+          python -m py_compile market_context.py
+          python -m py_compile telegram_notifier.py
+          python -m py_compile telegram_bot_handler.py
+          python -m py_compile config.py
+          echo "✅ Syntax OK — tous les fichiers Python valides"
