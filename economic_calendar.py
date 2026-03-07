@@ -37,7 +37,12 @@ class EconomicCalendar:
     def refresh(self):
         """Télécharge et parse le calendrier RSS de la semaine."""
         try:
-            with urlopen(FF_RSS_URL, timeout=10) as resp:
+            from urllib.request import Request
+            req = Request(
+                FF_RSS_URL,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; TradingBot/1.0)"}
+            )
+            with urlopen(req, timeout=10) as resp:
                 raw = resp.read()
             root = ET.fromstring(raw)
             events = []

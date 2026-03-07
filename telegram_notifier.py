@@ -48,11 +48,12 @@ class TelegramNotifier:
     def notify(self, text: str):
         if not self.bot:
             return
+        # Toujours créer un nouveau event loop pour éviter les erreurs "loop is closed"
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            asyncio.run(self._send(text))
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
             loop.run_until_complete(self._send(text))
+        finally:
             loop.close()
 
     # ─── Messages premium ─────────────────────────────────────────────────────
