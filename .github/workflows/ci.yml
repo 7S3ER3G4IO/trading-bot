@@ -2,55 +2,35 @@ name: AlphaTrader CI
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  test:
-    name: Unit Tests
+  syntax-check:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install numpy pandas ta python-dotenv loguru ccxt requests
-          pip install pytest pytest-cov
+      - name: Install deps
+        run: pip install numpy pandas ta python-dotenv loguru ccxt requests
 
-      - name: Create dummy env for tests
+      - name: Create test env
         run: |
           echo "BINANCE_API_KEY=test_key" > .env
           echo "BINANCE_SECRET=test_secret" >> .env
           echo "TELEGRAM_BOT_TOKEN=test_token" >> .env
           echo "TELEGRAM_CHAT_ID=123456789" >> .env
 
-      - name: Run unit tests
-        env:
-          MPLBACKEND: Agg
-        run: |
-          pytest tests/ -v --tb=short 2>&1
-
-  lint:
-    name: Syntax Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Check Python syntax
+      - name: Syntax check
         run: |
           python -m py_compile strategy.py
           python -m py_compile risk_manager.py
@@ -60,4 +40,11 @@ jobs:
           python -m py_compile telegram_notifier.py
           python -m py_compile telegram_bot_handler.py
           python -m py_compile config.py
-          echo "Syntax OK"
+
+      - name: Install test deps
+        run: pip install pytest mplfinance==0.12.9b7 matplotlib Pillow
+
+      - name: Run tests
+        env:
+          MPLBACKEND: Agg
+        run: pytest tests/ -q --tb=short
