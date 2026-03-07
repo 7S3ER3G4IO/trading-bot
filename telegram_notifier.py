@@ -1,19 +1,18 @@
 """
-telegram_notifier.py — Notifications ⚡ AlphaTrader avec boutons inline.
+telegram_notifier.py — Notifications AlphaTrader.
+Format minimaliste, fond sombre via code blocks, bouton wallet inline.
 """
 import os
 import io
 import asyncio
 from typing import Optional
-from telegram import Bot, InlineKeyboardMarkup
+from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import TelegramError
 from loguru import logger
 from dotenv import load_dotenv
+from config import WALLET_CHANNEL_URL
 
 load_dotenv()
-
-BOT_NAME = "⚡ AlphaTrader"
-BINANCE_FEE_RATE = 0.001  # 0.1% par ordre
 
 
 class TelegramNotifier:
@@ -32,6 +31,8 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"❌ Telegram init : {e}")
 
+    # ─── Helpers ──────────────────────────────────────────────────────────────
+
     def _run(self, coro):
         """Exécute une coroutine Telegram de façon sûre (thread-safe)."""
         if not self.bot:
@@ -45,22 +46,30 @@ class TelegramNotifier:
         finally:
             loop.close()
 
-    def notify(self, text: str, markup: Optional[InlineKeyboardMarkup] = None):
+    def _wallet_button(self) -> InlineKeyboardMarkup:
+        """Bouton inline → canal wallet temps réel."""
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton("📊 Voir le Wallet en direct", url=WALLET_CHANNEL_URL)
+        ]])
+
+    def _send(self, text: str, markup: Optional[InlineKeyboardMarkup] = None):
+        """Envoie un message texte (Markdown)."""
         if not self.bot:
             return
-        async def _send():
+        async def _go():
             await self.bot.send_message(
-                chat_id=self.chat_id, text=text,
+                chat_id=self.chat_id,
+                text=text,
                 parse_mode="Markdown",
                 reply_markup=markup,
             )
-        self._run(_send())
+        self._run(_go())
 
-    def send_photo(self, image_bytes: bytes, caption: str,
-                   markup: Optional[InlineKeyboardMarkup] = None):
+    def _send_photo(self, image_bytes: bytes, caption: str,
+                    markup: Optional[InlineKeyboardMarkup] = None):
         if not self.bot or not image_bytes:
             return
-        async def _send():
+        async def _go():
             buf = io.BytesIO(image_bytes)
             buf.name = "chart.png"
             await self.bot.send_photo(
@@ -68,22 +77,32 @@ class TelegramNotifier:
                 caption=caption, parse_mode="Markdown",
                 reply_markup=markup,
             )
-        self._run(_send())
+        self._run(_go())
+
+    def _coin(self, symbol: str) -> str:
+        """BTC/USDT → BITCOIN"""
+        names = {
+            "BTC": "BITCOIN", "ETH": "ETHEREUM",
+            "SOL": "SOLANA",  "BNB": "BNB",
+        }
+        ticker = symbol.replace("/USDT", "")
+        return names.get(ticker, ticker)
+
+    def _ticker(self, symbol: str) -> str:
+        return symbol.replace("/USDT", "")
 
     # ─── Messages ─────────────────────────────────────────────────────────────
 
     def notify_start(self, balance: float, symbols: list):
         pairs = " • ".join([s.replace("/USDT", "") for s in symbols])
-        self.notify(
-            f"*{BOT_NAME}* — Démarrage 🟢\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Marchés : `{pairs}`\n"
-            f"⏱  Timeframe : `15min`\n"
-            f"🧠 Stratégie : `6 filtres EMA+RSI+MACD+ADX+VOL+HTF`\n"
-            f"🎯 3 TP + Break Even + Trailing Stop\n"
-            f"💰 Capital : `{balance:,.2f} USDT`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🛡️ Risk : 1%/trade | -5%/j → pause\n"
+        self._send(
+            f"⚡ *AlphaTrader* — Démarrage 🟢\n"
+            f"```\n"
+            f"Marchés   : {pairs}\n"
+            f"Timeframe : 15min\n"
+            f"Capital   : {balance:,.2f} USDT\n"
+            f"Risk/trade: 1%  |  Pause: -5%/j\n"
+            f"```\n"
             f"🟢 *Surveillance active 24/7*"
         )
 
@@ -93,43 +112,27 @@ class TelegramNotifier:
         context_line: str = "",
         markup: Optional[InlineKeyboardMarkup] = None,
     ):
-        emoji  = "🟢" if side == "BUY" else "🔴"
+        coin   = self._coin(symbol)
+        ticker = self._ticker(symbol)
         action = "J'ACHÈTE" if side == "BUY" else "JE VENDS"
-        pair   = symbol.replace("/USDT", "")
-        sl_pts = abs(entry - sl)
+        alert  = "🚨 ACHAT" if side == "BUY" else "🚨 VENTE"
+        emoji  = "🟢" if side == "BUY" else "🔴"
 
-        # Frais estimés (2 ordres)
-        fees_est = round(entry * amount * BINANCE_FEE_RATE * 2, 2)
+        # Message 1 — Alerte choc
+        self._send(f"{alert} {coin} NOW !")
 
-        # PnL potentiel net par TP (1/3 de la position)
-        frac = amount / 3
-        def pnl_net(target, fraction):
-            gross = abs(target - entry) * fraction
-            fees  = entry * fraction * BINANCE_FEE_RATE * 2
-            return gross - fees
-
-        conf_lines = "\n".join(f"  ✅ {c}" for c in confirmations)
-        ctx_block  = f"\n{context_line}" if context_line else ""
-
-        msg = (
-            f"*{BOT_NAME}*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{emoji} *{action} {pair}*\n"
-            f"💵 Entrée : `{entry:,.2f}`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎯 TP1 : `{tp1:,.2f}` → +{sl_pts:.0f} pts · `{pnl_net(tp1,frac):+.2f} USDT net`\n"
-            f"🎯 TP2 : `{tp2:,.2f}` → +{sl_pts*2:.0f} pts · `{pnl_net(tp2,frac):+.2f} USDT net`\n"
-            f"🎯 TP3 : `{tp3:,.2f}` → +{sl_pts*3:.0f} pts · `{pnl_net(tp3,frac):+.2f} USDT net`\n"
-            f"🔒 SL  : `{sl:,.2f}` → -{sl_pts:.0f} pts\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💸 Frais estimés : `{fees_est:.2f} USDT`\n"
-            f"🧠 Confirmations `{score}/6` :\n"
-            f"{conf_lines}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━"
-            f"{ctx_block}\n"
-            f"📦 Qté : `{amount:.5f} {pair}` | 💰 Capital : `{balance:,.2f} USDT`"
+        # Message 2 — Détails du trade (fond sombre via code block)
+        self._send(
+            f"{emoji} *{action} {ticker}/USDT à {entry:,.2f}*\n"
+            f"```\n"
+            f"🎯 TP1 : {tp1:,.2f}\n"
+            f"🎯 TP2 : {tp2:,.2f}\n"
+            f"🎯 TP3 : Ouvert (Trailing Stop actif)\n"
+            f"\n"
+            f"🔒 SL  : {sl:,.2f}\n"
+            f"```",
+            markup=self._wallet_button(),
         )
-        self.notify(msg, markup=markup)
 
     def notify_tp_hit(
         self, tp_num: int, symbol: str, price: float, entry: float,
@@ -137,57 +140,67 @@ class TelegramNotifier:
         remaining_qty: float, be_activated: bool = False,
         markup: Optional[InlineKeyboardMarkup] = None,
     ):
-        pair    = symbol.replace("/USDT", "")
-        pct     = abs(price - entry) / entry * 100
+        ticker  = self._ticker(symbol)
+        pips    = abs(price - entry)
         pnl_net = pnl_gross - fees
+
         msg = (
-            f"*{BOT_NAME}* — 🎯 TP{tp_num}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎯 *TP{tp_num} TOUCHÉ !* — `{pair}`\n"
-            f"💵 Prix : `{price:,.2f}` _(+{pct:.2f}%)_\n"
-            f"💰 PnL brut : `{pnl_gross:+.2f} USDT`\n"
-            f"💸 Frais : `-{fees:.2f} USDT`\n"
-            f"✅ *PnL net : `{pnl_net:+.2f} USDT`*\n"
-            f"📦 Reste : `{remaining_qty:.5f} {pair}`\n"
-            f"💰 Capital : `{balance:,.2f} USDT`"
+            f"✅ *TP{tp_num} TOUCHÉ — {ticker}*\n"
+            f"```\n"
+            f"Prix   : {price:,.2f}  (+{pips:.0f} pips)\n"
+            f"PnL net: {pnl_net:+.2f} USDT\n"
+            f"```"
         )
-        if be_activated:
-            msg += (
-                f"\n━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🔒 *SL → Break Even*\n"
-                f"✅ TP2 & TP3 sont maintenant *SANS RISQUE !*"
-            )
-        self.notify(msg, markup=markup)
+
+        if tp_num == 1:
+            msg += "\n➡️ *Mettez votre SL en Break Even*"
+        elif tp_num == 2:
+            msg += "\n🔓 TP3 toujours ouvert — Trailing actif"
+
+        if be_activated and tp_num == 1:
+            msg += "\n🔒 SL automatiquement passé en Break Even"
+
+        self._send(msg, markup=self._wallet_button())
+
+    def notify_tp3_closed(self, symbol: str, price: float, entry: float,
+                          pnl_gross: float, fees: float, balance: float):
+        """TP3 fermé par le Trailing Stop (retournement détecté)."""
+        ticker  = self._ticker(symbol)
+        pips    = abs(price - entry)
+        pnl_net = pnl_gross - fees
+        self._send(
+            f"🔒 *TP3 CLÔTURÉ — {ticker}*\n"
+            f"```\n"
+            f"Clôture : {price:,.2f}  (+{pips:.0f} pips)\n"
+            f"PnL net : {pnl_net:+.2f} USDT\n"
+            f"```\n"
+            f"🏆 Trade complet — 3/3 TP touchés",
+            markup=self._wallet_button(),
+        )
 
     def notify_sl_hit(
         self, symbol: str, price: float, entry: float,
         is_be: bool, pnl_gross: float, fees: float, balance: float
     ):
-        pair    = symbol.replace("/USDT", "")
+        ticker  = self._ticker(symbol)
         pnl_net = pnl_gross - fees
-        pct     = pnl_net / balance * 100 if balance > 0 else 0
+        pips    = abs(price - entry)
 
         if is_be:
-            self.notify(
-                f"*{BOT_NAME}* — 🛡️ Break Even\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🛡️ *SL BE touché* — `{pair}`\n"
-                f"💵 Clôture : `{price:,.2f}`\n"
-                f"✅ *Aucune perte !* (Break Even)\n"
-                f"💸 Frais : `-{fees:.2f} USDT`\n"
-                f"💰 PnL net : `{pnl_net:+.2f} USDT` _({pct:+.2f}%)_\n"
-                f"💰 Capital : `{balance:,.2f} USDT`"
+            self._send(
+                f"🛡️ *Break Even touché — {ticker}*\n"
+                f"```\n"
+                f"Clôture : {price:,.2f}\n"
+                f"Résultat: Aucune perte\n"
+                f"```"
             )
         else:
-            self.notify(
-                f"*{BOT_NAME}* — 🛑 Stop-Loss\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🛑 *Stop-Loss touché* — `{pair}`\n"
-                f"💵 Entrée : `{entry:,.2f}` → `{price:,.2f}`\n"
-                f"📉 PnL brut : `{pnl_gross:+.2f} USDT`\n"
-                f"💸 Frais : `-{fees:.2f} USDT`\n"
-                f"❌ *PnL net : `{pnl_net:+.2f} USDT` ({pct:+.2f}%)*\n"
-                f"💰 Capital : `{balance:,.2f} USDT`"
+            self._send(
+                f"🛑 *Stop Loss touché — {ticker}*\n"
+                f"```\n"
+                f"Clôture : {price:,.2f}  (-{pips:.0f} pips)\n"
+                f"PnL net : {pnl_net:+.2f} USDT\n"
+                f"```"
             )
 
     def notify_trade_closed(
@@ -196,61 +209,83 @@ class TelegramNotifier:
         balance: float, initial_balance: float,
         entry: float, exit_price: float, daily_summary: str
     ):
-        pair    = symbol.replace("/USDT", "")
+        # Le résumé de clôture est déjà géré par notify_tp3_closed / notify_sl_hit
+        # Cette méthode envoie uniquement un résumé si reason est inattendue
+        ticker  = self._ticker(symbol)
         net     = total_pnl_gross - total_fees
-        pct_bal = net / initial_balance * 100 if initial_balance > 0 else 0
-        move    = (exit_price - entry) / entry * 100
+        pips    = abs(exit_price - entry)
         emoji   = "✅" if net >= 0 else "❌"
-        self.notify(
-            f"*{BOT_NAME}* — {emoji} Trade Terminé\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"*{pair}* — {reason}\n"
-            f"💵 `{entry:,.2f}` → `{exit_price:,.2f}` _({move:+.2f}%)_\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 PnL brut : `{total_pnl_gross:+.2f} USDT`\n"
-            f"💸 Frais : `-{total_fees:.2f} USDT`\n"
-            f"{emoji} *PnL net : `{net:+.2f} USDT` ({pct_bal:+.2f}%)*\n"
-            f"💰 Capital : `{balance:,.2f} USDT`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Jour : {daily_summary}"
+        self._send(
+            f"{emoji} *Trade clôturé — {ticker}*\n"
+            f"```\n"
+            f"{entry:,.2f} → {exit_price:,.2f}  ({'+' if pips > 0 else '-'}{pips:.0f} pips)\n"
+            f"PnL net : {net:+.2f} USDT\n"
+            f"Raison  : {reason}\n"
+            f"```"
         )
 
     def notify_trailing_stop_update(self, symbol: str, old_sl: float, new_sl: float):
-        pair = symbol.replace("/USDT", "")
-        self.notify(
-            f"*{BOT_NAME}* — 🔄 Trailing Stop\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔄 *Trailing Stop — `{pair}`*\n"
-            f"SL : `{old_sl:,.2f}` → `{new_sl:,.2f}`\n"
-            f"📈 Le Stop suit le prix — gains sécurisés"
+        # Silencieux — pas de notif pour éviter le spam de trailing stop
+        ticker = self._ticker(symbol)
+        logger.info(f"🔄 Trailing Stop {ticker} : {old_sl:,.2f} → {new_sl:,.2f}")
+
+    def notify_daily_report(self, report_lines: list, date_str: str):
+        """
+        report_lines = liste de tuples : (date, side, ticker, result_str)
+        ex: [("06/03", "ACHAT", "BTC", "+680 pips"), ...]
+        """
+        wins  = sum(1 for _, _, _, r in report_lines if r.startswith("+"))
+        total = len(report_lines)
+
+        lines = ""
+        for date, side, ticker, result in report_lines:
+            if result == "BE":
+                lines += f"{date} {side} {ticker} (BE)\n"
+            else:
+                prefix = "🟢" if result.startswith("+") else "🔴"
+                lines += f"{prefix} {date} {side} {ticker} {result}\n"
+
+        self._send(
+            f"📊 *BILAN — {date_str}*\n"
+            f"```\n"
+            f"{lines}\n"
+            f"BILAN TRADES : {wins}/{total}\n"
+            f"```",
+            markup=self._wallet_button(),
         )
 
-    def notify_daily_report(self, report: str):
-        self.notify(report)
-
     def notify_weekly_report(self, report: str):
-        self.notify(report)
+        self._send(report)
 
     def notify_morning_brief(self, brief: str):
-        self.notify(brief)
+        self._send(brief)
 
     def notify_news_pause(self, event_name: str, minutes: float):
-        self.notify(
-            f"*{BOT_NAME}* — ⏸️ Pause News\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📅 *{event_name}*\n"
-            f"⏱  Dans `{abs(minutes):.0f} min`\n"
-            f"🔇 Trading suspendu ±30min"
+        self._send(
+            f"⏸️ *Pause News*\n"
+            f"```\n"
+            f"Événement : {event_name}\n"
+            f"Dans      : {abs(minutes):.0f} min\n"
+            f"Trading suspendu ±30min\n"
+            f"```"
         )
 
     def notify_drawdown_alert(self, balance: float, pct: float):
-        self.notify(
-            f"*{BOT_NAME}* — ⛔ DRAWDOWN\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📉 Perte journalière : `{pct:.1%}`\n"
-            f"💰 Capital : `{balance:,.2f} USDT`\n"
-            f"🔒 *Bot en PAUSE jusqu'à demain*"
+        self._send(
+            f"⛔ *DRAWDOWN — Bot en PAUSE*\n"
+            f"```\n"
+            f"Perte journalière : {pct:.1%}\n"
+            f"Capital           : {balance:,.2f} USDT\n"
+            f"Reprise           : demain\n"
+            f"```"
         )
 
     def notify_error(self, error: str):
-        self.notify(f"*{BOT_NAME}* — ⚠️ Erreur\n```{error[:180]}```")
+        self._send(f"⚠️ *Erreur bot*\n```{error[:200]}```")
+
+    # Legacy aliases (compatibilité)
+    def notify(self, text: str, markup=None):
+        self._send(text, markup)
+
+    def send_photo(self, image_bytes: bytes, caption: str, markup=None):
+        self._send_photo(image_bytes, caption, markup)

@@ -116,8 +116,27 @@ class DailyReporter:
         )
         return rpt
 
+    def build_report_lines(self) -> list:
+        """
+        Format minimaliste pour le bilan Telegram.
+        Retourne [(date_str, action, ticker, result_str), ...]
+        result_str = "+680 pips" | "-310 pips" | "BE"
+        """
+        lines = []
+        for t in self._trades:
+            action = "ACHAT" if t.side == "BUY" else "VENTE"
+            if t.result == "BE":
+                result_str = "BE"
+            elif t.result == "SL":
+                result_str = f"-{t.pips:.0f} pips"
+            else:
+                result_str = f"+{t.pips:.0f} pips"
+            lines.append((t.date_str, action, t.symbol, result_str))
+        return lines
+
     def mark_report_sent(self):
         self._report_sent_today = True
+
 
     # ─── Bilan hebdomadaire ───────────────────────────────────────────────────
 

@@ -175,7 +175,9 @@ class TradingBot:
         # Bilan journalier
         if now.hour == DAILY_REPORT_HOUR_UTC and self.last_report_hour != now.hour:
             if self.reporter.should_send_report():
-                self.telegram.notify_daily_report(self.reporter.build_report())
+                report_lines = self.reporter.build_report_lines()
+                date_str = datetime.now(timezone.utc).strftime("%d/%m")
+                self.telegram.notify_daily_report(report_lines, date_str)
                 self.reporter.mark_report_sent()
             self.last_report_hour = now.hour
 
@@ -368,7 +370,7 @@ class TradingBot:
             logger.info(f"🎯 {t.symbol} TP2 | Trailing Stop activé")
             return
 
-        # TP3 → ferme tout
+        # TP3 → ferme tout (Trailing Stop ou prix atteint)
         if t.tp1_hit and t.tp2_hit and hit_up(t.tp3):
             qty   = t.remaining
             fees  = t.fees_for(qty)
@@ -376,10 +378,10 @@ class TradingBot:
             t.total_pnl  += pnl_g
             t.total_fees += fees
             self._close_partial(t.symbol, t.side, qty)
-            self.telegram.notify_tp_hit(
-                3, t.symbol, price, t.entry, pnl_g, fees, balance, 0
+            self.telegram.notify_tp3_closed(
+                t.symbol, price, t.entry, pnl_g, fees, balance
             )
-            self._finalize_trade(t, price, "TP3 🎯 MAX PROFIT", balance)
+            self._finalize_trade(t, price, "TP3 MAX PROFIT", balance)
             return
 
         # SL / BE
@@ -406,11 +408,14 @@ class TradingBot:
             t.symbol, t.side, result, t.total_pnl,
             t.entry, exit_price, t.remaining
         )
-        self.telegram.notify_trade_closed(
-            t.symbol, reason, t.total_pnl, t.total_fees,
-            balance, self.initial_balance,
-            t.entry, exit_price, day_summ
-        )
+        # notify_trade_closed appelé uniquement pour les clôtures inattendues (MANUAL, SL)
+        # TP3 et BE ont déjà leur propre notification via notify_tp3_closed / notify_sl_hit
+        if result not in ("TP3 MAX PROFIT", "BE"):
+            self.telegram.notify_trade_closed(
+                t.symbol, reason, t.total_pnl, t.total_fees,
+                balance, self.initial_balance,
+                t.entry, exit_price, ""
+            )
         self._end_trade(t.symbol)
 
     # ─── Ordres ──────────────────────────────────────────────────────────────
