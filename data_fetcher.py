@@ -1,5 +1,12 @@
 """
-data_fetcher.py — Récupère les données de marché OHLCV depuis Binance Testnet.
+data_fetcher.py — Récupère les données de marché OHLCV depuis Binance.
+
+Supporte deux modes via la variable d'environnement USE_TESTNET :
+  - USE_TESTNET=true  → Binance Testnet (localhost/dev uniquement)
+  - USE_TESTNET=false → Binance Live (recommandé pour Railway/prod)
+
+Note: testnet.binance.vision n'est pas accessible depuis les IPs US
+(Railway us-west2). Utilise le mode LIVE avec des APIs Paper si possible.
 """
 import os
 import ccxt
@@ -10,9 +17,11 @@ from config import SYMBOL, TIMEFRAME, LIMIT
 
 load_dotenv()
 
+USE_TESTNET = os.getenv("USE_TESTNET", "true").lower() == "true"
+
 
 class DataFetcher:
-    """Connexion à Binance Testnet et récupération des données OHLCV."""
+    """Connexion à Binance et récupération des données OHLCV."""
 
     def __init__(self):
         api_key = os.getenv("BINANCE_API_KEY")
@@ -23,38 +32,28 @@ class DataFetcher:
                 "❌ BINANCE_API_KEY et BINANCE_SECRET manquants dans le fichier .env"
             )
 
-        self.exchange = ccxt.binance({
-            "apiKey": api_key,
-            "secret": secret,
-            "options": {
-                "defaultType": "spot",
-                # Force sandbox testnet endpoints explicitly
-                "urls": {
-                    "api": {
-                        "public": "https://testnet.binance.vision/api/v3",
-                        "private": "https://testnet.binance.vision/api/v3",
-                        "v1": "https://testnet.binance.vision/api/v1",
-                    },
-                    "test": {
-                        "public": "https://testnet.binance.vision/api/v3",
-                        "private": "https://testnet.binance.vision/api/v3",
-                    }
-                }
-            },
-            "enableRateLimit": True,
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (compatible; tradingbot/1.0)"
-            }
-        })
-        # Active le mode Testnet (sandbox)
-        self.exchange.set_sandbox_mode(True)
-        logger.info(f"✅ Connecté à Binance Testnet — Marché : {SYMBOL} | TF : {TIMEFRAME}")
+        if USE_TESTNET:
+            # Mode testnet — utilise les URLs sandbox ccxt natives (sans hardcoding)
+            self.exchange = ccxt.binance({
+                "apiKey": api_key,
+                "secret": secret,
+                "options": {"defaultType": "spot"},
+                "enableRateLimit": True,
+            })
+            self.exchange.set_sandbox_mode(True)
+            logger.info(f"✅ Connecté à Binance Testnet — {SYMBOL} | TF : {TIMEFRAME}")
+        else:
+            # Mode LIVE — endpoint public Binance, accessible depuis partout (Railway inclus)
+            self.exchange = ccxt.binance({
+                "apiKey": api_key,
+                "secret": secret,
+                "options": {"defaultType": "spot"},
+                "enableRateLimit": True,
+            })
+            logger.info(f"✅ Connecté à Binance LIVE — {SYMBOL} | TF : {TIMEFRAME}")
 
     def get_ohlcv(self, symbol: str = SYMBOL, timeframe: str = TIMEFRAME, limit: int = LIMIT) -> pd.DataFrame:
-        """
-        Retourne un DataFrame OHLCV avec colonnes :
-        timestamp, open, high, low, close, volume
-        """
+        """Retourne un DataFrame OHLCV."""
         try:
             raw = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -67,7 +66,7 @@ class DataFetcher:
             raise
 
     def get_balance(self) -> dict:
-        """Retourne le solde USDT disponible sur le compte testnet."""
+        """Retourne le solde USDT disponible."""
         try:
             balance = self.exchange.fetch_balance()
             usdt = balance.get("USDT", {})
