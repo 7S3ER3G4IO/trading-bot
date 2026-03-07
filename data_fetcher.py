@@ -26,8 +26,25 @@ class DataFetcher:
         self.exchange = ccxt.binance({
             "apiKey": api_key,
             "secret": secret,
-            "options": {"defaultType": "spot"},
+            "options": {
+                "defaultType": "spot",
+                # Force sandbox testnet endpoints explicitly
+                "urls": {
+                    "api": {
+                        "public": "https://testnet.binance.vision/api/v3",
+                        "private": "https://testnet.binance.vision/api/v3",
+                        "v1": "https://testnet.binance.vision/api/v1",
+                    },
+                    "test": {
+                        "public": "https://testnet.binance.vision/api/v3",
+                        "private": "https://testnet.binance.vision/api/v3",
+                    }
+                }
+            },
             "enableRateLimit": True,
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (compatible; tradingbot/1.0)"
+            }
         })
         # Active le mode Testnet (sandbox)
         self.exchange.set_sandbox_mode(True)
