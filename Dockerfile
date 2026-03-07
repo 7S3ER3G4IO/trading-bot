@@ -2,20 +2,24 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Installer les dépendances système
+# Dépendances système pour matplotlib + mplfinance sur Linux
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
+    libfreetype6-dev \
+    libpng-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Copier et installer les requirements
+# Variable d'environnement pour matplotlib sans écran (serveur)
+ENV MPLBACKEND=Agg
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copier le code source
 COPY . .
 
-# Variables d'environnement (surchargées par Railway)
-ENV PYTHONUNBUFFERED=1
+# Exclure .env (variables injectées par Railway)
+RUN rm -f .env
 
-# Lancer le bot
 CMD ["python", "main.py"]
