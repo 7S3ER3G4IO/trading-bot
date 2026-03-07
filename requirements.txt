@@ -7,3 +7,6 @@ loguru>=0.7.0
 numpy>=1.24.0
 schedule>=1.2.0
 aiohttp>=3.9.0
+matplotlib>=3.7.0
+mplfinance>=0.12.9
+Pillow>=10.0.0

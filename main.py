@@ -1,12 +1,5 @@
 """
-main.py — Bot multi-actifs avec 3 TP + Break Even + bilan journalier + calendrier économique.
-
-Flux par tick :
-  1. Vérifier calendrier économique (pause si news HIGH)
-  2. Pour chaque symbole (BTC, ETH, SOL, BNB) :
-     a. Surveiller trade ouvert (SL / TP1 / TP2 / TP3)
-     b. Chercher nouveau signal si pas de trade
-  3. À 21h CET → envoyer bilan journalier
+main.py — ⚡ AlphaTrader — Multi-Asset | 3 TP + BE | Notifications complètes + Charts.
 """
 
 import time
@@ -24,8 +17,8 @@ from order_executor import OrderExecutor
 from telegram_notifier import TelegramNotifier
 from daily_reporter import DailyReporter
 from economic_calendar import EconomicCalendar
+from chart_generator import ChartGenerator
 
-# ─── Arrêt propre ─────────────────────────────────────────────────────────────
 bot_running = True
 
 def shutdown_handler(sig, frame):
@@ -37,7 +30,6 @@ signal.signal(signal.SIGINT,  shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
 
-# ─── État d'un trade ─────────────────────────────────────────────────────────
 class TradeState:
     def __init__(self, side, entry, total_amount, sl, tp1, tp2, tp3, be, symbol):
         self.symbol        = symbol
@@ -55,7 +47,6 @@ class TradeState:
         self.tp2_hit       = False
         self.be_active     = False
         self.total_pnl     = 0.0
-        self.score         = 0
 
     def fraction_size(self, frac):
         return round(self.total_amount * frac, 5)
@@ -64,7 +55,6 @@ class TradeState:
         return self.remaining > 0.000001
 
 
-# ─── Bot principal ────────────────────────────────────────────────────────────
 class TradingBot:
     def __init__(self):
         setup_logger()
@@ -73,30 +63,26 @@ class TradingBot:
         logger.info(f"  📊  {' | '.join(SYMBOLS)}")
         logger.info("=" * 60)
 
-        self.fetcher    = DataFetcher()
-        self.strategy   = Strategy()
-        self.executor   = OrderExecutor()
-        self.telegram   = TelegramNotifier()
-        self.reporter   = DailyReporter()
-        self.calendar   = EconomicCalendar()
+        self.fetcher  = DataFetcher()
+        self.strategy = Strategy()
+        self.executor = OrderExecutor()
+        self.telegram = TelegramNotifier()
+        self.reporter = DailyReporter()
+        self.calendar = EconomicCalendar()
+        self.charter  = ChartGenerator()
 
         bal = self.fetcher.get_balance()["free"]
-        self.risk       = RiskManager(bal)
-
-        # Un TradeState par symbole
+        self.risk             = RiskManager(bal)
+        self.initial_balance  = bal
         self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
-
-        self.last_reset_day    = datetime.now(timezone.utc).date()
-        self.last_report_hour  = -1
+        self.last_reset_day   = datetime.now(timezone.utc).date()
+        self.last_report_hour = -1
         self.news_pause_notified = False
 
-        # Charger le calendrier au démarrage
         self.calendar.refresh()
-
         self.telegram.notify_start(bal, SYMBOLS)
         logger.info(f"💰 Solde initial : {bal:.2f} USDT")
 
-    # ─── Boucle principale ────────────────────────────────────────────────────
     def run(self):
         logger.info(f"⏱  Boucle toutes les {LOOP_INTERVAL_SECONDS}s | CTRL+C pour arrêter\n")
         while bot_running:
@@ -112,64 +98,59 @@ class TradingBot:
         now = datetime.now(timezone.utc)
         cet = now + timedelta(hours=1)
 
-        # ── Bilan journalier ─────────────────────────────────────────────────
+        # Bilan journalier
         if now.hour == DAILY_REPORT_HOUR_UTC and self.last_report_hour != now.hour:
             if self.reporter.should_send_report():
-                report = self.reporter.build_report()
-                self.telegram.notify_daily_report(report)
+                self.telegram.notify_daily_report(self.reporter.build_report())
                 self.reporter.mark_report_sent()
             self.last_report_hour = now.hour
 
-        # ── Reset journalier à minuit CET ─────────────────────────────────
+        # Reset journalier
         if cet.date() != self.last_reset_day:
             bal = self.fetcher.get_balance()["free"]
             self.risk.reset_daily(bal)
             self.reporter.reset_for_new_day()
-            self.last_reset_day = cet.date()
+            self.initial_balance = bal
+            self.last_reset_day  = cet.date()
 
-        # ── Vérifier calendrier économique ────────────────────────────────
-        pause, pause_reason = self.calendar.should_pause_trading()
+        # Calendrier économique
+        pause, reason = self.calendar.should_pause_trading()
         if pause:
             if not self.news_pause_notified:
-                # Extraire les minutes depuis la raison
-                self.telegram.notify_news_pause(pause_reason, 30)
+                self.telegram.notify_news_pause(reason, 30)
                 self.news_pause_notified = True
-            logger.warning(f"⏸  Trading en pause — {pause_reason}")
+            logger.warning(f"⏸  Pause — {reason}")
             return
         else:
             self.news_pause_notified = False
 
-        # ── Prix globaux ──────────────────────────────────────────────────
         balance = self.fetcher.get_balance()["free"]
         logger.info(
             f"[{now.strftime('%H:%M:%S')}] Solde={balance:.2f} USDT | "
-            f"Trades ouverts={sum(1 for t in self.trades.values() if t)}/{len(SYMBOLS)}"
+            f"Trades={sum(1 for t in self.trades.values() if t)}/{len(SYMBOLS)}"
         )
 
-        # ── Traiter chaque symbole ────────────────────────────────────────
         for symbol in SYMBOLS:
             try:
                 self._process_symbol(symbol, balance)
             except Exception as e:
-                logger.error(f"❌ Erreur sur {symbol} : {e}")
+                logger.error(f"❌ {symbol} : {e}")
 
     def _process_symbol(self, symbol: str, balance: float):
         trade = self.trades[symbol]
 
-        # ── Si trade en cours → surveiller SL/TPs ────────────────────────
         if trade and trade.is_open():
             ticker = self.fetcher.get_ticker(symbol)
-            price  = ticker["last"]
-            self._monitor_trade(trade, price, balance)
+            self._monitor_trade(trade, ticker["last"], balance)
             return
 
-        # ── Chercher un signal ────────────────────────────────────────────
         if not self.risk.can_open_trade(balance):
             return
 
         df = self.fetcher.get_ohlcv(symbol=symbol)
         df = self.strategy.compute_indicators(df)
-        sig = self.strategy.get_signal(df)
+
+        sig, score, confirmations = self.strategy.get_signal(df)
 
         if sig == SIGNAL_HOLD:
             return
@@ -188,27 +169,44 @@ class TradingBot:
             return
 
         t = TradeState(
-            symbol=symbol,
-            side=sig,
-            entry=price,
+            symbol=symbol, side=sig, entry=price,
             total_amount=amount,
-            sl=levels["sl"],
-            tp1=levels["tp1"],
-            tp2=levels["tp2"],
-            tp3=levels["tp3"],
+            sl=levels["sl"], tp1=levels["tp1"],
+            tp2=levels["tp2"], tp3=levels["tp3"],
             be=levels["be"],
         )
         self.trades[symbol] = t
         self.risk.on_trade_opened()
 
+        # Notification d'entrée avec confirmations
         self.telegram.notify_trade_open(
             side=sig, symbol=symbol, entry=price,
-            tp1=levels["tp1"], tp2=levels["tp2"], tp3=levels["tp3"],
-            sl=levels["sl"], amount=amount, balance=balance,
-            score=4,  # Minimum requis
+            tp1=levels["tp1"], tp2=levels["tp2"],
+            tp3=levels["tp3"], sl=levels["sl"],
+            amount=amount, balance=balance,
+            score=score, confirmations=confirmations,
         )
 
-    # ─── Surveillance SL/TP ───────────────────────────────────────────────────
+        # Génération et envoi du chart
+        try:
+            conf_desc = f"ADX+RSI+EMA {score}/6"
+            chart = self.charter.generate_trade_chart(
+                df=df, symbol=symbol, side=sig,
+                entry=price, tp1=levels["tp1"],
+                tp2=levels["tp2"], tp3=levels["tp3"],
+                sl=levels["sl"], score=score,
+                indicators_desc=conf_desc,
+            )
+            if chart:
+                pair = symbol.replace("/", "")
+                action = "ACHAT" if sig == SIGNAL_BUY else "VENTE"
+                self.telegram.send_photo(
+                    chart,
+                    f"📊 *{pair} {action}* — Graphique 15m | Score `{score}/6`"
+                )
+        except Exception as e:
+            logger.warning(f"⚠️  Chart non envoyé : {e}")
+
     def _monitor_trade(self, t: TradeState, price: float, balance: float):
         buy = t.side == SIGNAL_BUY
 
@@ -217,67 +215,90 @@ class TradingBot:
 
         # TP1
         if not t.tp1_hit and hit_up(t.tp1):
-            qty = t.fraction_size(1/3)
+            qty  = t.fraction_size(1/3)
             self._close_partial(t.symbol, t.side, qty)
-            pnl = (t.tp1 - t.entry) * qty * (1 if buy else -1)
+            pnl  = abs(t.tp1 - t.entry) * qty
             t.total_pnl += pnl
             t.remaining -= qty
             t.tp1_hit    = True
             t.current_sl = t.be
             t.be_active  = True
-            self.telegram.notify_tp_hit(1, t.symbol, price, pnl, be_activated=True)
+            self.telegram.notify_tp_hit(
+                1, t.symbol, price, t.entry, pnl,
+                balance, t.remaining, be_activated=True
+            )
             self.reporter.record_trade(t.symbol, t.side, "TP1", pnl, t.entry, price)
             logger.info(f"🎯 {t.symbol} TP1 | SL→BE={t.be:.2f}")
             return
 
         # TP2
         if t.tp1_hit and not t.tp2_hit and hit_up(t.tp2):
-            qty = t.fraction_size(1/3)
+            qty  = t.fraction_size(1/3)
             self._close_partial(t.symbol, t.side, qty)
-            pnl = (t.tp2 - t.entry) * qty * (1 if buy else -1)
+            pnl  = abs(t.tp2 - t.entry) * qty
             t.total_pnl += pnl
             t.remaining -= qty
             t.tp2_hit    = True
-            self.telegram.notify_tp_hit(2, t.symbol, price, pnl)
-            logger.info(f"🎯 {t.symbol} TP2 | Reste={t.remaining:.5f}")
+            self.telegram.notify_tp_hit(
+                2, t.symbol, price, t.entry, pnl,
+                balance, t.remaining
+            )
+            logger.info(f"🎯 {t.symbol} TP2")
             return
 
         # TP3 → ferme tout
         if t.tp1_hit and t.tp2_hit and hit_up(t.tp3):
-            pnl = (t.tp3 - t.entry) * t.remaining * (1 if buy else -1)
+            pnl = abs(t.tp3 - t.entry) * t.remaining
             self._close_partial(t.symbol, t.side, t.remaining)
             t.total_pnl += pnl
-            t.remaining  = 0
-            self.telegram.notify_tp_hit(3, t.symbol, price, pnl)
-            self.telegram.notify_trade_closed(t.symbol, "TP3 🎯", t.total_pnl, balance)
-            self.reporter.record_trade(t.symbol, t.side, "TP3", t.total_pnl, t.entry, price)
+            self.telegram.notify_tp_hit(
+                3, t.symbol, price, t.entry, pnl,
+                balance, 0
+            )
+            trades_summary = self.reporter.build_report()[:80]
+            self.telegram.notify_trade_closed(
+                t.symbol, "TP3 🎯 MAX PROFIT", t.total_pnl,
+                balance, self.initial_balance,
+                t.entry, price, trades_summary
+            )
+            self.reporter.record_trade(
+                t.symbol, t.side, "TP3", t.total_pnl, t.entry, price
+            )
             self._end_trade(t.symbol)
             return
 
         # SL / BE
         if hit_down(t.current_sl):
-            pnl_rem = (t.current_sl - t.entry) * t.remaining * (1 if buy else -1)
+            pnl_rem = abs(t.current_sl - t.entry) * t.remaining * (-1 if not t.be_active else 0)
             total   = t.total_pnl + pnl_rem
             self._close_partial(t.symbol, t.side, t.remaining)
-            t.remaining = 0
-            self.telegram.notify_sl_hit(t.symbol, price, t.entry, t.be_active, total)
+
+            self.telegram.notify_sl_hit(
+                t.symbol, price, t.entry, t.be_active, total, balance
+            )
             result = "BE" if t.be_active else "SL"
             label  = "Break Even 🛡️" if t.be_active else "Stop-Loss 🛑"
-            self.telegram.notify_trade_closed(t.symbol, label, total, balance)
-            self.reporter.record_trade(t.symbol, t.side, result, total, t.entry, price)
+            trades_summary = self.reporter.build_report()[:80]
+            self.telegram.notify_trade_closed(
+                t.symbol, label, total,
+                balance, self.initial_balance,
+                t.entry, price, trades_summary
+            )
+            self.reporter.record_trade(
+                t.symbol, t.side, result, total, t.entry, price
+            )
             self._end_trade(t.symbol)
 
-    # ─── Helpers ─────────────────────────────────────────────────────────────
     def _open_order(self, symbol: str, side: str, amount: float):
         if side == SIGNAL_BUY:
             return self.executor.buy_market(symbol, amount)
         else:
-            base  = symbol.split("/")[0]
-            held  = self.executor.get_position(base)
-            qty   = min(amount, held)
+            base = symbol.split("/")[0]
+            held = self.executor.get_position(base)
+            qty  = min(amount, held)
             if qty > 0.00001:
                 return self.executor.sell_market(symbol, qty)
-            logger.warning(f"⚠️  {symbol} SELL — pas de {base} disponible")
+            logger.warning(f"⚠️  {symbol} SELL — pas de {base}")
             return None
 
     def _close_partial(self, symbol: str, side: str, qty: float):

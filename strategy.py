@@ -77,17 +77,19 @@ class Strategy:
             return False
         return True
 
-    def get_signal(self, df: pd.DataFrame) -> str:
+    def get_signal(self, df: pd.DataFrame) -> tuple:
         """
-        Retourne BUY / SELL / HOLD selon les 6 filtres.
-        Requiert {REQUIRED_SCORE}/6 confirmations.
+        Retourne (signal, score, confirmations) où :
+          signal        : "BUY" / "SELL" / "HOLD"
+          score         : int, nombre de confirmations
+          confirmations : list[str], descriptions lisibles
         """
         if len(df) < 2:
-            return SIGNAL_HOLD
+            return SIGNAL_HOLD, 0, []
 
         # Filtre session
         if not self.is_session_ok():
-            return SIGNAL_HOLD
+            return SIGNAL_HOLD, 0, []
 
         curr = df.iloc[-1]
         prev = df.iloc[-2]
@@ -119,35 +121,39 @@ class Strategy:
         htf_bear = curr["close"] < curr["ema_htf"]
 
         # ── Score BUY ─────────────────────────────────────────────────────
-        buy_checks  = [ema_cross_up, rsi_buy, macd_up, adx_ok, vol_ok, htf_bull]
-        buy_score   = sum(buy_checks)
+        buy_map = {
+            f"EMA {EMA_FAST}/{EMA_SLOW} croisement haussier": ema_cross_up,
+            f"RSI {curr['rsi']:.0f} en zone ACHAT (30-{RSI_BUY_MAX})": rsi_buy,
+            f"MACD croisement haussier": macd_up,
+            f"ADX {curr['adx']:.0f} > {ADX_MIN} (tendance forte)": adx_ok,
+            f"Volume supérieur à la MA20": vol_ok,
+            f"Tendance 1h haussière (HTF aligné)": htf_bull,
+        }
+        sell_map = {
+            f"EMA {EMA_FAST}/{EMA_SLOW} croisement baissier": ema_cross_down,
+            f"RSI {curr['rsi']:.0f} en zone VENTE ({RSI_SELL_MIN}-70)": rsi_sell,
+            f"MACD croisement baissier": macd_down,
+            f"ADX {curr['adx']:.0f} > {ADX_MIN} (tendance forte)": adx_ok,
+            f"Volume supérieur à la MA20": vol_ok,
+            f"Tendance 1h baissière (HTF aligné)": htf_bear,
+        }
 
-        # ── Score SELL ────────────────────────────────────────────────────
-        sell_checks = [ema_cross_down, rsi_sell, macd_down, adx_ok, vol_ok, htf_bear]
-        sell_score  = sum(sell_checks)
+        buy_confs  = [label for label, ok in buy_map.items()  if ok]
+        sell_confs = [label for label, ok in sell_map.items() if ok]
+        buy_score  = len(buy_confs)
+        sell_score = len(sell_confs)
 
-        logger.debug(
-            f"BUY {buy_score}/6 [EMA={ema_cross_up} RSI={rsi_buy} MACD={macd_up} "
-            f"ADX={adx_ok}({curr['adx']:.0f}) VOL={vol_ok} HTF={htf_bull}] | "
-            f"SELL {sell_score}/6 [EMA={ema_cross_down} RSI={rsi_sell} MACD={macd_down} "
-            f"ADX={adx_ok} VOL={vol_ok} HTF={htf_bear}]"
-        )
+        logger.debug(f"Score BUY={buy_score}/6 | SELL={sell_score}/6")
 
         if buy_score >= REQUIRED_SCORE and buy_score > sell_score:
-            logger.info(
-                f"🟢 Signal ACHAT {buy_score}/6 | RSI={curr['rsi']:.1f} "
-                f"ADX={curr['adx']:.0f} | ATR={curr['atr']:.2f}"
-            )
-            return SIGNAL_BUY
+            logger.info(f"🟢 Signal ACHAT {buy_score}/6 | RSI={curr['rsi']:.1f} ADX={curr['adx']:.0f}")
+            return SIGNAL_BUY, buy_score, buy_confs
 
         if sell_score >= REQUIRED_SCORE and sell_score > buy_score:
-            logger.info(
-                f"🔴 Signal VENTE {sell_score}/6 | RSI={curr['rsi']:.1f} "
-                f"ADX={curr['adx']:.0f} | ATR={curr['atr']:.2f}"
-            )
-            return SIGNAL_SELL
+            logger.info(f"🔴 Signal VENTE {sell_score}/6 | RSI={curr['rsi']:.1f} ADX={curr['adx']:.0f}")
+            return SIGNAL_SELL, sell_score, sell_confs
 
-        return SIGNAL_HOLD
+        return SIGNAL_HOLD, 0, []
 
     def get_atr(self, df: pd.DataFrame) -> float:
         return float(df.iloc[-1]["atr"])
