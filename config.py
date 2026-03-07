@@ -1,34 +1,58 @@
 """
 config.py — Paramètres globaux du bot de trading.
-Modifiez ces valeurs pour ajuster le comportement du bot.
 """
 
-# ─── MARCHÉ ──────────────────────────────────────────────────────────────────
-SYMBOL       = "BTC/USDT"    # Paire tradée
-TIMEFRAME    = "15m"          # Bougies 15 minutes
-LIMIT        = 200            # Nombre de bougies à récupérer pour les indicateurs
+# ─── MULTI-ASSET ──────────────────────────────────────────────────────────────
+# Paires tradées simultanément (24/7 crypto — fonctionne weekend + semaine)
+SYMBOLS = [
+    "BTC/USDT",   # Bitcoin     — liquidité maximale
+    "ETH/USDT",   # Ethereum    — très liquide
+    "SOL/USDT",   # Solana      — volatilité élevée = plus de signaux
+    "BNB/USDT",   # Binance Coin — stable, bonne tendance
+]
 
-# ─── STRATÉGIE ────────────────────────────────────────────────────────────────
-EMA_FAST     = 9              # EMA rapide
-EMA_SLOW     = 21             # EMA lente
-RSI_PERIOD   = 14             # Période RSI
-RSI_BUY_MAX  = 65             # RSI max pour acheter (évite surachat)
-RSI_SELL_MIN = 35             # RSI min pour vendre (évite survente)
-MACD_FAST    = 12
-MACD_SLOW    = 26
-MACD_SIGNAL  = 9
-ATR_PERIOD   = 14             # Période ATR pour stop-loss dynamique
+SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)
+TIMEFRAME = "15m"        # Bougies 15 minutes
+HTF       = "1h"         # Higher TimeFrame (confirmation de tendance)
+LIMIT     = 200          # Nombre de bougies à charger
+
+# ─── STRATÉGIE — 6 FILTRES ───────────────────────────────────────────────────
+EMA_FAST      = 9
+EMA_SLOW      = 21
+RSI_PERIOD    = 14
+RSI_BUY_MAX   = 65
+RSI_SELL_MIN  = 35
+MACD_FAST     = 12
+MACD_SLOW     = 26
+MACD_SIGNAL   = 9
+ATR_PERIOD    = 14
+
+# Filtre ADX (force de tendance)
+ADX_PERIOD    = 14
+ADX_MIN       = 20      # Signal uniquement si ADX > 20 (tendance présente)
+
+# Filtre Volume
+VOLUME_MA_PERIOD = 20  # Volume > moyenne 20 bougies
+
+# Filtre sessions crypto (heures UTC à éviter — faible liquidité)
+AVOID_HOURS_UTC = list(range(2, 6))   # 2h-6h UTC = nuit Asie + matin Europe = dead zone
 
 # ─── GESTION DU RISQUE ────────────────────────────────────────────────────────
-RISK_PER_TRADE      = 0.01    # 1% du capital par trade
-ATR_SL_MULTIPLIER   = 1.5    # Stop-Loss = ATR × 1.5
-RR_RATIO            = 2.0    # Take-Profit = Stop-Loss × 2.0 (R:R 1:2)
-MAX_OPEN_TRADES     = 3       # Trades simultanés maximum
-DAILY_DRAWDOWN_LIMIT= -0.05  # -5% du capital → pause automatique
+RISK_PER_TRADE       = 0.01    # 1% du capital par trade par symbole
+ATR_SL_MULTIPLIER    = 1.5
+MAX_OPEN_TRADES      = 4       # 1 par symbole max
+DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
+
+# ─── CALENDRIER ÉCONOMIQUE ───────────────────────────────────────────────────
+NEWS_PAUSE_BEFORE_MIN = 30    # Pause X min avant news HIGH impact
+NEWS_PAUSE_AFTER_MIN  = 30    # Pause X min après news HIGH impact
+
+# ─── BILAN JOURNALIER ────────────────────────────────────────────────────────
+DAILY_REPORT_HOUR_UTC = 20    # 21h CET = 20h UTC
 
 # ─── BOUCLE DU BOT ───────────────────────────────────────────────────────────
-LOOP_INTERVAL_SECONDS = 60    # Vérification toutes les 60 secondes
+LOOP_INTERVAL_SECONDS = 60
 
 # ─── LOGS ────────────────────────────────────────────────────────────────────
-LOG_DIR      = "logs"
-LOG_LEVEL    = "INFO"
+LOG_DIR   = "logs"
+LOG_LEVEL = "INFO"
