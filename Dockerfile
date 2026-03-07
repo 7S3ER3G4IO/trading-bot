@@ -19,7 +19,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Installer d'abord les dépendances lourdes séparément (meilleur cache Docker)
-RUN pip install --no-cache-dir numpy pandas matplotlib Pillow
+# Note: mplfinance n'a que des versions beta sur PyPI — on force la version exacte
+RUN pip install --no-cache-dir numpy pandas matplotlib Pillow mplfinance==0.12.9b7
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
