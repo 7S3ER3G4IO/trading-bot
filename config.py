@@ -29,7 +29,7 @@ ATR_PERIOD    = 14
 
 # Filtre ADX (force de tendance)
 ADX_PERIOD    = 14
-ADX_MIN       = 20      # Signal uniquement si ADX > 20 (tendance présente)
+ADX_MIN       = 25      # Signal uniquement si ADX > 25 (tendance plus forte)
 
 # Filtre Volume
 VOLUME_MA_PERIOD = 20  # Volume > moyenne 20 bougies
@@ -39,7 +39,8 @@ AVOID_HOURS_UTC = list(range(2, 6))   # 2h-6h UTC = nuit Asie + matin Europe = d
 
 # ─── GESTION DU RISQUE ────────────────────────────────────────────────────────
 RISK_PER_TRADE       = 0.01    # 1% du capital par trade par symbole
-ATR_SL_MULTIPLIER    = 1.5
+ATR_SL_MULTIPLIER    = 1.0     # SL = 1.0 ATR (tighter = meilleur R:R)
+MIN_SCORE            = 5       # Signal seulement si score >= 5/6
 MAX_OPEN_TRADES      = 4       # 1 par symbole max
 DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
 

@@ -19,9 +19,10 @@ from config import (
 )
 
 # Ratios des 3 TPs par rapport à la distance SL
-TP1_RATIO = 1.0   # TP1 = SL × 1  (1:1 R:R)
-TP2_RATIO = 2.0   # TP2 = SL × 2  (1:2 R:R)
-TP3_RATIO = 3.0   # TP3 = SL × 3  (1:3 R:R)
+# R:R amélioré basé sur backtesting : TP larges pour compenser le win rate
+TP1_RATIO = 1.5   # TP1 = SL × 1.5  (1:1.5 R:R)
+TP2_RATIO = 3.0   # TP2 = SL × 3.0  (1:3.0 R:R)
+TP3_RATIO = 5.0   # TP3 = SL × 5.0  (1:5.0 R:R)
 
 # Fraction de la position fermée à chaque TP
 TP_FRACTIONS = [1/3, 1/2, 1.0]  # 33% au TP1, 50% du reste au TP2, tout au TP3

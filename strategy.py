@@ -30,7 +30,7 @@ SIGNAL_SELL = "SELL"
 SIGNAL_HOLD = "HOLD"
 
 # Seuil de confirmations requis sur 6 filtres
-REQUIRED_SCORE = 4
+REQUIRED_SCORE = 5   # Min score sur 6 — 5/6 requis (backtest: 4/6 = perdant)
 
 
 class Strategy:
