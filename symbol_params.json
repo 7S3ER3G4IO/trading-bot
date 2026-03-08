@@ -130,5 +130,19 @@
     "winrate": 58.6,
     "pnl_net": -2083.84,
     "max_dd": 31.9
+  },
+  "EUR/USDT": {
+    "required_score": 4,
+    "slope_threshold": 5e-05,
+    "adx_min": 15,
+    "atr_sl_multiplier": 0.8,
+    "rsi_buy_max": 70
+  },
+  "XAU/USDT:USDT": {
+    "required_score": 4,
+    "slope_threshold": 8e-05,
+    "adx_min": 20,
+    "atr_sl_multiplier": 0.8,
+    "rsi_buy_max": 65
   }
 }

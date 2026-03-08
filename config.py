@@ -7,7 +7,7 @@ config.py — Paramètres globaux du bot de trading.
 # Les 12 paires corrélées entre elles = moins bon que 5 paires premium
 SYMBOLS = [
     "BTC/USDT",   # Bitcoin   — référence crypto, liquidité maximale
-    "EUR/USDT",   # Euro/USD  — Forex, non-corrélé à la crypto
+    # XAU/USDT via Binance Futures Demo (brokers/binance_futures.py)
 ]
 
 SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)
