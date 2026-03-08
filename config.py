@@ -3,23 +3,14 @@ config.py — Paramètres globaux du bot de trading.
 """
 
 # ─── MULTI-ASSET ──────────────────────────────────────────────────────────────
-# Paires tradées simultanément (24/7 crypto — fonctionne weekend + semaine)
-# Règle : liquidité élevée + historique de tendances claires sur Binance
+# Top 5 cryptos uniquement — qualité > quantité
+# Les 12 paires corrélées entre elles = moins bon que 5 paires premium
 SYMBOLS = [
-    # Majeurs — liquidité maximale
-    "BTC/USDT",   # Bitcoin       — référence du marché
-    "ETH/USDT",   # Ethereum      — très liquide, bon trendy
-    "BNB/USDT",   # Binance Coin  — tendances stables
-    # Mid-caps — volatilité + volume = plus de signaux
-    "SOL/USDT",   # Solana        — volatilité élevée, tendances rapides
-    "XRP/USDT",   # Ripple        — très liquide, moves forts
-    "ADA/USDT",   # Cardano       — tendances longues, peu de bruit
-    "AVAX/USDT",  # Avalanche     — forte volatilité = bon ATR
-    "LINK/USDT",  # Chainlink     — trending régulièrement
-    "DOT/USDT",   # Polkadot      — tendances claires
-    "DOGE/USDT",  # Dogecoin      — très liquide, moves explosifs
-    "MATIC/USDT", # Polygon       — bon volume, trending
-    "ATOM/USDT",  # Cosmos        — tendances nettes, moins de noise
+    "BTC/USDT",   # Bitcoin   — référence marché, liquidité maximale
+    "ETH/USDT",   # Ethereum  — très liquide, tendances claires
+    "SOL/USDT",   # Solana    — haute volatilité = bon ATR
+    "BNB/USDT",   # BNB       — tendances stables
+    "XRP/USDT",   # XRP       — très liquide, moves forts
 ]
 
 SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)
@@ -53,7 +44,7 @@ AVOID_HOURS_UTC = list(range(3, 5))   # 3h-5h UTC uniquement = creux absolu
 RISK_PER_TRADE       = 0.01    # 1% du capital par trade par symbole
 ATR_SL_MULTIPLIER    = 1.0     # SL = 1.0 ATR (tighter = meilleur R:R)
 MIN_SCORE            = 5       # Signal seulement si score >= 5/6
-MAX_OPEN_TRADES      = 12              # 1 par symbole max (12 paires)
+MAX_OPEN_TRADES      = 14              # 5 crypto + 9 OANDA instruments
 DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
 
 # ─── CALENDRIER ÉCONOMIQUE ───────────────────────────────────────────────────
