@@ -1,36 +1,24 @@
 {
   "BTC/USDT": {
     "required_score": 5,
-    "slope_threshold": 0.0002,
-    "adx_min": 30,
+    "slope_threshold": 0.0001,
+    "adx_min": 25,
     "atr_sl_multiplier": 1.0,
-    "rsi_buy_max": 60,
-    "n_trades": 68,
-    "winrate": 50.0,
-    "pnl_net": -2716.02,
-    "max_dd": 28.3
+    "rsi_buy_max": 65
   },
   "ETH/USDT": {
     "required_score": 5,
-    "slope_threshold": 0.0002,
-    "adx_min": 30,
-    "atr_sl_multiplier": 1.2,
-    "rsi_buy_max": 60,
-    "n_trades": 109,
-    "winrate": 46.8,
-    "pnl_net": -2830.27,
-    "max_dd": 32.5
+    "slope_threshold": 0.0001,
+    "adx_min": 25,
+    "atr_sl_multiplier": 1.0,
+    "rsi_buy_max": 65
   },
   "BNB/USDT": {
     "required_score": 5,
-    "slope_threshold": 0.0002,
-    "adx_min": 30,
-    "atr_sl_multiplier": 1.2,
-    "rsi_buy_max": 60,
-    "n_trades": 66,
-    "winrate": 50.0,
-    "pnl_net": -1153.71,
-    "max_dd": 14.2
+    "slope_threshold": 0.0001,
+    "adx_min": 25,
+    "atr_sl_multiplier": 1.0,
+    "rsi_buy_max": 65
   },
   "SOL/USDT": {
     "required_score": 5,
@@ -56,14 +44,10 @@
   },
   "ADA/USDT": {
     "required_score": 5,
-    "slope_threshold": 0.0002,
-    "adx_min": 30,
+    "slope_threshold": 0.0001,
+    "adx_min": 25,
     "atr_sl_multiplier": 1.2,
-    "rsi_buy_max": 60,
-    "n_trades": 107,
-    "winrate": 52.3,
-    "pnl_net": -2958.83,
-    "max_dd": 32.5
+    "rsi_buy_max": 65
   },
   "AVAX/USDT": {
     "required_score": 5,
