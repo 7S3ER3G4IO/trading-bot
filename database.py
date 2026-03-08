@@ -43,7 +43,10 @@ class Database:
             result      TEXT,
             fees        REAL DEFAULT 0,
             opened_at   TEXT,
-            closed_at   TEXT
+            closed_at   TEXT,
+            sl_order_id  TEXT,
+            tp1_order_id TEXT,
+            tp2_order_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS daily_stats (
@@ -67,7 +70,13 @@ class Database:
             max_drawdown REAL DEFAULT 0
         );
         """)
-        self.conn.commit()
+        # Migration pour les BDD existantes (ajoute les colonnes si absentes)
+        for col in ["sl_order_id", "tp1_order_id", "tp2_order_id"]:
+            try:
+                self.conn.execute(f"ALTER TABLE trades ADD COLUMN {col} TEXT")
+                self.conn.commit()
+            except Exception:
+                pass  # Colonne déjà existante
 
     # ─── Trades ──────────────────────────────────────────────────────────────
 

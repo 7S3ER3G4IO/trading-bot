@@ -59,7 +59,11 @@ class TradeState:
         self.trailing_active = False
         self.total_pnl     = 0.0
         self.total_fees    = 0.0
-        self.db_id         = db_id  # ID SQLite
+        self.db_id         = db_id
+        # Vrais IDs d'ordres Binance (None = surveillance logicielle)
+        self.sl_order_id   = None
+        self.tp1_order_id  = None
+        self.tp2_order_id  = None
 
     def is_open(self) -> bool:
         return self.remaining > 0.000001
@@ -134,13 +138,16 @@ class TradingBot:
                     tp1=t_dict["tp1"], tp2=t_dict["tp2"], tp3=t_dict["tp3"],
                     be=t_dict["be"], db_id=t_dict["id"]
                 )
-                state.current_sl   = t_dict["current_sl"]
-                state.remaining    = t_dict["remaining"]
-                state.tp1_hit      = bool(t_dict["tp1_hit"])
-                state.tp2_hit      = bool(t_dict["tp2_hit"])
-                state.be_active    = bool(t_dict["be_active"])
-                state.total_pnl    = t_dict["total_pnl"]
-                self.trades[symbol] = state
+                state.current_sl     = t_dict["current_sl"]
+                state.remaining      = t_dict["remaining"]
+                state.tp1_hit        = bool(t_dict["tp1_hit"])
+                state.tp2_hit        = bool(t_dict["tp2_hit"])
+                state.be_active      = bool(t_dict["be_active"])
+                state.total_pnl      = t_dict["total_pnl"]
+                state.sl_order_id    = t_dict.get("sl_order_id")
+                state.tp1_order_id   = t_dict.get("tp1_order_id")
+                state.tp2_order_id   = t_dict.get("tp2_order_id")
+                self.trades[symbol]  = state
                 logger.info(f"🔄 Trade restauré : {symbol} {t_dict['side']} @ {t_dict['entry']}")
             except Exception as e:
                 logger.error(f"❌ Restauration trade {symbol} : {e}")
@@ -271,6 +278,22 @@ class TradingBot:
         self.trades[symbol] = t
         self.risk.on_trade_opened()
 
+        # ══ VRAIS ORDRES BINANCE ══
+        frac = round(amount / 3, 5)
+        # Stop-Loss sur toute la position restante
+        t.sl_order_id = self.executor.place_stop_loss(symbol, sig, amount, levels["sl"])
+        # TP1 et TP2 : ordres LIMIT pour 1/3 de la position chacun
+        t.tp1_order_id = self.executor.place_take_profit(symbol, sig, frac, levels["tp1"])
+        t.tp2_order_id = self.executor.place_take_profit(symbol, sig, frac, levels["tp2"])
+        # TP3 : trailing stop logiciel (dynamique, pas d'ordre fixe)
+
+        # Persistance des IDs d'ordres
+        self.db.update_trade(t.db_id,
+            sl_order_id=t.sl_order_id,
+            tp1_order_id=t.tp1_order_id,
+            tp2_order_id=t.tp2_order_id,
+        )
+
         # Clavier inline
         from telegram_bot_handler import TelegramBotHandler
         keyboard = TelegramBotHandler.trade_keyboard(symbol)
@@ -338,10 +361,22 @@ class TradingBot:
             t.tp1_hit     = True
             t.current_sl  = t.be
             t.be_active   = True
-            self._close_partial(t.symbol, t.side, qty)
+
+            # L'ordre TP1 LIMIT a été exécuté par Binance — pas de close_partial nécessaire
+            # si TP1 order_id existe (ordre Binance fillé automatiquement)
+            if not t.tp1_order_id:
+                self._close_partial(t.symbol, t.side, qty)   # fallback logiciel
+
+            # ═ Remplacer le SL par un vrai ordre Break Even sur Binance ═
+            new_sl_id = self.executor.replace_stop_loss(
+                t.symbol, t.side, t.sl_order_id, t.remaining, t.be
+            )
+            t.sl_order_id = new_sl_id
+
             self.db.update_trade(t.db_id,
                 tp1_hit=1, be_active=1, current_sl=t.current_sl,
-                remaining=t.remaining, total_pnl=t.total_pnl
+                remaining=t.remaining, total_pnl=t.total_pnl,
+                sl_order_id=t.sl_order_id,
             )
             self.telegram.notify_tp_hit(
                 1, t.symbol, price, t.entry, pnl_g, fees,
@@ -350,7 +385,7 @@ class TradingBot:
             self.reporter.record_trade(
                 t.symbol, t.side, "TP1", pnl_g, t.entry, price, qty
             )
-            logger.info(f"🎯 {t.symbol} TP1 | SL→BE={t.be:.2f}")
+            logger.info(f"🎯 {t.symbol} TP1 | SL→BE={t.be:.2f} (ordre Binance placé)")
             return
 
         # TP2
@@ -362,8 +397,12 @@ class TradingBot:
             t.total_fees += fees
             t.remaining  -= qty
             t.tp2_hit     = True
-            t.trailing_active = True  # Active le trailing stop
-            self._close_partial(t.symbol, t.side, qty)
+            t.trailing_active = True
+
+            # TP2 LIMIT Binance fillé automatiquement si ordre existait
+            if not t.tp2_order_id:
+                self._close_partial(t.symbol, t.side, qty)  # fallback logiciel
+
             self.db.update_trade(t.db_id,
                 tp2_hit=1, remaining=t.remaining, total_pnl=t.total_pnl
             )
@@ -398,11 +437,18 @@ class TradingBot:
             pnl_g = (abs(t.current_sl - t.entry) * qty * (-1 if not t.be_active else 0))
             t.total_pnl  += pnl_g
             t.total_fees += fees
-            self._close_partial(t.symbol, t.side, qty)
+
+            # Annule tous les ordres Binance restants (TP3 limit s'il existe, etc.)
+            self.executor.cancel_all_orders(t.symbol)
+
+            # Si pas de vrai ordre SL (surveillance logicielle), close manuellement
+            if not t.sl_order_id:
+                self._close_partial(t.symbol, t.side, qty)
+
             self.telegram.notify_sl_hit(
                 t.symbol, price, t.entry, t.be_active, pnl_g, fees, balance
             )
-            label = "Break Even 🛡️" if t.be_active else "Stop-Loss 🛑"
+            label = "Break Even" if t.be_active else "Stop-Loss"
             self._finalize_trade(t, price, label, balance)
 
     def _post_wallet_stats(self, balance: float):
