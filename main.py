@@ -23,6 +23,7 @@ from market_context import MarketContext
 from database import Database
 from chart_generator import ChartGenerator
 from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
+from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS
 
 BINANCE_FEE_RATE  = 0.001   # 0.1% par ordre
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
@@ -103,11 +104,19 @@ class TradingBot:
         else:
             logger.info("ℹ️  OANDA non configuré — uniquement crypto Binance")
 
+        # Broker Binance Futures Demo (XAU/USDT — or vs crypto hedge)
+        self.futures = BinanceFuturesClient()
+        if self.futures.available:
+            logger.info(f"🥇 Binance Futures Demo actif — {', '.join(FUTURES_INSTRUMENTS)}")
+        else:
+            logger.info("ℹ️  Binance Futures non configuré")
+
         bal = self.fetcher.get_balance()["free"]
         self.risk             = RiskManager(bal)
         self.initial_balance  = bal
         self.trades: Dict[str, Optional[TradeState]]       = {s: None for s in SYMBOLS}
-        self.oanda_trades: Dict[str, Optional[str]]         = {s: None for s in OANDA_INSTRUMENTS}  # symbol -> trade_id OANDA
+        self.oanda_trades: Dict[str, Optional[str]]         = {s: None for s in OANDA_INSTRUMENTS}
+        self.futures_trades: Dict[str, Optional[str]]       = {s: None for s in FUTURES_INSTRUMENTS}
 
         self.last_reset_day       = datetime.now(timezone.utc).date()
         self.last_report_hour     = -1
@@ -257,6 +266,82 @@ class TradingBot:
                     self._process_oanda_symbol(instrument, oanda_balance)
                 except Exception as e:
                     logger.error(f"❌ OANDA {instrument} : {e}")
+
+        # ─── Loop Binance Futures (XAU + crypto futures) ─────────────────────
+        if self.futures.available and not self._manual_pause:
+            fut_balance = self.futures.get_balance()
+            for instrument in FUTURES_INSTRUMENTS:
+                try:
+                    self._process_futures_symbol(instrument, fut_balance)
+                except Exception as e:
+                    logger.error(f"❌ Futures {instrument} : {e}")
+
+    def _process_futures_symbol(self, instrument: str, balance: float):
+        """
+        Analyse un instrument Binance Futures (XAU/USDT, BTC/USDT:USDT…)
+        et passe un ordre futures si le signal est confirmé.
+        Endpoint : demo-fapi.binance.com (5000 USDT virtuels).
+        """
+        # Trade déjà ouvert sur cet instrument
+        if self.futures_trades.get(instrument):
+            return
+
+        # Vérification session (London + NY open uniquement)
+        if not self.strategy.is_session_ok():
+            return
+
+        # Données OHLCV depuis Binance Futures Demo
+        df = self.futures.fetch_ohlcv(instrument, timeframe="5m", count=300)
+        if df is None or len(df) < 100:
+            return
+
+        # Indicateurs + signal (même stratégie que crypto + Liquidity Sweep)
+        df = self.strategy.compute_indicators(df)
+        sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
+
+        if sig == "HOLD":
+            return
+
+        entry = float(df.iloc[-1]["close"])
+        atr   = self.strategy.get_atr(df)
+        if atr <= 0:
+            return
+
+        # SL = 0.8 × ATR (tight pour scalping), TP1 = 2×, TP2 intégré via SL→BE
+        sl_dist = atr * 0.8
+        sl  = entry - sl_dist if sig == "BUY" else entry + sl_dist
+        tp  = entry + sl_dist * 2.0 if sig == "BUY" else entry - sl_dist * 2.0
+
+        # Taille de position via position_size_qty du futures client
+        qty = self.futures.position_size_qty(
+            balance=balance, risk_pct=0.01,
+            entry=entry, sl=sl, instrument=instrument,
+        )
+        if qty <= 0:
+            return
+
+        trade_id = self.futures.place_market_order(
+            instrument=instrument,
+            side=sig,
+            qty=qty,
+            sl_price=sl,
+            tp_price=tp,
+        )
+
+        if trade_id:
+            self.futures_trades[instrument] = trade_id
+            name = instrument.replace(":USDT", "").replace("/", "")
+            self.telegram.send_message(
+                f"🥇 <b>Futures Demo Signal</b> — {name}\n"
+                f"{'🟢 LONG' if sig == 'BUY' else '🔴 SHORT'}   Score {score}/7\n"
+                f"\n"
+                f"📍 Entrée : <code>{entry:.2f}</code>\n"
+                f"🛑 SL     : <code>{sl:.2f}</code> ({sl_dist:.2f}$)\n"
+                f"🎯 TP     : <code>{tp:.2f}</code> (R:R 1:2)\n"
+                f"\n"
+                f"💼 Qté : {qty:.4f} | TradeID: {trade_id}\n"
+                f"🏦 <i>Binance Futures Demo (0 vrai argent)</i>"
+            )
 
     def _process_oanda_symbol(self, instrument: str, balance: float):
         """
