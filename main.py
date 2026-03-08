@@ -31,6 +31,13 @@ try:
 except ImportError:
     _DASHBOARD_OK = False
 
+try:
+    from morning_brief import generate_morning_brief
+    _MORNING_OK = True
+except ImportError:
+    _MORNING_OK = False
+    logger.warning("⚠️  morning_brief non disponible")
+
 
 BINANCE_FEE_RATE  = 0.001   # 0.1% par ordre
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
@@ -139,6 +146,9 @@ class TradingBot:
 
         # ─── #4 Auto-Hyperopt hebdomadaire ──────────────────────────────
         self._last_hyperopt_week   = None         # Semaine ISO du dernier Hyperopt
+
+        # ─── Matinale (envoyée 1× par jour à 07h UTC) ────────────────────
+        self._last_morning_day     = None         # Date du dernier envoi matinale
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -329,6 +339,19 @@ class TradingBot:
                 self._last_hyperopt_week != current_week):
             self._last_hyperopt_week = current_week
             self._run_auto_hyperopt()
+
+        # ── Matinale 07h UTC (session London) ────────────────────────────
+        today = now.date()
+        if (now.hour == 7 and now.minute == 0 and
+                self._last_morning_day != today and _MORNING_OK):
+            self._last_morning_day = today
+            import threading
+            threading.Thread(
+                target=lambda: generate_morning_brief(SYMBOLS, self.telegram),
+                daemon=True,
+                name="morning-brief"
+            ).start()
+            logger.info("☀️  Matinale lancée en arrière-plan")
 
 
         # Calendrier économique
