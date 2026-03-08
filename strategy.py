@@ -35,13 +35,13 @@ SIGNAL_SELL = "SELL"
 SIGNAL_HOLD = "HOLD"
 
 # Seuil de confirmations requis sur 6 filtres
-REQUIRED_SCORE = 5   # Min score sur 6 — 5/6 requis (backtest: 4/6 = perdant)
+REQUIRED_SCORE = 5   # Min score sur 6 — 5/6 requis (qualité > quantité)
 
 # Filtre régime de marché — EMA 200 slope
 EMA_TREND_PERIOD = 200         # EMA longue période
 SLOPE_WINDOW     = 5           # Nombre de bougies pour calculer la pente
-SLOPE_THRESHOLD  = 0.0002      # Seuil de slope (0.02% par bougie = trending)
-                                # En-dessous = marché en range → pas de trade
+SLOPE_THRESHOLD  = 0.0001      # Seuil slope (0.01% / bougie) — compromis :
+                                # 0.0002 = trop restrictif | 0.00008 = trop permissif
 
 
 class Strategy:
