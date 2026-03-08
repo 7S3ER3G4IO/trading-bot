@@ -1,120 +1,179 @@
-#!/usr/bin/env python3
 """
-walk_forward.py — Walk-Forward Testing (#5)
+walk_forward.py — Walk-Forward Optimization Automatique (#2)
 
-Valide la stratégie sur des données que l'optimiseur n'a PAS vues.
-Principe : entraîner sur N jours, tester sur les M jours suivants (out-of-sample).
+Divise l'historique en fenêtres glissantes :
+  - In-sample (IS)  : 60 jours → optimiser les paramètres
+  - Out-of-sample (OOS) : 20 jours → valider sur données non vues
+
+Méthode :
+  1. Divise 80 jours d'historique en IS+OOS
+  2. Hyperopt Optuna sur IS → params optimaux
+  3. Backtest sur OOS avec ces params
+  4. Décale d'1 fenêtre → répète
 
 Usage :
-    python3 walk_forward.py                    # 12 fenêtres (défaut)
-    python3 walk_forward.py --windows 8        # 8 fenêtres
-    python3 walk_forward.py --train 14 --test 7
+    python3 walk_forward.py
+    python3 walk_forward.py --symbol ETH/USDT --windows 3
 """
-import argparse, sys, json, warnings
+import sys, warnings, argparse, json, os
 warnings.filterwarnings("ignore")
 sys.path.insert(0, ".")
-import pandas as pd
-from datetime import datetime, timezone, timedelta
-from optimizer import get_exchange, download, precompute, vectorized_backtest
-from backtester import fetch_historical
 
-SESSION = set(range(7, 11)) | set(range(13, 17))
-CAPITAL = 10_000.
+import numpy as np
+from loguru import logger
+from datetime import datetime, timezone
 
-def walk_forward_test(symbol: str, train_days: int = 14, test_days: int = 7,
-                      windows: int = 8, trials: int = 50) -> dict:
-    """Teste la stratégie sur des données out-of-sample."""
-    import optuna
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
+try:
+    from backtester import fetch_historical, get_exchange
+    from optimizer import precompute, vectorized_backtest, _default_params
+    from config import SYMBOLS
+except ImportError as e:
+    print(f"❌ Import error: {e}")
+    sys.exit(1)
 
-    total_days = (train_days + test_days) * windows
-    exc = get_exchange()
-    print(f"  📥 {symbol} — {total_days}j de données...")
-    df_all = fetch_historical(exc, symbol, "5m", total_days)
-    df_all = precompute(df_all)
-    if df_all is None:
+IS_DAYS     = 60   # In-sample : 60 jours
+OOS_DAYS    = 20   # Out-of-sample : 20 jours
+WFO_FILE    = "walk_forward_results.json"
+
+
+def run_wfo(symbol: str, n_windows: int = 3, n_trials: int = 30) -> dict:
+    """
+    Lance le Walk-Forward Optimization pour un symbole.
+    Retourne les résultats OOS moyens.
+    """
+    exc        = get_exchange()
+    total_days = IS_DAYS + OOS_DAYS + (n_windows - 1) * OOS_DAYS + 5
+    print(f"\n  📥 {symbol} — {total_days}j de données ({n_windows} fenêtres)...")
+
+    try:
+        df = fetch_historical(exc, symbol, "5m", total_days)
+        df = precompute(df)
+    except Exception as e:
+        logger.error(f"WFO {symbol}: {e}")
         return {}
 
+    cpd     = 288   # candles per day (5m)
+    oos_n   = OOS_DAYS * cpd
+    is_n    = IS_DAYS  * cpd
     results = []
-    candles_per_day = 288  # 5m
-    train_len = train_days * candles_per_day
-    test_len  = test_days  * candles_per_day
 
-    for w in range(windows):
-        start = w * test_len
-        train_end = start + train_len
-        test_end  = train_end + test_len
-        if test_end > len(df_all):
+    for w in range(n_windows):
+        offset    = w * oos_n
+        end_oos   = len(df) - offset
+        start_oos = end_oos - oos_n
+        start_is  = start_oos - is_n
+
+        if start_is < 0:
+            print(f"    ⚠️  Fenêtre {w+1} : données insuffisantes")
             break
 
-        df_train = df_all.iloc[start:train_end]
-        df_test  = df_all.iloc[train_end:test_end]
+        is_df  = df.iloc[start_is:start_oos].copy()
+        oos_df = df.iloc[start_oos:end_oos].copy()
 
-        # Optimise sur la fenêtre d'entraînement
-        def objective(trial):
-            p = {
-                "required_score":    trial.suggest_int("required_score", 4, 6),
-                "slope_threshold":   trial.suggest_float("slope_threshold", 0.00005, 0.0005, log=True),
-                "adx_min":           trial.suggest_int("adx_min", 15, 40),
-                "atr_sl_multiplier": trial.suggest_float("atr_sl_multiplier", 0.6, 2.0),
-                "rsi_buy_max":       trial.suggest_int("rsi_buy_max", 55, 75),
-                "tp_multiplier":     trial.suggest_float("tp_multiplier", 1.5, 4.0),
-            }
-            n, wr, pnl, dd = vectorized_backtest(df_train, p)
-            if n < 3: raise optuna.exceptions.TrialPruned()
-            score = pnl
-            if dd > 15: score -= (dd - 15) * 80
-            return score
+        if len(is_df) < 500 or len(oos_df) < 100:
+            break
 
-        study = optuna.create_study(direction="maximize",
-                  sampler=optuna.samplers.TPESampler(seed=w))
-        study.optimize(objective, n_trials=trials, show_progress_bar=False)
-        best_p = study.best_params
+        print(f"\n  ── Fenêtre {w+1}/{n_windows} ─────────────────────────")
+        print(f"     IS  : {len(is_df)} bougies | OOS : {len(oos_df)} bougies")
 
-        # Teste sur la fenêtre out-of-sample
-        n, wr, pnl, dd = vectorized_backtest(df_test, best_p)
-        t_start = df_test.index[0].strftime("%Y-%m-%d")
-        t_end   = df_test.index[-1].strftime("%Y-%m-%d")
-        results.append({"window": w+1, "start": t_start, "end": t_end,
-                        "n": n, "wr": wr, "pnl": pnl, "dd": dd})
-        e = "🟢" if pnl > 0 else "🔴"
-        print(f"    {e} Win {w+1:2d} [{t_start}→{t_end}]  "
-              f"{n}t  WR={wr:.0f}%  PnL={pnl:>+.0f}$  DD={dd:.1f}%")
+        # Optimisation Optuna sur IS
+        best_params = _default_params()
+        try:
+            import optuna
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    if not results: return {}
-    avg_pnl = sum(r["pnl"] for r in results) / len(results)
-    wins    = sum(1 for r in results if r["pnl"] > 0)
-    return {"symbol": symbol, "windows": len(results), "wins": wins,
-            "avg_pnl_per_window": round(avg_pnl, 2),
-            "win_pct": round(wins/len(results)*100, 1)}
+            def objective(trial):
+                p = {
+                    "ema_fast":      trial.suggest_int("ema_fast",     5,  20),
+                    "ema_slow":      trial.suggest_int("ema_slow",    20,  60),
+                    "rsi_period":    trial.suggest_int("rsi_period",  10,  21),
+                    "rsi_ob":        trial.suggest_int("rsi_ob",      65,  80),
+                    "rsi_os":        trial.suggest_int("rsi_os",      20,  35),
+                    "atr_sl_mult":   trial.suggest_float("atr_sl_mult", 0.8, 2.5),
+                    "tp_multiplier": trial.suggest_float("tp_multiplier", 1.5, 4.0),
+                    "min_adx":       trial.suggest_int("min_adx",     15,  35),
+                }
+                n, wr, pnl, dd, sharpe, _ = vectorized_backtest(is_df, p)
+                if n < 3: return -999
+                return pnl * (1 + sharpe) - dd * 2
+
+            study = optuna.create_study(direction="maximize")
+            study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+            best_params = study.best_params
+            print(f"     Best IS score: {study.best_value:.2f}")
+        except Exception as e:
+            logger.debug(f"WFO optuna w{w}: {e}")
+
+        # Validation OOS
+        n, wr, pnl, dd, sharpe, sortino = vectorized_backtest(oos_df, best_params)
+
+        verdict = "✅" if sharpe > 0 and wr > 45 else "⚠️ " if sharpe > -0.1 else "❌"
+        print(f"     {verdict} OOS — Trades={n}  WR={wr:.0f}%  PnL={pnl:+.2f}$  Sharpe={sharpe:.3f}")
+
+        results.append({
+            "window": w + 1, "trades": n,
+            "wr": round(wr, 1), "pnl": round(pnl, 2),
+            "max_dd": round(dd, 2), "sharpe": round(sharpe, 3),
+        })
+
+    if not results:
+        return {}
+
+    avg_sharpe = round(np.mean([r["sharpe"] for r in results]), 3)
+    avg_wr     = round(np.mean([r["wr"]     for r in results]), 1)
+    avg_pnl    = round(np.mean([r["pnl"]    for r in results]), 2)
+    avg_dd     = round(np.mean([r["max_dd"] for r in results]), 2)
+    robust     = avg_sharpe > 0.1 and avg_wr > 40
+
+    status = "✅ ROBUSTE" if robust else "⚠️  FRAGILE"
+    print(f"\n  {status} — Sharpe OOS={avg_sharpe:.3f}  WR={avg_wr:.0f}%  PnL={avg_pnl:+.2f}$")
+
+    return {
+        "symbol": symbol, "n_windows": len(results), "windows": results,
+        "avg_sharpe": avg_sharpe, "avg_wr": avg_wr,
+        "avg_pnl": avg_pnl, "avg_dd": avg_dd, "robust": robust,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def save_results(results: dict):
+    existing = {}
+    if os.path.exists(WFO_FILE):
+        try:
+            with open(WFO_FILE) as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing.update(results)
+    with open(WFO_FILE, "w") as f:
+        json.dump(existing, f, indent=2)
+    logger.info(f"💾 WFO sauvegardé → {WFO_FILE}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train",   type=int, default=14)
-    parser.add_argument("--test",    type=int, default=7)
-    parser.add_argument("--windows", type=int, default=6)
-    parser.add_argument("--trials",  type=int, default=40)
+    parser.add_argument("--symbol",  default=None)
+    parser.add_argument("--windows", type=int, default=3)
+    parser.add_argument("--trials",  type=int, default=30)
     args = parser.parse_args()
 
-    from config import SYMBOLS
-    print(f"\n🔍 Walk-Forward Test | train={args.train}j test={args.test}j | {args.windows} fenêtres | {args.trials} trials\n")
+    symbols = [args.symbol] if args.symbol else SYMBOLS[:2]
 
-    all_res = {}
-    for sym in SYMBOLS:
-        print(f"\n  ═══ {sym} ═══")
-        res = walk_forward_test(sym, args.train, args.test, args.windows, args.trials)
+    print(f"\n🔄 Walk-Forward Optimization — AlphaTrader")
+    print(f"   IS={IS_DAYS}j | OOS={OOS_DAYS}j | Fenêtres={args.windows} | Trials={args.trials}\n")
+
+    all_results = {}
+    for sym in symbols:
+        res = run_wfo(sym, args.windows, args.trials)
         if res:
-            all_res[sym] = res
-            e = "🟢" if res["win_pct"] >= 50 else "🔴"
-            print(f"  {e} {sym:<12} → {res['wins']}/{res['windows']} fenêtres positives "
-                  f"({res['win_pct']}%) | PnL moy/fenêtre : {res['avg_pnl_per_window']:>+.0f}$")
+            all_results[sym] = res
 
-    print(f"\n{'='*60}")
-    print(f"  Walk-Forward Summary")
-    print(f"{'='*60}")
-    for sym, r in all_res.items():
-        e = "🟢" if r["win_pct"] >= 50 else "🔴"
-        print(f"  {e} {sym:<12}  {r['win_pct']:>5.1f}% positif  "
-              f"avg PnL/sem = {r['avg_pnl_per_window']:>+.0f}$")
-    print(f"{'='*60}\n")
+    save_results(all_results)
+
+    print(f"\n{'═'*52}")
+    print(f"  VERDICT FINAL — Walk-Forward")
+    print(f"{'═'*52}")
+    for sym, res in all_results.items():
+        status = "✅ ROBUSTE" if res["robust"] else "⚠️  FRAGILE"
+        print(f"  {sym:<14} {status}  Sharpe={res['avg_sharpe']:.3f}  WR={res['avg_wr']:.0f}%")
+    print()

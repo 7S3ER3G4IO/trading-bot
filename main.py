@@ -93,6 +93,23 @@ try:
 except ImportError:
     _PROTECTION_OK = False
 
+try:
+    from volatility_regime import VolatilityRegime
+    _VOLREG_OK = True
+except ImportError:
+    _VOLREG_OK = False
+
+try:
+    from drift_detector import DriftDetector
+    _DRIFT_OK = True
+except ImportError:
+    _DRIFT_OK = False
+
+try:
+    from twap_executor import TWAPExecutor
+    _TWAP_OK = True
+except ImportError:
+    _TWAP_OK = False
 
 BINANCE_FEE_RATE  = 0.001   # 0.1% par ordre
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
@@ -229,6 +246,16 @@ class TradingBot:
             self._webhook.start()
         else:
             self._webhook = None
+
+        # ─── Batch 4 — Features avancées ────────────────────────────────────
+        self.vol_regime = VolatilityRegime() if _VOLREG_OK else None
+        self.drift      = DriftDetector()    if _DRIFT_OK  else None
+        self.twap       = TWAPExecutor()     if _TWAP_OK   else None
+        # DCA pyramiding state : {symbol: {"entry_price", "qty", "ts"}}
+        self._dca_positions: dict = {}
+        # Benchmark BTC : {date: btc_price}
+        self._btc_ref_price: float = 0.0
+        self._bot_ref_balance: float = bal
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -711,7 +738,7 @@ class TradingBot:
             balance, price, levels["sl"],
             win_rate=wr_hist,
             rr_ratio=max(1.0, rr_ratio),
-            sentiment_scale=sentiment_scale,
+            sentiment_scale=combined_scale,
         )
         if amount <= 0:
             return
