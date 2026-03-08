@@ -166,7 +166,9 @@ def vectorized_backtest(df: pd.DataFrame, params: dict, risk: float = 0.01) -> t
         else:
             continue
 
-        entry = r["close"]
+        # #8 Slippage réaliste : 0.05% sur prix d'entrée
+        SLIPPAGE = 0.0005
+        entry = r["close"] * (1 + SLIPPAGE if side == "BUY" else 1 - SLIPPAGE)
         atr_v = r["atr"]
         sl_d  = atr_v * atr_m
         if sl_d <= 0:
@@ -215,12 +217,24 @@ def vectorized_backtest(df: pd.DataFrame, params: dict, risk: float = 0.01) -> t
         trades.append({"result": result, "net": net})
 
     if not trades:
-        return 0, 0.0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     wins    = sum(1 for t in trades if t["result"] == "TP")
     wr      = wins / len(trades) * 100
     pnl_net = sum(t["net"] for t in trades)
-    return len(trades), wr, pnl_net, max_dd
+    nets    = np.array([t["net"] for t in trades])
+
+    # ── #1 Sharpe & Sortino (à partir des PnLs par trade) ────────────────
+    # Sharpe = moyenne PnL / écart-type  (rendement ajusté risque)
+    # Sortino = moyenne PnL / std des PnL négatifs uniquement
+    mean_pnl = nets.mean()
+    std_pnl  = nets.std() + 1e-9
+    sharpe   = mean_pnl / std_pnl
+
+    neg_pnls = nets[nets < 0]
+    sortino  = mean_pnl / (neg_pnls.std() + 1e-9) if len(neg_pnls) > 0 else sharpe
+
+    return len(trades), wr, pnl_net, max_dd, sharpe, sortino
 
 
 # ─── Fonction objectif Optuna ─────────────────────────────────────────────────
@@ -238,20 +252,22 @@ def make_objective(df: pd.DataFrame):
             "tp_multiplier":     trial.suggest_float("tp_multiplier",   1.5, 4.0),
         }
 
-        n, wr, pnl, dd = vectorized_backtest(df, params)
+        n, wr, pnl, dd, sharpe, sortino = vectorized_backtest(df, params)
 
         # Pruning : abandonne les trials avec trop peu de trades
         if n < 3:
             raise optuna.exceptions.TrialPruned()
 
-        # Score composite : maximise PnL, pénalise DD>15% et WR<35%
-        score = pnl
+        # Score composite : maximise PnL + Sharpe, pénalise DD>15%
+        score = pnl + sharpe * 100   # Sharpe contribue au score
         if dd > 15.0:
             score -= (dd - 15.0) * 80
         if wr < 35.0:
             score -= (35.0 - wr) * 30
         if wr > 55.0:
             score += (wr - 55.0) * 20
+        if sortino > 0:
+            score += sortino * 50     # Bonus si ratio pertes favorable
 
         return score
 
@@ -291,7 +307,7 @@ def hyperopt_symbol(symbol: str, days: int, tf: str, n_trials: int = 100, df_pre
         return _default_params()
 
     best_params = study.best_params
-    n, wr, pnl, dd = vectorized_backtest(df_pre, best_params)
+    n, wr, pnl, dd, sharpe, sortino = vectorized_backtest(df_pre, best_params)
 
     result = {
         **best_params,
@@ -299,6 +315,8 @@ def hyperopt_symbol(symbol: str, days: int, tf: str, n_trials: int = 100, df_pre
         "winrate":  round(wr, 1),
         "pnl_net":  round(pnl, 2),
         "max_dd":   round(dd, 1),
+        "sharpe":   round(sharpe, 3),
+        "sortino":  round(sortino, 3),
     }
 
     e = "🟢" if pnl > 0 else "🔴"
@@ -307,7 +325,8 @@ def hyperopt_symbol(symbol: str, days: int, tf: str, n_trials: int = 100, df_pre
           f"ADX≥{best_params['adx_min']}  "
           f"SL×{best_params['atr_sl_multiplier']:.1f}  "
           f"TP×{best_params['tp_multiplier']:.1f}  "
-          f"→ WR={wr:.0f}%  PnL={pnl:>+.0f}$  DD={dd:.1f}%  ({n}t)")
+          f"→ WR={wr:.0f}%  PnL={pnl:>+.0f}$  DD={dd:.1f}%  "
+          f"Sharpe={sharpe:.2f}  ({n}t)")
 
     return result
 

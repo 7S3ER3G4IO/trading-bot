@@ -31,12 +31,15 @@ class TelegramBotHandler:
         self._running = True
 
         # Callbacks depuis main.py
-        self._get_status:  Optional[Callable[[], str]] = None
-        self._get_trades:  Optional[Callable[[], Tuple[str, Optional[InlineKeyboardMarkup]]]] = None
-        self._close_trade: Optional[Callable[[str], str]] = None
-        self._force_be:    Optional[Callable[[str], str]] = None
-        self._pause_cb:    Optional[Callable[[], None]]   = None
-        self._resume_cb:   Optional[Callable[[], None]]   = None
+        self._get_status:      Optional[Callable[[], str]] = None
+        self._get_trades:      Optional[Callable[[], Tuple[str, Optional[InlineKeyboardMarkup]]]] = None
+        self._close_trade:     Optional[Callable[[str], str]] = None
+        self._force_be:        Optional[Callable[[str], str]] = None
+        self._pause_cb:        Optional[Callable[[], None]]   = None
+        self._resume_cb:       Optional[Callable[[], None]]   = None
+        self._get_performance: Optional[Callable[[], str]]    = None
+        self._get_count:       Optional[Callable[[], str]]    = None
+        self._get_equity:      Optional[Callable[[], str]]    = None
 
         if not self.token or not self.chat_id:
             logger.warning("⚠️  TelegramBotHandler désactivé")
@@ -44,13 +47,17 @@ class TelegramBotHandler:
         logger.info("🤖 TelegramBotHandler initialisé — polling actif")
 
     def register_callbacks(self, get_status, get_trades, close_trade,
-                           force_be, pause, resume):
-        self._get_status  = get_status
-        self._get_trades  = get_trades
-        self._close_trade = close_trade
-        self._force_be    = force_be
-        self._pause_cb    = pause
-        self._resume_cb   = resume
+                           force_be, pause, resume,
+                           get_performance=None, get_count=None, get_equity=None):
+        self._get_status      = get_status
+        self._get_trades      = get_trades
+        self._close_trade     = close_trade
+        self._force_be        = force_be
+        self._pause_cb        = pause
+        self._resume_cb       = resume
+        self._get_performance = get_performance  # #11 /performance
+        self._get_count       = get_count        # #11 /count
+        self._get_equity      = get_equity       # #11 /equity
 
     def is_paused(self) -> bool:
         return self._paused
@@ -107,13 +114,17 @@ class TelegramBotHandler:
 
         if cmd == "/start":
             self._reply(
-                "⚡ *AlphaTrader v2.0*\n\n"
-                "📊 /status — Solde & état\n"
+                "⚡ <b>AlphaTrader v2.5</b>\n\n"
+                "📊 /status — Solde &amp; état\n"
                 "📋 /trades — Positions actives\n"
-                "⏸️ /pause — Pauser\n"
+                "📈 /performance — Sharpe, Sortino, WR\n"
+                "🔢 /count — Nombre de trades ouverts\n"
+                "💹 /equity — Courbe de performance\n"
+                "⏸️ /pause — Pauser le bot\n"
                 "▶️ /resume — Reprendre\n"
-                "🔴 /close BTC — Fermer un trade\n"
-                "❓ /help — Aide"
+                "🔴 /close XRP — Fermer un trade\n"
+                "⚙️  /hyperopt — Relancer l'optimisation\n"
+                "🌐 /pairlist — Meilleurs actifs du moment"
             )
         elif cmd == "/help":
             self._reply(
@@ -147,11 +158,56 @@ class TelegramBotHandler:
             self._reply("▶️ *Bot actif* — Surveillance reprise.")
         elif cmd == "/close":
             if len(parts) < 2:
-                self._reply("Usage : `/close BTC`")
+                self._reply("Usage : <code>/close XRP</code>")
                 return
             symbol = f"{parts[1].upper()}/USDT"
             result = self._close_trade(symbol) if self._close_trade else "Erreur"
             self._reply(result)
+
+        # ─── #11 Nouvelles commandes 2026 ──────────────────────────────────
+        elif cmd == "/performance":
+            if self._get_performance:
+                self._reply(self._get_performance())
+            else:
+                self._reply(
+                    "⚡ <b>PERFORMANCE</b>\n"
+                    "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    "\n  Données non disponibles encore."
+                    "\n  Relancer après le premier trade.\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+                )
+        elif cmd == "/count":
+            if self._get_count:
+                self._reply(self._get_count())
+            else:
+                self._reply("<code>Trades ouverts : 0</code>")
+
+        elif cmd == "/equity":
+            if self._get_equity:
+                self._reply(self._get_equity())
+            else:
+                self._reply("<code>Historique equity non disponible.</code>")
+
+        elif cmd == "/hyperopt":
+            self._reply(
+                "⚙️ <b>Auto-Hyperopt lancé</b>\n"
+                "<code>Optimisation en arrière-plan...\n"
+                "Résultats dans ~60 secondes.</code>"
+            )
+            import threading, subprocess, sys
+            def _go():
+                subprocess.run(
+                    [sys.executable, "optimizer.py", "--days", "14", "--trials", "50"],
+                    capture_output=True, timeout=300
+                )
+            threading.Thread(target=_go, daemon=True).start()
+
+        elif cmd == "/pairlist":
+            self._reply(
+                "⚡ <b>DYNAMIC PAIRLIST</b>\n"
+                "<code>Lancer : python3 dynamic_pairlist.py\n"
+                "pour voir les actifs les plus volatils.</code>"
+            )
 
     def _handle_callback(self, cq: dict):
         cq_id  = cq["id"]
@@ -183,7 +239,7 @@ class TelegramBotHandler:
         payload = {
             "chat_id":    self.chat_id,
             "text":       text,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
         }
         if markup:
             import json

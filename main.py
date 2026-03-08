@@ -560,7 +560,8 @@ class TradingBot:
         price  = ticker["last"]
         atr    = self.strategy.get_atr(df)
         levels = self.risk.calculate_levels(price, atr, sig)
-        amount = self.risk.position_size(balance, price, levels["sl"])
+        amount = self.risk.position_size(balance, price, levels["sl"],
+                                         signal_score=score, max_score=8)
         if amount <= 0:
             return
 

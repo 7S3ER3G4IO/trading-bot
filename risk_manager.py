@@ -95,9 +95,27 @@ class RiskManager:
         )
         return levels
 
-    def position_size(self, balance: float, entry_price: float, sl_price: float) -> float:
-        """Taille de la position totale (en unités crypto)."""
-        capital_at_risk = balance * RISK_PER_TRADE
+    def position_size(self, balance: float, entry_price: float, sl_price: float,
+                      signal_score: int = 0, max_score: int = 8) -> float:
+        """
+        #4 Position Sizing Dynamique.
+        Taille de la position modulée par la confiance du signal :
+          score 5/8 → 0.5% du capital (entrée prudente)
+          score 6/8 → 1.0% du capital (standard)
+          score 7/8 → 1.5% du capital (confiant)
+          score 8/8 → 2.0% du capital (très confiant)
+        """
+        # Calcul du risk dynamique selon le score
+        if signal_score >= max_score:
+            dynamic_risk = RISK_PER_TRADE * 2.0    # max 2x
+        elif signal_score >= max_score - 1:
+            dynamic_risk = RISK_PER_TRADE * 1.5
+        elif signal_score >= max_score - 2:
+            dynamic_risk = RISK_PER_TRADE * 1.0    # standard
+        else:
+            dynamic_risk = RISK_PER_TRADE * 0.5    # prudent
+
+        capital_at_risk = balance * dynamic_risk
         sl_distance     = abs(entry_price - sl_price)
 
         if sl_distance == 0:
@@ -106,8 +124,8 @@ class RiskManager:
 
         size = capital_at_risk / sl_distance
         logger.info(
-            f"📦 Taille position : {size:.6f} BTC | "
-            f"Capital risqué : {capital_at_risk:.2f} USDT"
+            f"📦 Position : {size:.6f} | Score {signal_score}/{max_score} "
+            f"→ Risk {dynamic_risk:.1%} | Capital risqué : {capital_at_risk:.2f} USDT"
         )
         return size
 
