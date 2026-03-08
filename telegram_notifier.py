@@ -231,28 +231,39 @@ class TelegramNotifier:
 
     def notify_daily_report(self, report_lines: list, date_str: str):
         """
-        report_lines = liste de tuples : (date, side, ticker, result_str)
-        ex: [("06/03", "ACHAT", "BTC", "+680 pips"), ...]
+        report_lines = liste de tuples : (date, side, ticker, result_str, pnl_net)
+        ex: [("06/03", "ACHAT", "BTC", "+680 pips", +82.50), ...]
         """
-        wins  = sum(1 for _, _, _, r in report_lines if r.startswith("+"))
-        total = len(report_lines)
+        total     = len(report_lines)
+        wins      = sum(1 for *_, r, __ in report_lines if r.startswith("+"))
+        total_net = sum(pnl for *_, pnl in report_lines)
 
         lines = ""
-        for date, side, ticker, result in report_lines:
+        for row in report_lines:
+            # Compatibilité ancienne version (4-tuple) et nouvelle (5-tuple)
+            if len(row) == 5:
+                date, side, ticker, result, pnl = row
+                pnl_str = f"  {pnl:+.2f}$" if result != "BE" else ""
+            else:
+                date, side, ticker, result = row
+                pnl_str = ""
+
             if result == "BE":
-                lines += f"{date} {side} {ticker} (BE)\n"
+                lines += f"🛡️ {date} {side} {ticker} (BE)\n"
             else:
                 prefix = "🟢" if result.startswith("+") else "🔴"
-                lines += f"{prefix} {date} {side} {ticker} {result}\n"
+                lines += f"{prefix} {date} {side} {ticker}  {result}{pnl_str}\n"
 
         self._send(
             f"📊 *BILAN — {date_str}*\n"
             f"```\n"
             f"{lines}\n"
             f"BILAN TRADES : {wins}/{total}\n"
+            f"PnL net      : {total_net:+.2f} USDT\n"
             f"```",
             markup=self._wallet_button(),
         )
+
 
     def notify_weekly_report(self, report: str):
         self._send(report)

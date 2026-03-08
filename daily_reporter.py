@@ -119,8 +119,9 @@ class DailyReporter:
     def build_report_lines(self) -> list:
         """
         Format minimaliste pour le bilan Telegram.
-        Retourne [(date_str, action, ticker, result_str), ...]
+        Retourne [(date_str, action, ticker, result_str, pnl_net), ...]
         result_str = "+680 pips" | "-310 pips" | "BE"
+        pnl_net    = float en USDT
         """
         lines = []
         for t in self._trades:
@@ -131,7 +132,7 @@ class DailyReporter:
                 result_str = f"-{t.pips:.0f} pips"
             else:
                 result_str = f"+{t.pips:.0f} pips"
-            lines.append((t.date_str, action, t.symbol, result_str))
+            lines.append((t.date_str, action, t.symbol, result_str, t.pnl_net))
         return lines
 
     def mark_report_sent(self):
