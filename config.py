@@ -6,10 +6,8 @@ config.py — Paramètres globaux du bot de trading.
 # Top 5 cryptos uniquement — qualité > quantité
 # Les 12 paires corrélées entre elles = moins bon que 5 paires premium
 SYMBOLS = [
-    "BTC/USDT",   # Bitcoin   — référence marché, liquidité maximale
-    "ETH/USDT",   # Ethereum  — très liquide, tendances claires
-    "SOL/USDT",   # Solana    — haute volatilité = bon ATR
-    "XRP/USDT",   # XRP       — très liquide, moves forts
+    "BTC/USDT",   # Bitcoin   — référence crypto, liquidité maximale
+    "EUR/USDT",   # Euro/USD  — Forex, non-corrélé à la crypto
 ]
 
 SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)

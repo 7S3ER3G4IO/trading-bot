@@ -20,10 +20,6 @@ from typing import Optional
 # ─── Instruments disponibles sur Binance Futures ──────────────────────────────
 FUTURES_INSTRUMENTS = [
     "XAU/USDT:USDT",   # Or — non-corrélé à la crypto (corr=-0.64 avec BTC)
-    "BTC/USDT:USDT",   # Bitcoin perpétuel
-    "ETH/USDT:USDT",   # Ethereum perpétuel
-    "SOL/USDT:USDT",   # Solana perpétuel
-    "XRP/USDT:USDT",   # XRP perpétuel
 ]
 
 # Instruments à afficher proprement dans les notifications
