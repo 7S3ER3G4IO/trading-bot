@@ -198,6 +198,17 @@ class Strategy:
         curr = df.iloc[-1]
         prev = df.iloc[-2]
 
+        # ── #3 Filtre Volatilité ATR ───────────────────────────────────
+        # Rejette le trade si l'ATR est trop faible vs le prix (frais > move)
+        # ATR < 0.05% du prix = marché trop calme, pas de scalping
+        atr_val = float(curr.get("atr", 0))
+        price   = float(curr["close"])
+        atr_pct = (atr_val / price) * 100 if price > 0 else 0
+        MIN_ATR_PCT = float(os.getenv("MIN_ATR_PCT", "0.05"))  # 0.05% du prix
+        if atr_pct < MIN_ATR_PCT:
+            logger.debug(f"📊 ATR trop faible ({atr_pct:.3f}% < {MIN_ATR_PCT}%) — marché trop calme")
+            return SIGNAL_HOLD, 0, []
+
         # ── Filtre 1 : EMA Crossover ──────────────────────────────────────
         ema_cross_up   = (prev[f"ema{EMA_FAST}"] <= prev[f"ema{EMA_SLOW}"]) and \
                          (curr[f"ema{EMA_FAST}"]  >  curr[f"ema{EMA_SLOW}"])
@@ -267,6 +278,55 @@ class Strategy:
             logger.info(f"🔴 Signal VENTE {sell_score}/6 | RSI={curr['rsi']:.1f} ADX={curr['adx']:.0f} | {regime_conf}")
             return SIGNAL_SELL, sell_score, full_confs
 
+        return SIGNAL_HOLD, max(buy_score, sell_score), []
+
+    def get_atr(self, df: pd.DataFrame) -> float:
+        """Retourne l'ATR de la dernière bougie."""
+        if "atr" in df.columns and len(df) > 0:
+            return float(df.iloc[-1]["atr"])
+        return 0.0
+
+    def ml_signal_boost(self, df: pd.DataFrame, signal: str) -> int:
+        """
+        #9 — Boost ML (RandomForest) : +1 si le ML confirme le signal.
+        Entraîné sur les 200 dernières bougies (features : RSI, MACD, ADX, volume).
+        Retourne 1 si le ML confirme, 0 sinon. Silencieux si sklearn absent.
+        """
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            import numpy as np
+
+            if len(df) < 50:
+                return 0
+
+            recent = df.tail(200).copy()
+            features = ["rsi", "adx", "macd", "vol_ma", "ema200_slope", "atr"]
+            available = [f for f in features if f in recent.columns]
+            if len(available) < 3:
+                return 0
+
+            X = recent[available].fillna(0).values[:-1]
+            # Label : 1 si le close suivant est plus haut, 0 sinon
+            y = (recent["close"].shift(-1) > recent["close"]).astype(int).values[:-1]
+            if len(X) < 30:
+                return 0
+
+            clf = RandomForestClassifier(n_estimators=20, max_depth=4, random_state=42, n_jobs=1)
+            clf.fit(X, y)
+            last = df[available].iloc[-1].fillna(0).values.reshape(1, -1)
+            pred = clf.predict(last)[0]  # 1=bullish, 0=bearish
+
+            if signal == SIGNAL_BUY  and pred == 1:
+                logger.debug("🤖 ML: confirme signal ACHAT +1")
+                return 1
+            if signal == SIGNAL_SELL and pred == 0:
+                logger.debug("🤖 ML: confirme signal VENTE +1")
+                return 1
+            return 0
+        except ImportError:
+            return 0  # sklearn non disponible — pas de boost
+        except Exception:
+            return 0
         # Score intermédiaire retourné pour le pre-alert (même en HOLD)
         if allow_buy and buy_score > sell_score:
             return SIGNAL_HOLD, buy_score, []

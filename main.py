@@ -1,8 +1,9 @@
 """
-main.py — ⚡ AlphaTrader v2.0
-Multi-Asset | 3 TP + BE + Trailing Stop | Inline Buttons | DB Persistance
+main.py — ⚡ AlphaTrader v2.5
+Multi-Asset | DD Protection | Auto-Hyperopt | ATR Filter | Dashboard Web
 """
 
+import os
 import time
 import signal
 from typing import Optional, Dict
@@ -24,6 +25,12 @@ from database import Database
 from chart_generator import ChartGenerator
 from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
 from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS
+try:
+    from dashboard import start_dashboard
+    _DASHBOARD_OK = True
+except ImportError:
+    _DASHBOARD_OK = False
+
 
 BINANCE_FEE_RATE  = 0.001   # 0.1% par ordre
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
@@ -123,8 +130,15 @@ class TradingBot:
         self._manual_pause        = False
         self._news_pause_notified = False
         self._last_wallet_post    = datetime.now(timezone.utc)
-        # Pre-alert : {symbol: datetime du dernier envoi}
         self._pre_alert_sent: Dict[str, Optional[datetime]] = {s: None for s in SYMBOLS}
+
+        # ─── #1 Protection drawdown journalier ─────────────────────────────
+        self._daily_start_balance  = bal          # Balance au début du jour
+        self._dd_paused            = False        # Pause automatique si DD > seuil
+        self.DAILY_DD_LIMIT        = float(os.getenv("DAILY_DD_LIMIT", "3.0"))  # %
+
+        # ─── #4 Auto-Hyperopt hebdomadaire ──────────────────────────────
+        self._last_hyperopt_week   = None         # Semaine ISO du dernier Hyperopt
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -143,6 +157,14 @@ class TradingBot:
         self.calendar.refresh()
         self.telegram.notify_start(bal, SYMBOLS)
         logger.info(f"💰 Solde initial : {bal:.2f} USDT")
+
+        # ─── #8 Dashboard Web ────────────────────────────────────────────────
+        if _DASHBOARD_OK and os.getenv("DASHBOARD_ENABLED", "true").lower() == "true":
+            port = start_dashboard()
+            logger.info(f"🌐 Dashboard web → http://0.0.0.0:{port}")
+
+        # ─── #7 Corrélation actifs (close prices dernière heure) ─────────────
+        self._price_history: Dict[str, list] = {s: [] for s in SYMBOLS}
 
     def _restore_from_db(self):
         """Restaure les trades ouverts en cas de redémarrage."""
@@ -171,6 +193,64 @@ class TradingBot:
                 logger.info(f"🔄 Trade restauré : {symbol} {t_dict['side']} @ {t_dict['entry']}")
             except Exception as e:
                 logger.error(f"❌ Restauration trade {symbol} : {e}")
+
+    def _correlation_ok(self, symbol: str, price: float) -> bool:
+        """
+        #7 — Filtre de corrélation entre actifs.
+        Si 2+ actifs sont corrélés >90% ET ont tous un trade ouvert,
+        bloque l'entrée pour éviter de doubler l'exposition.
+        """
+        # Mémorise les derniers N prix pour chaque actif
+        history = self._price_history.get(symbol, [])
+        history.append(price)
+        if len(history) > 120:  # garde 60 min (120 bougies 30s)
+            history.pop(0)
+        self._price_history[symbol] = history
+
+        # Seuil : max 2 trades simultanés parmi actifs corrélés
+        active = [s for s, t in self.trades.items() if t is not None]
+        if len(active) >= 2:
+            import numpy as np
+            # Si BTC et ETH ont déjà tous les deux un trade ouvert → bloquer les autres
+            correlated_pairs = [("BTC/USDT", "ETH/USDT"), ("BTC/USDT", "BNB/USDT")]
+            for s1, s2 in correlated_pairs:
+                if s1 in active and s2 in active and symbol not in (s1, s2):
+                    logger.debug(f"🔗 Corrélation {s1}/{s2} active — exposition max atteinte")
+                    return False
+        return True
+
+    def _run_auto_hyperopt(self):
+        """
+        #4 — Lance le Hyperopt Optuna en arrière-plan (thread non-bloquant).
+        Exécuté automatiquement chaque lundi à 00h UTC.
+        Met à jour symbol_params.json → params rechargés au prochain tick.
+        """
+        import threading, subprocess, sys
+        def _run():
+            try:
+                self.telegram.send_message(
+                    "⚙️ <b>Auto-Hyperopt démarré</b>\n"
+                    "Optimisation des paramètres pour la semaine...\n"
+                    "⏳ ~60 secondes"
+                )
+                result = subprocess.run(
+                    [sys.executable, "optimizer.py", "--days", "14", "--trials", "80"],
+                    capture_output=True, text=True, timeout=300
+                )
+                if result.returncode == 0:
+                    # Recharge les params en mémoire
+                    from strategy import _load_symbol_params
+                    _load_symbol_params()
+                    self.telegram.send_message(
+                        "✅ <b>Auto-Hyperopt terminé</b>\n"
+                        "Nouveaux paramètres actifs pour la semaine 🎯"
+                    )
+                    logger.info("✅ Auto-Hyperopt terminé — params rechargés")
+                else:
+                    logger.error(f"❌ Auto-Hyperopt échec: {result.stderr[:200]}")
+            except Exception as e:
+                logger.error(f"❌ Auto-Hyperopt erreur: {e}")
+        threading.Thread(target=_run, daemon=True).start()
 
     # ─── Boucle principale ───────────────────────────────────────────────────
 
@@ -219,8 +299,37 @@ class TradingBot:
             bal = self.fetcher.get_balance()["free"]
             self.risk.reset_daily(bal)
             self.reporter.reset_for_new_day()
-            self.initial_balance = bal
-            self.last_reset_day  = cet.date()
+            self.initial_balance      = bal
+            self._daily_start_balance = bal   # #1 Reset protection DD
+            self._dd_paused           = False  # Reprend le trading au bout du jour
+            self.last_reset_day       = cet.date()
+            logger.info(f"📊 Nouveau jour — balance de début : {bal:.2f} USDT")
+
+        # ── #1 Protection Drawdown Journalier ────────────────────────────
+        try:
+            current_bal = self.fetcher.get_balance()["free"]
+            daily_dd_pct = (self._daily_start_balance - current_bal) / self._daily_start_balance * 100
+            if daily_dd_pct >= self.DAILY_DD_LIMIT and not self._dd_paused:
+                self._dd_paused = True
+                self.telegram.send_message(
+                    f"⛔ <b>Protection DD Journalier</b>\n"
+                    f"Perte du jour : <code>{daily_dd_pct:.1f}%</code> (seuil : {self.DAILY_DD_LIMIT}%)\n"
+                    f"Trading suspendu jusqu'à minuit UTC. 🛌"
+                )
+                logger.warning(f"⛔ DD journalier {daily_dd_pct:.1f}% ≥ {self.DAILY_DD_LIMIT}% — pause auto")
+        except Exception:
+            pass
+
+        if self._dd_paused:
+            return   # Aucun nouveau trade jusqu'à minuit
+
+        # ── #4 Auto-Hyperopt hebdomadaire (chaque lundi 00h-01h UTC) ─────────
+        current_week = now.isocalendar()[1]  # N° de semaine ISO
+        if (now.weekday() == 0 and now.hour == 0 and   # Lundi minuit UTC
+                self._last_hyperopt_week != current_week):
+            self._last_hyperopt_week = current_week
+            self._run_auto_hyperopt()
+
 
         # Calendrier économique
         pause, reason = self.calendar.should_pause_trading()
