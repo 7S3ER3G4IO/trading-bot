@@ -22,6 +22,7 @@ from economic_calendar import EconomicCalendar
 from market_context import MarketContext
 from database import Database
 from chart_generator import ChartGenerator
+from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
 
 BINANCE_FEE_RATE  = 0.001   # 0.1% par ordre
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
@@ -95,10 +96,18 @@ class TradingBot:
         self.context  = MarketContext()
         self.charter  = ChartGenerator()
 
+        # Broker OANDA (Forex / Gold / Indices)
+        self.oanda = OandaClient()
+        if self.oanda.available:
+            logger.info(f"🏦 OANDA actif — {len(OANDA_INSTRUMENTS)} instruments : {', '.join(OANDA_INSTRUMENTS)}")
+        else:
+            logger.info("ℹ️  OANDA non configuré — uniquement crypto Binance")
+
         bal = self.fetcher.get_balance()["free"]
         self.risk             = RiskManager(bal)
         self.initial_balance  = bal
-        self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
+        self.trades: Dict[str, Optional[TradeState]]       = {s: None for s in SYMBOLS}
+        self.oanda_trades: Dict[str, Optional[str]]         = {s: None for s in OANDA_INSTRUMENTS}  # symbol -> trade_id OANDA
 
         self.last_reset_day       = datetime.now(timezone.utc).date()
         self.last_report_hour     = -1
@@ -239,6 +248,77 @@ class TradingBot:
                 self._process_symbol(symbol, balance)
             except Exception as e:
                 logger.error(f"❌ {symbol} : {e}")
+
+        # ─── Loop OANDA (Forex / Gold / Indices) ─────────────────────────────
+        if self.oanda.available and not self._manual_pause:
+            oanda_balance = self.oanda.get_balance()
+            for instrument in OANDA_INSTRUMENTS:
+                try:
+                    self._process_oanda_symbol(instrument, oanda_balance)
+                except Exception as e:
+                    logger.error(f"❌ OANDA {instrument} : {e}")
+
+    def _process_oanda_symbol(self, instrument: str, balance: float):
+        """
+        Analyse un instrument OANDA (Forex/Gold/Indices) et passe un ordre
+        si le signal est suffisamment fort. Miroir de _process_symbol() pour Binance.
+        """
+        from brokers.oanda_client import PIP_FACTOR
+
+        # Trade déjà ouvert sur cet instrument — pas de nouveau signal
+        if self.oanda_trades.get(instrument):
+            return
+
+        # Données OANDA → même format OHLCV que Binance
+        df = self.oanda.fetch_ohlcv(instrument, timeframe="15m", count=250)
+        if df is None or len(df) < 100:
+            return
+
+        # Indicateurs + signal via la même stratégie
+        df_htf = self.oanda.fetch_htf(instrument, timeframe="1h", count=50)
+        df     = self.strategy.compute_indicators(df, df_htf=df_htf)
+        sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
+
+        if sig == "HOLD":
+            return
+
+        entry = float(df.iloc[-1]["close"])
+        atr   = self.strategy.get_atr(df)
+        levels = self.risk.calculate_levels(entry, atr, sig)
+
+        # Taille de position en unités OANDA (pas en BTC)
+        units_raw = self.oanda.position_size_units(
+            balance=balance, risk_pct=0.01,
+            entry=entry, sl=levels["sl"], instrument=instrument
+        )
+        if units_raw <= 0:
+            return
+
+        units = units_raw if sig == "BUY" else -units_raw
+        tp_price = levels["tp1"]   # OANDA gère le SL/TP natif
+
+        trade_id = self.oanda.place_market_order(
+            instrument=instrument,
+            units=units,
+            sl_price=levels["sl"],
+            tp_price=tp_price,
+        )
+
+        if trade_id:
+            self.oanda_trades[instrument] = trade_id
+            pip = PIP_FACTOR.get(instrument, 0.0001)
+            pips_sl = round(abs(entry - levels["sl"]) / pip)
+            pips_tp = round(abs(entry - tp_price) / pip)
+            self.telegram.send_message(
+                f"🏦 <b>OANDA Signal</b> — {instrument}\n"
+                f"{'🟢 LONG' if sig == 'BUY' else '🔴 SHORT'}   Score {score}/6\n"
+                f"\n"
+                f"📍 Entrée : <code>{entry:.5f}</code>\n"
+                f"🛑 SL     : <code>{levels['sl']:.5f}</code> ({pips_sl} pips)\n"
+                f"🎯 TP     : <code>{tp_price:.5f}</code> ({pips_tp} pips)\n"
+                f"\n"
+                f"💼 Unités : {abs(units):.0f} | TradeID: {trade_id}"
+            )
 
     def _process_symbol(self, symbol: str, balance: float):
         trade = self.trades.get(symbol)
