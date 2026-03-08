@@ -14,9 +14,9 @@ SYMBOLS = [
 ]
 
 SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)
-TIMEFRAME = "15m"        # Bougies 15 minutes — OPTIMAL (5m = 4x plus de frais)
+TIMEFRAME = "5m"         # Bougies 5 minutes — Session scalping (London + NY open)
 HTF       = "1h"         # Higher TimeFrame (confirmation de tendance)
-LIMIT     = 200          # Nombre de bougies à charger
+LIMIT     = 300          # Nombre de bougies à charger (plus avec 5m)
 
 
 # ─── STRATÉGIE — 6 FILTRES ───────────────────────────────────────────────────
@@ -38,7 +38,12 @@ ADX_MIN       = 25      # Signal uniquement si ADX > 25 (tendance plus forte)
 VOLUME_MA_PERIOD = 20  # Volume > moyenne 20 bougies
 
 # Filtre sessions crypto (heures UTC à éviter — faible liquidité)
-AVOID_HOURS_UTC = list(range(3, 5))   # 3h-5h UTC uniquement = creux absolu
+AVOID_HOURS_UTC = list(range(23, 24)) + list(range(0, 6))  # 23h-5h UTC
+
+# Sessions de scalping actives (backtesté optimal — scénario D)
+LONDON_HOURS  = list(range(7, 11))    # 7h-10h UTC — fort volume pre-market
+NY_HOURS      = list(range(13, 17))   # 13h-16h UTC — volume max journée
+SESSION_HOURS = LONDON_HOURS + NY_HOURS  # Fenêtres actives pour le scalping
 
 # ─── GESTION DU RISQUE ────────────────────────────────────────────────────────
 RISK_PER_TRADE       = 0.01    # 1% du capital par trade par symbole

@@ -125,11 +125,20 @@ class Strategy:
         return df.dropna()
 
     def is_session_ok(self) -> bool:
-        """Retourne False pendant les heures de faible liquidité."""
+        """Retourne True uniquement pendant les sessions London et NY open."""
         hour_utc = datetime.now(timezone.utc).hour
+        # Heures interdites (nuit profonde)
         if hour_utc in AVOID_HOURS_UTC:
-            logger.debug(f"⏰ Heure creuse ({hour_utc}h UTC) — trading suspendu")
+            logger.debug(f"⏰ Nuit profonde ({hour_utc}h UTC) — trading suspendu")
             return False
+        # Scalping actif uniquement pendant London+NY open (backtesté optimal)
+        try:
+            from config import SESSION_HOURS
+            if hour_utc not in SESSION_HOURS:
+                logger.debug(f"⏰ Hors session ({hour_utc}h UTC) — attente London/NY open")
+                return False
+        except ImportError:
+            pass
         return True
 
     def market_regime(self, df: pd.DataFrame, slope_threshold: float = None) -> str:
