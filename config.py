@@ -9,7 +9,6 @@ SYMBOLS = [
     "BTC/USDT",   # Bitcoin   — référence marché, liquidité maximale
     "ETH/USDT",   # Ethereum  — très liquide, tendances claires
     "SOL/USDT",   # Solana    — haute volatilité = bon ATR
-    "BNB/USDT",   # BNB       — tendances stables
     "XRP/USDT",   # XRP       — très liquide, moves forts
 ]
 
