@@ -18,14 +18,17 @@ from config import (
     DAILY_DRAWDOWN_LIMIT,
 )
 
-# Ratios des 3 TPs par rapport à la distance SL
-# R:R amélioré basé sur backtesting : TP larges pour compenser le win rate
-TP1_RATIO = 1.5   # TP1 = SL × 1.5  (1:1.5 R:R)
-TP2_RATIO = 3.0   # TP2 = SL × 3.0  (1:3.0 R:R)
-TP3_RATIO = 5.0   # TP3 = SL × 5.0  (1:5.0 R:R)
+# Ratios des TP par rapport à la distance SL
+# 50% WR × 2:1 R:R = EV neutre (seuil de rentabilité)
+# Au-dessus de 50% WR = rentable
+TP1_RATIO = 2.0   # TP1 = SL × 2.0  (1:2 R:R) — relèvé de 1.5 à 2.0
+TP2_RATIO = 4.0   # TP2 = SL × 4.0  (1:4 R:R)
+TP3_RATIO = 6.0   # TP3 = SL × 6.0  (1:6 R:R) — runner
 
 # Fraction de la position fermée à chaque TP
-TP_FRACTIONS = [1/3, 1/2, 1.0]  # 33% au TP1, 50% du reste au TP2, tout au TP3
+TP_FRACTIONS = [0.5, 0.5, 1.0]  # 50% au TP1, 50% du reste au TP2, tout au TP3
+# EV math : 50%WR × (50%×2.0 + 50%×4.0)/2 = +0.75 vs perte -1.0 sur SL
+# Net EV avec 50%WR = 0.5×0.75 - 0.5×1.0 = -0.125 (quasi neutre vs -0.5 avant)
 
 
 class RiskManager:
