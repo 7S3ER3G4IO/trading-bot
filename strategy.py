@@ -64,7 +64,7 @@ _load_symbol_params()
 
 class Strategy:
 
-    def compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+    def compute_indicators(self, df: pd.DataFrame, df_htf: pd.DataFrame = None) -> pd.DataFrame:
         """Calcule tous les indicateurs sur le DataFrame OHLCV."""
         close  = df["close"]
         high   = df["high"]
@@ -101,6 +101,26 @@ class Strategy:
 
         # ATR
         df["atr"] = ta.volatility.AverageTrueRange(high, low, close, window=ATR_PERIOD).average_true_range()
+
+        # ── SMC Liquidity Sweep ──────────────────────────────────────────────────────────
+        # Chasse aux stops institutionnels (Smart Money Concepts)
+        # SSL Swept : mèche perce un swing low sur N bougies puis close revient au-dessus → BUY
+        # BSL Swept : mèche perce un swing high  sur N bougies puis close revient en-dessous → SELL
+        _SWING_N = 12
+        h_arr = high.values
+        l_arr = low.values
+        c_arr = close.values
+        sweep_col = ["NONE"] * len(df)
+        for _i in range(_SWING_N + 2, len(df)):
+            _sh = h_arr[_i - _SWING_N - 1: _i - 1].max()
+            _sl = l_arr[_i - _SWING_N - 1: _i - 1].min()
+            _ph, _pl = h_arr[_i - 1], l_arr[_i - 1]
+            _cc = c_arr[_i]
+            if _ph > _sh and _cc < _sh:
+                sweep_col[_i] = "BSL_SWEPT"
+            elif _pl < _sl and _cc > _sl:
+                sweep_col[_i] = "SSL_SWEPT"
+        df["sweep"] = sweep_col
 
         return df.dropna()
 
