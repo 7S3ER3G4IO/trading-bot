@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 sys.path.insert(0, ".")
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from optimizer import get_exchange, download, precompute, vectorized_backtest, fitness
+from optimizer import get_exchange, download, precompute, vectorized_backtest
 from backtester import fetch_historical
 
 SESSION = set(range(7, 11)) | set(range(13, 17))
