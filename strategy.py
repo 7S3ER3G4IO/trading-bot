@@ -210,7 +210,13 @@ class Strategy:
             logger.info(f"🔴 Signal VENTE {sell_score}/6 | RSI={curr['rsi']:.1f} ADX={curr['adx']:.0f} | {regime_conf}")
             return SIGNAL_SELL, sell_score, full_confs
 
+        # Score intermédiaire retourné pour le pre-alert (même en HOLD)
+        if allow_buy and buy_score > sell_score:
+            return SIGNAL_HOLD, buy_score, []
+        if allow_sell and sell_score > buy_score:
+            return SIGNAL_HOLD, sell_score, []
         return SIGNAL_HOLD, 0, []
 
     def get_atr(self, df: pd.DataFrame) -> float:
         return float(df.iloc[-1]["atr"])
+

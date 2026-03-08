@@ -283,6 +283,22 @@ class TelegramNotifier:
     def notify_error(self, error: str):
         self._send(f"⚠️ *Erreur bot*\n```{error[:200]}```")
 
+    def notify_pre_signal(self, side: str, symbol: str, price: float, score: int):
+        """Pre-alert quand score = 4/6 — setup en formation."""
+        ticker = self._ticker(symbol)
+        emoji  = "🟢" if side == "BUY" else "🔴"
+        direction = "LONG" if side == "BUY" else "SHORT"
+        self._send(
+            f"⏳ *Entrée probable {ticker} ≈ {price:,.2f}*\n"
+            f"`Score : {score}/6 — Manque 1 confirmation`\n"
+            f"Direction : {emoji} {direction} probable"
+        )
+
+    def notify_setup_cancelled(self, symbol: str):
+        """Setup annulé — confirmation non obtenue."""
+        ticker = self._ticker(symbol)
+        self._send(f"❌ Setup annulé — {ticker} _(confirmation non obtenue)_")
+
     def post_wallet_stats(
         self, balance: float, initial_balance: float,
         open_trades: list, daily_pnl: float, total_pnl: float,

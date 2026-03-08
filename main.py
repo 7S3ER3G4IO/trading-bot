@@ -104,7 +104,9 @@ class TradingBot:
         self.last_report_hour     = -1
         self._manual_pause        = False
         self._news_pause_notified = False
-        self._last_wallet_post    = datetime.now(timezone.utc)  # wallet stats timer
+        self._last_wallet_post    = datetime.now(timezone.utc)
+        # Pre-alert : {symbol: datetime du dernier envoi}
+        self._pre_alert_sent: Dict[str, Optional[datetime]] = {s: None for s in SYMBOLS}
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -253,7 +255,31 @@ class TradingBot:
         df = self.strategy.compute_indicators(df)
 
         sig, score, confirmations = self.strategy.get_signal(df)
+
+        # ═ PRE-ALERT : score = 4/6 mais pas encore signal ═
+        PRE_ALERT_SCORE   = 4
+        PRE_ALERT_COOLDOWN = timedelta(hours=2)
+        now_utc = datetime.now(timezone.utc)
+
         if sig == SIGNAL_HOLD:
+            last_pre = self._pre_alert_sent.get(symbol)
+            if score >= PRE_ALERT_SCORE:
+                # Envoie le pre-alert si cooldown écoulé
+                if last_pre is None or (now_utc - last_pre) >= PRE_ALERT_COOLDOWN:
+                    ticker_price = self.fetcher.get_ticker(symbol)["last"]
+                    # Direction via régime de marché (déjà calculé dans df)
+                    regime    = self.strategy.market_regime(df)
+                    direction = "BUY" if regime == "BULL" else "SELL"
+                    self.telegram.notify_pre_signal(direction, symbol, ticker_price, score)
+                    self._pre_alert_sent[symbol] = now_utc
+                    logger.info(f"⏳ Pre-alert {symbol} | score={score}/6 | {regime}")
+
+            elif last_pre is not None and score < PRE_ALERT_SCORE:
+                # Setup qui était en formation mais qui s'est annulé
+                if (now_utc - last_pre) < PRE_ALERT_COOLDOWN:
+                    self.telegram.notify_setup_cancelled(symbol)
+                    self._pre_alert_sent[symbol] = None
+                    logger.info(f"❌ Setup annulé {symbol}")
             return
 
         ticker = self.fetcher.get_ticker(symbol)
