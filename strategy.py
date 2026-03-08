@@ -17,6 +17,7 @@ Filtres :
 Signal seulement si 5/6 filtres sont positifs ET régime de marché favorable.
 """
 
+import json, os
 import pandas as pd
 import ta
 from loguru import logger
@@ -42,6 +43,23 @@ EMA_TREND_PERIOD = 200         # EMA longue période
 SLOPE_WINDOW     = 5           # Nombre de bougies pour calculer la pente
 SLOPE_THRESHOLD  = 0.0001      # Seuil slope (0.01% / bougie) — compromis :
                                 # 0.0002 = trop restrictif | 0.00008 = trop permissif
+
+# ─── Paramètres optimisés par symbole ────────────────────────────────────────
+# Chargés depuis symbol_params.json (généré par optimizer.py)
+_SYMBOL_PARAMS: dict = {}
+_PARAMS_FILE = "symbol_params.json"
+
+def _load_symbol_params():
+    global _SYMBOL_PARAMS
+    if os.path.exists(_PARAMS_FILE):
+        try:
+            with open(_PARAMS_FILE) as f:
+                _SYMBOL_PARAMS = json.load(f)
+            logger.info(f"📊 Params optimisés chargés pour {len(_SYMBOL_PARAMS)} symboles")
+        except Exception as e:
+            logger.warning(f"⚠️  Impossible de charger {_PARAMS_FILE}: {e}")
+
+_load_symbol_params()
 
 
 class Strategy:
@@ -94,23 +112,24 @@ class Strategy:
             return False
         return True
 
-    def market_regime(self, df: pd.DataFrame) -> str:
+    def market_regime(self, df: pd.DataFrame, slope_threshold: float = None) -> str:
         """
         Détecte le régime de marché via la pente de l'EMA 200.
-
+        slope_threshold optionnel pour override per-symbole.
         Returns:
             "BULL"  → marché haussier (slope > +threshold)
             "BEAR"  → marché baissier (slope < -threshold)
             "RANGE" → marché en range (slope ≈ 0) → pas de trade
         """
+        thr = slope_threshold if slope_threshold is not None else SLOPE_THRESHOLD
         if "ema200_slope" not in df.columns or len(df) < 2:
             return "RANGE"
 
         slope = float(df.iloc[-1]["ema200_slope"])
 
-        if slope > SLOPE_THRESHOLD:
+        if slope > thr:
             regime = "BULL"
-        elif slope < -SLOPE_THRESHOLD:
+        elif slope < -thr:
             regime = "BEAR"
         else:
             regime = "RANGE"
@@ -118,13 +137,22 @@ class Strategy:
         logger.debug(f"📈 Régime marché : {regime} | Slope EMA200 = {slope:.4%}")
         return regime
 
-    def get_signal(self, df: pd.DataFrame) -> tuple:
+    def get_signal(self, df: pd.DataFrame, symbol: str = None) -> tuple:
         """
         Retourne (signal, score, confirmations) où :
           signal        : "BUY" / "SELL" / "HOLD"
           score         : int, nombre de confirmations
           confirmations : list[str], descriptions lisibles
+
+        Si symbol est fourni, charge les paramètres optimisés depuis symbol_params.json.
         """
+        # Chargement params per-symbole si disponibles
+        sym_p    = _SYMBOL_PARAMS.get(symbol, {}) if symbol else {}
+        req_score = sym_p.get("required_score", REQUIRED_SCORE)
+        slope_thr = sym_p.get("slope_threshold", SLOPE_THRESHOLD)
+        adx_min_  = sym_p.get("adx_min", ADX_MIN)
+        rsi_max_  = sym_p.get("rsi_buy_max", RSI_BUY_MAX)
+
         if len(df) < 2:
             return SIGNAL_HOLD, 0, []
 
@@ -133,7 +161,7 @@ class Strategy:
             return SIGNAL_HOLD, 0, []
 
         # ── Pré-filtre OBLIGATOIRE : Régime de marché ─────────────────────
-        regime = self.market_regime(df)
+        regime = self.market_regime(df, slope_threshold=slope_thr)
         if regime == "RANGE":
             logger.debug("🔇 Marché en range (EMA200 flat) — pas de signal")
             return SIGNAL_HOLD, 0, []
@@ -176,9 +204,9 @@ class Strategy:
         # ── Score BUY ─────────────────────────────────────────────────────
         buy_map = {
             f"EMA {EMA_FAST}/{EMA_SLOW} croisement haussier": ema_cross_up,
-            f"RSI {curr['rsi']:.0f} en zone ACHAT (30-{RSI_BUY_MAX})": rsi_buy,
+            f"RSI {curr['rsi']:.0f} en zone ACHAT (30-{rsi_max_})": rsi_buy,
             f"MACD croisement haussier": macd_up,
-            f"ADX {curr['adx']:.0f} > {ADX_MIN} (tendance forte)": adx_ok,
+            f"ADX {curr['adx']:.0f} > {adx_min_} (tendance forte)": adx_ok,
             f"Volume supérieur à la MA20": vol_ok,
             f"Tendance 1h haussière (HTF aligné)": htf_bull,
         }
@@ -186,7 +214,7 @@ class Strategy:
             f"EMA {EMA_FAST}/{EMA_SLOW} croisement baissier": ema_cross_down,
             f"RSI {curr['rsi']:.0f} en zone VENTE ({RSI_SELL_MIN}-70)": rsi_sell,
             f"MACD croisement baissier": macd_down,
-            f"ADX {curr['adx']:.0f} > {ADX_MIN} (tendance forte)": adx_ok,
+            f"ADX {curr['adx']:.0f} > {adx_min_} (tendance forte)": adx_ok,
             f"Volume supérieur à la MA20": vol_ok,
             f"Tendance 1h baissière (HTF aligné)": htf_bear,
         }
@@ -198,13 +226,13 @@ class Strategy:
 
         logger.debug(f"Score BUY={buy_score}/6 | SELL={sell_score}/6 | Régime={regime} | Slope={slope_pct:+.3f}%")
 
-        if allow_buy and buy_score >= REQUIRED_SCORE and buy_score > sell_score:
+        if allow_buy and buy_score >= req_score and buy_score > sell_score:
             regime_conf = f"📈 Régime HAUSSIER (EMA200 slope +{slope_pct:.3f}%)"
             full_confs  = [regime_conf] + buy_confs
             logger.info(f"🟢 Signal ACHAT {buy_score}/6 | RSI={curr['rsi']:.1f} ADX={curr['adx']:.0f} | {regime_conf}")
             return SIGNAL_BUY, buy_score, full_confs
 
-        if allow_sell and sell_score >= REQUIRED_SCORE and sell_score > buy_score:
+        if allow_sell and sell_score >= req_score and sell_score > buy_score:
             regime_conf = f"📉 Régime BAISSIER (EMA200 slope {slope_pct:.3f}%)"
             full_confs  = [regime_conf] + sell_confs
             logger.info(f"🔴 Signal VENTE {sell_score}/6 | RSI={curr['rsi']:.1f} ADX={curr['adx']:.0f} | {regime_conf}")

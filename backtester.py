@@ -152,57 +152,82 @@ def simulate_trade(t: BacktestTrade, rows: pd.DataFrame, start_i: int):
 def run_backtest(symbol: str, days: int, risk: float, timeframe: str = DEFAULT_TF):
     exchange = get_exchange()
     df_raw   = fetch_historical(exchange, symbol, timeframe, days)
-
-    strategy = Strategy()
-    risk_mgr = RiskManager(initial_balance=INITIAL_BALANCE)
-    risk_mgr.RISK_PER_TRADE = risk
+    return run_backtest_with_params(df_raw, {}, risk)
 
 
-    trades     = []
-    balance    = INITIAL_BALANCE
-    in_trade   = False
-    signals    = 0
-    skipped    = 0
+def run_backtest_with_params(df_raw, params: dict, risk: float = DEFAULT_RISK):
+    """
+    Backtest sur un DataFrame déjà téléchargé, avec des params custom.
+    params peut contenir : required_score, slope_threshold, adx_min,
+                           atr_sl_multiplier, rsi_buy_max
+    Utilisé par optimizer.py pour le grid search.
+    """
+    import strategy as strat_module
+    import config as cfg
 
-    print(f"\n🔄 Simulation en cours...")
+    # Sauvegarde des constantes globales
+    orig_score  = strat_module.REQUIRED_SCORE
+    orig_slope  = strat_module.SLOPE_THRESHOLD
+    orig_adx    = cfg.ADX_MIN
+    orig_atr    = cfg.ATR_SL_MULTIPLIER
+    orig_rsi    = cfg.RSI_BUY_MAX
 
-    # Fenêtre glissante : besoin d'au moins 250 bougies pour EMA200
-    window = 250
-    for i in range(window, len(df_raw)):
-        df_window = df_raw.iloc[i - window:i].copy()
-        df_window = strategy.compute_indicators(df_window)
+    # Surcharge temporaire des paramètres
+    if "required_score"  in params: strat_module.REQUIRED_SCORE  = params["required_score"]
+    if "slope_threshold" in params: strat_module.SLOPE_THRESHOLD = params["slope_threshold"]
+    if "adx_min"         in params: cfg.ADX_MIN                  = params["adx_min"]
+    if "atr_sl_multiplier" in params: cfg.ATR_SL_MULTIPLIER      = params["atr_sl_multiplier"]
+    if "rsi_buy_max"     in params: cfg.RSI_BUY_MAX              = params["rsi_buy_max"]
 
-        sig, score, _ = strategy.get_signal(df_window)
+    try:
+        strategy = Strategy()
+        risk_mgr = RiskManager(initial_balance=INITIAL_BALANCE)
+        risk_mgr.RISK_PER_TRADE = risk
 
-        if sig == SIGNAL_HOLD or in_trade:
-            continue
-
-        entry = float(df_raw.iloc[i]["close"])
-        atr   = strategy.get_atr(df_window)
-
-        levels = risk_mgr.calculate_levels(entry, atr, sig)
-        amount = risk_mgr.position_size(balance, entry, levels["sl"])
-        if amount <= 0:
-            skipped += 1
-            continue
-
-        t = BacktestTrade(
-            i=i, side=sig, entry=entry,
-            sl=levels["sl"], tp1=levels["tp1"],
-            tp2=levels["tp2"], tp3=levels["tp3"],
-            be=levels["be"], amount=amount
-        )
-
-        in_trade = True
-        simulate_trade(t, df_raw, i + 1)
+        trades  = []
+        balance = INITIAL_BALANCE
         in_trade = False
+        window   = 250
 
-        net = t.pnl - t.fees
-        balance += net
-        signals += 1
-        trades.append(t)
+        for i in range(window, len(df_raw)):
+            df_window = df_raw.iloc[i - window:i].copy()
+            df_window = strategy.compute_indicators(df_window)
+            sig, score, _ = strategy.get_signal(df_window)
+
+            if sig == SIGNAL_HOLD or in_trade:
+                continue
+
+            entry = float(df_raw.iloc[i]["close"])
+            atr   = strategy.get_atr(df_window)
+            levels = risk_mgr.calculate_levels(entry, atr, sig)
+            amount = risk_mgr.position_size(balance, entry, levels["sl"])
+            if amount <= 0:
+                continue
+
+            t = BacktestTrade(
+                i=i, side=sig, entry=entry,
+                sl=levels["sl"], tp1=levels["tp1"],
+                tp2=levels["tp2"], tp3=levels["tp3"],
+                be=levels["be"], amount=amount
+            )
+            in_trade = True
+            simulate_trade(t, df_raw, i + 1)
+            in_trade = False
+
+            balance += t.pnl - t.fees
+            trades.append(t)
+
+    finally:
+        # Restauration des constantes globales
+        strat_module.REQUIRED_SCORE  = orig_score
+        strat_module.SLOPE_THRESHOLD = orig_slope
+        cfg.ADX_MIN                  = orig_adx
+        cfg.ATR_SL_MULTIPLIER        = orig_atr
+        cfg.RSI_BUY_MAX              = orig_rsi
 
     return trades, balance
+
+
 
 
 # ─── Rapport ─────────────────────────────────────────────────────────────────
