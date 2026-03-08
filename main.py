@@ -25,6 +25,25 @@ from database import Database
 from chart_generator import ChartGenerator
 from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
 from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS
+
+# ─── Features avancées 2026 ────────────────────────────────────
+try:
+    from market_sentiment import MarketSentiment
+    _SENTIMENT_OK = True
+except ImportError:
+    _SENTIMENT_OK = False
+
+try:
+    from funding_rate import FundingRateFilter
+    _FUNDING_OK = True
+except ImportError:
+    _FUNDING_OK = False
+
+try:
+    from onchain_data import OnChainData
+    _ONCHAIN_OK = True
+except ImportError:
+    _ONCHAIN_OK = False
 try:
     from dashboard import start_dashboard
     _DASHBOARD_OK = True
@@ -149,6 +168,15 @@ class TradingBot:
 
         # ─── Matinale (envoyée 1× par jour à 07h UTC) ────────────────────
         self._last_morning_day     = None         # Date du dernier envoi matinale
+
+        # ─── Features avancées 2026 ──────────────────────────────────────
+        self.sentiment  = MarketSentiment()   if _SENTIMENT_OK else None
+        self.funding    = FundingRateFilter()  if _FUNDING_OK   else None
+        self.onchain    = OnChainData()        if _ONCHAIN_OK   else None
+        # WR historique par symbole → Kelly Criterion
+        self._wr_history: dict = {s: 0.55 for s in SYMBOLS}
+        # DCA : timestamp du dernier renforcement par symbole
+        self._dca_ts: dict = {}
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -583,8 +611,39 @@ class TradingBot:
         price  = ticker["last"]
         atr    = self.strategy.get_atr(df)
         levels = self.risk.calculate_levels(price, atr, sig)
-        amount = self.risk.position_size(balance, price, levels["sl"],
-                                         signal_score=score, max_score=8)
+
+        # ── #1 Fear & Greed Filter ──────────────────────────────────
+        sentiment_scale = 1.0
+        if self.sentiment:
+            if sig == "BUY" and not self.sentiment.should_allow_long():
+                logger.warning(f"🚨 {symbol} LONG bloqué par Fear&Greed")
+                return
+            if sig == "SELL" and not self.sentiment.should_allow_short():
+                logger.warning(f"🚨 {symbol} SHORT bloqué par Fear&Greed")
+                return
+            sentiment_scale = self.sentiment.position_scale()
+
+        # ── #2 Funding Rate Filter ───────────────────────────────
+        if self.funding:
+            if sig == "BUY" and not self.funding.should_allow_long(symbol):
+                logger.warning(f"💸 {symbol} LONG bloqué par Funding Rate")
+                return
+            if sig == "SELL" and not self.funding.should_allow_short(symbol):
+                logger.warning(f"💸 {symbol} SHORT bloqué par Funding Rate")
+                return
+
+        # ── #6 Kelly Criterion Sizing ──────────────────────────────
+        wr_hist  = self._wr_history.get(symbol, 0.55)
+        rr_ratio = levels.get("sl_distance", 1)
+        if rr_ratio and levels["sl"] and price:
+            rr_ratio = abs(levels["tp1"] - price) / max(abs(levels["sl"] - price), 0.0001)
+
+        amount = self.risk.kelly_position_size(
+            balance, price, levels["sl"],
+            win_rate=wr_hist,
+            rr_ratio=max(1.0, rr_ratio),
+            sentiment_scale=sentiment_scale,
+        )
         if amount <= 0:
             return
 
@@ -601,6 +660,10 @@ class TradingBot:
         t.db_id = self.db.save_trade_open(t)
         self.trades[symbol] = t
         self.risk.on_trade_opened()
+
+        # ── #8 DCA Pyramiding : mise à jour si position gagnante ──────────
+        # (la prochaine fois qu'on reçoit un signal sur ce même actif déjà ouvert
+        #  avec le même sens → renforcer de 50%)
 
         # ══ VRAIS ORDRES BINANCE ══
         frac = round(amount / 3, 5)

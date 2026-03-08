@@ -129,6 +129,49 @@ class RiskManager:
         )
         return size
 
+    def kelly_position_size(
+        self, balance: float, entry_price: float, sl_price: float,
+        win_rate: float = 0.55, rr_ratio: float = 2.0,
+        sentiment_scale: float = 1.0,
+    ) -> float:
+        """
+        #6 Kelly Criterion — Taille de position optimale mathématiquement.
+
+        Formule : f* = WR - (1 - WR) / RR
+        - WR = taux de réussite historique (ex: 0.55 = 55%)
+        - RR = ratio Risk/Reward (ex: 2.0 = TP 2× le SL)
+
+        Limites :
+          - Minimum 0.5% du capital (prudence)
+          - Maximum 3.0% du capital (pas de sur-levier)
+          - Multiplié par sentiment_scale (Fear&Greed : 0.5→1.0)
+        """
+        # Kelly fraction (fraction du capital à risquer)
+        kelly_f = win_rate - (1.0 - win_rate) / rr_ratio
+
+        # Half-Kelly pour sécurité (standard en trading pro)
+        half_kelly = kelly_f * 0.5
+
+        # Clamp entre 0.5% et 3%
+        clamped = max(0.005, min(0.03, half_kelly))
+
+        # Ajustement sentiment de marché
+        adjusted = clamped * sentiment_scale
+
+        sl_distance = abs(entry_price - sl_price)
+        if sl_distance == 0:
+            logger.error("❌ Distance SL = 0 (Kelly).")
+            return 0.0
+
+        capital_at_risk = balance * adjusted
+        size = capital_at_risk / sl_distance
+
+        logger.info(
+            f"🧮 Kelly : f*={kelly_f:.2%} → Half={half_kelly:.2%} "
+            f"→ Ajusté={adjusted:.2%} | Capital risqué={capital_at_risk:.2f} USDT"
+        )
+        return size
+
     # ─── COMPTEURS ───────────────────────────────────────────────────────────
 
     def on_trade_opened(self):
