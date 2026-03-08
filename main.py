@@ -57,6 +57,42 @@ except ImportError:
     _MORNING_OK = False
     logger.warning("⚠️  morning_brief non disponible")
 
+try:
+    from mtf_filter import MTFFilter
+    _MTF_OK = True
+except ImportError:
+    _MTF_OK = False
+
+try:
+    from equity_curve import EquityCurve
+    _EQUITY_OK = True
+except ImportError:
+    _EQUITY_OK = False
+
+try:
+    from news_sentiment import NewsSentiment
+    _NEWS_OK = True
+except ImportError:
+    _NEWS_OK = False
+
+try:
+    from orderbook_imbalance import OrderBookImbalance
+    _OBI_OK = True
+except ImportError:
+    _OBI_OK = False
+
+try:
+    from tradingview_webhook import get_webhook_server
+    _WEBHOOK_OK = True
+except ImportError:
+    _WEBHOOK_OK = False
+
+try:
+    from protection_model import ProtectionModel
+    _PROTECTION_OK = True
+except ImportError:
+    _PROTECTION_OK = False
+
 
 BINANCE_FEE_RATE  = 0.001   # 0.1% par ordre
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
@@ -177,6 +213,22 @@ class TradingBot:
         self._wr_history: dict = {s: 0.55 for s in SYMBOLS}
         # DCA : timestamp du dernier renforcement par symbole
         self._dca_ts: dict = {}
+
+        # ─── Batch 3 — Features avancées ────────────────────────────────────
+        self.mtf        = MTFFilter()          if _MTF_OK        else None
+        self.equity     = EquityCurve(bal)     if _EQUITY_OK     else None
+        self.news       = NewsSentiment()      if _NEWS_OK       else None
+        self.obi        = OrderBookImbalance() if _OBI_OK        else None
+        self.protection = ProtectionModel()    if _PROTECTION_OK else None
+        # Circuit breaker WR hebdomadaire
+        self._weekly_trades: list = []    # [(ts, win:bool)]
+        self._wr_paused     = False       # Pause si WR hebdo < 35%
+        # TradingView Webhook
+        if _WEBHOOK_OK:
+            self._webhook = get_webhook_server()
+            self._webhook.start()
+        else:
+            self._webhook = None
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
@@ -631,6 +683,23 @@ class TradingBot:
             if sig == "SELL" and not self.funding.should_allow_short(symbol):
                 logger.warning(f"💸 {symbol} SHORT bloqué par Funding Rate")
                 return
+
+        # ── #8 Protection Model (losing streak blacklist) ────────
+        if self.protection and self.protection.is_blocked(symbol):
+            return
+
+        # ── #1 MTF Confluence Filter ─────────────────────────────
+        if self.mtf and not self.mtf.validate_signal(symbol, sig):
+            return
+
+        # ── #6 Order Book Imbalance filter ───────────────────────
+        if self.obi and not self.obi.confirms_signal(symbol, sig):
+            logger.warning(f"📗 OBI {symbol} : orderbook contraire au signal")
+            return
+
+        # ── #7 News Sentiment Filter ──────────────────────────────
+        if self.news and not self.news.should_allow_trade(sig):
+            return
 
         # ── #6 Kelly Criterion Sizing ──────────────────────────────
         wr_hist  = self._wr_history.get(symbol, 0.55)
