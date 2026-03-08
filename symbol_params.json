@@ -1,0 +1,134 @@
+{
+  "BTC/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.0,
+    "rsi_buy_max": 60,
+    "n_trades": 68,
+    "winrate": 50.0,
+    "pnl_net": -2716.02,
+    "max_dd": 28.3
+  },
+  "ETH/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 109,
+    "winrate": 46.8,
+    "pnl_net": -2830.27,
+    "max_dd": 32.5
+  },
+  "BNB/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 66,
+    "winrate": 50.0,
+    "pnl_net": -1153.71,
+    "max_dd": 14.2
+  },
+  "SOL/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 132,
+    "winrate": 44.7,
+    "pnl_net": -3827.27,
+    "max_dd": 44.5
+  },
+  "XRP/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 70,
+    "n_trades": 81,
+    "winrate": 53.1,
+    "pnl_net": -596.87,
+    "max_dd": 21.0
+  },
+  "ADA/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 107,
+    "winrate": 52.3,
+    "pnl_net": -2958.83,
+    "max_dd": 32.5
+  },
+  "AVAX/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 93,
+    "winrate": 45.2,
+    "pnl_net": -2920.47,
+    "max_dd": 34.8
+  },
+  "LINK/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 101,
+    "winrate": 51.5,
+    "pnl_net": -1393.65,
+    "max_dd": 25.3
+  },
+  "DOT/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 104,
+    "winrate": 53.8,
+    "pnl_net": -1366.6,
+    "max_dd": 27.0
+  },
+  "DOGE/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0002,
+    "adx_min": 30,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 65,
+    "n_trades": 104,
+    "winrate": 50.0,
+    "pnl_net": -2953.09,
+    "max_dd": 29.5
+  },
+  "MATIC/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0001,
+    "adx_min": 25,
+    "atr_sl_multiplier": 1.0,
+    "rsi_buy_max": 65,
+    "n_trades": 0,
+    "winrate": 0.0,
+    "pnl_net": 0.0,
+    "max_dd": 0.0
+  },
+  "ATOM/USDT": {
+    "required_score": 5,
+    "slope_threshold": 0.0001,
+    "adx_min": 25,
+    "atr_sl_multiplier": 1.2,
+    "rsi_buy_max": 60,
+    "n_trades": 222,
+    "winrate": 58.6,
+    "pnl_net": -2083.84,
+    "max_dd": 31.9
+  }
+}
