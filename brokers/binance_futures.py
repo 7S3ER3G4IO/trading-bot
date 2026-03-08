@@ -47,13 +47,22 @@ class BinanceFuturesClient:
     def __init__(self):
         api_key = os.getenv("BINANCE_FUTURES_API_KEY", "")
         secret  = os.getenv("BINANCE_FUTURES_SECRET", "")
-        testnet = os.getenv("BINANCE_FUTURES_TESTNET", "true").lower() == "true"
+        demo    = os.getenv("BINANCE_FUTURES_TESTNET", "true").lower() == "true"
 
         self.available = bool(api_key and secret)
+        self._demo     = demo
 
         if not self.available:
             logger.info("ℹ️  Binance Futures non configuré (BINANCE_FUTURES_API_KEY manquant)")
             return
+
+        # URL de base selon mode demo ou live
+        if demo:
+            fapi_base = "https://demo-fapi.binance.com"
+            logger.info("🧪 Binance Futures Demo Trading (0 vrai argent — 5000 USDT virtuels)")
+        else:
+            fapi_base = "https://fapi.binance.com"
+            logger.info("🔴 Binance Futures LIVE")
 
         self.exchange = ccxt.binance({
             "apiKey": api_key,
@@ -63,13 +72,15 @@ class BinanceFuturesClient:
                 "adjustForTimeDifference": True,
             },
             "enableRateLimit": True,
+            "urls": {
+                "api": {
+                    "fapiPublic":   f"{fapi_base}/fapi/v1",
+                    "fapiPrivate":  f"{fapi_base}/fapi/v1",
+                    "fapiPublicV2": f"{fapi_base}/fapi/v2",
+                    "fapiPrivateV2": f"{fapi_base}/fapi/v2",
+                }
+            },
         })
-
-        if testnet:
-            self.exchange.set_sandbox_mode(True)
-            logger.info("🧪 Binance Futures en mode TESTNET (0 vrai argent)")
-        else:
-            logger.info("🔴 Binance Futures en mode LIVE")
 
     def get_balance(self) -> float:
         """Retourne le solde USDT disponible dans le wallet futures."""
