@@ -6,10 +6,10 @@ config.py — Paramètres globaux du bot de trading.
 # Top 5 cryptos uniquement — qualité > quantité
 # Les 12 paires corrélées entre elles = moins bon que 5 paires premium
 SYMBOLS = [
-    "BTC/USDT",   # ✅ WR 100% backtest — référence crypto
-    "ETH/USDT",   # ✅ WR 67%  backtest — très liquide
-    "BNB/USDT",   # 🔄 À valider  — stable, suit BTC
-    "ADA/USDT",   # 🔄 À valider  — volatile, bon ATR
+    "ETH/USDT",    # ✅ WR 61%  DD 11.7% — référence crypto
+    "XRP/USDT",    # ✅ WR 69%  DD  8.1% — MEILLEUR WR de tous
+    "ADA/USDT",    # ✅ WR 41%  DD  5.2% — DD le plus faible
+    "DOGE/USDT",   # ✅ WR 36%  DD 19.5% — 5.4 trades/jour (volume)
 ]
 
 SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)

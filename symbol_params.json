@@ -1,39 +1,39 @@
 {
   "BTC/USDT": {
     "required_score": 4,
-    "slope_threshold": 0.00017466916357121695,
-    "adx_min": 24,
-    "atr_sl_multiplier": 1.8141770131754427,
-    "rsi_buy_max": 75,
-    "tp_multiplier": 3.6387358893897135,
-    "n_trades": 57,
-    "winrate": 47.4,
-    "pnl_net": 6719.76,
-    "max_dd": 18.0
+    "slope_threshold": 0.00016126521335895608,
+    "adx_min": 38,
+    "atr_sl_multiplier": 0.9490091208084248,
+    "rsi_buy_max": 63,
+    "tp_multiplier": 3.3888778463576217,
+    "n_trades": 17,
+    "winrate": 58.8,
+    "pnl_net": 1849.09,
+    "max_dd": 7.4
   },
   "ETH/USDT": {
     "required_score": 4,
-    "slope_threshold": 0.0002567422953220036,
-    "adx_min": 29,
-    "atr_sl_multiplier": 1.9181483236935686,
-    "rsi_buy_max": 70,
-    "tp_multiplier": 3.66137592317176,
-    "n_trades": 30,
-    "winrate": 56.7,
-    "pnl_net": 5509.45,
-    "max_dd": 10.2
+    "slope_threshold": 0.00019905482583222644,
+    "adx_min": 35,
+    "atr_sl_multiplier": 1.7396213587586535,
+    "rsi_buy_max": 69,
+    "tp_multiplier": 2.5554335353241413,
+    "n_trades": 28,
+    "winrate": 60.7,
+    "pnl_net": 2828.94,
+    "max_dd": 11.7
   },
   "BNB/USDT": {
     "required_score": 4,
-    "slope_threshold": 7.590548637556108e-05,
-    "adx_min": 18,
-    "atr_sl_multiplier": 1.8967235350795235,
-    "rsi_buy_max": 74,
-    "tp_multiplier": 3.906529211499947,
-    "n_trades": 149,
-    "winrate": 40.9,
-    "pnl_net": 13572.63,
-    "max_dd": 44.7
+    "slope_threshold": 0.00010571906813317192,
+    "adx_min": 33,
+    "atr_sl_multiplier": 1.4925804598972983,
+    "rsi_buy_max": 73,
+    "tp_multiplier": 2.6805373129048733,
+    "n_trades": 59,
+    "winrate": 50.8,
+    "pnl_net": 2162.1,
+    "max_dd": 21.5
   },
   "SOL/USDT": {
     "required_score": 5,
@@ -58,16 +58,16 @@
     "max_dd": 21.0
   },
   "ADA/USDT": {
-    "required_score": 4,
-    "slope_threshold": 0.00017841840855635654,
-    "adx_min": 19,
-    "atr_sl_multiplier": 1.8256774718214157,
-    "rsi_buy_max": 61,
-    "tp_multiplier": 3.999043582383144,
-    "n_trades": 49,
-    "winrate": 42.9,
-    "pnl_net": 5933.92,
-    "max_dd": 13.8
+    "required_score": 5,
+    "slope_threshold": 7.404472559987598e-05,
+    "adx_min": 16,
+    "atr_sl_multiplier": 1.9284397521546666,
+    "rsi_buy_max": 75,
+    "tp_multiplier": 3.5209933702911527,
+    "n_trades": 17,
+    "winrate": 41.2,
+    "pnl_net": 929.26,
+    "max_dd": 5.2
   },
   "AVAX/USDT": {
     "required_score": 5,
