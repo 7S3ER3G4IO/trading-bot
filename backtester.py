@@ -149,18 +149,19 @@ def simulate_trade(t: BacktestTrade, rows: pd.DataFrame, start_i: int):
 
 # ─── Backtest principal ───────────────────────────────────────────────────────
 
-def run_backtest(symbol: str, days: int, risk: float, timeframe: str = DEFAULT_TF):
+def run_backtest(symbol: str, days: int, risk: float, timeframe: str = DEFAULT_TF, min_score: int = None):
     exchange = get_exchange()
     df_raw   = fetch_historical(exchange, symbol, timeframe, days)
-    return run_backtest_with_params(df_raw, {}, risk)
+    return run_backtest_with_params(df_raw, {}, risk, min_score=min_score)
 
 
-def run_backtest_with_params(df_raw, params: dict, risk: float = DEFAULT_RISK):
+def run_backtest_with_params(df_raw, params: dict, risk: float = DEFAULT_RISK, min_score: int = None):
     """
     Backtest sur un DataFrame déjà téléchargé, avec des params custom.
     params peut contenir : required_score, slope_threshold, adx_min,
                            atr_sl_multiplier, rsi_buy_max
     Utilisé par optimizer.py pour le grid search.
+    min_score : override du seuil (ex: 4 pour Futures, 5 pour Spot)
     """
     import strategy as strat_module
     import config as cfg
@@ -173,26 +174,26 @@ def run_backtest_with_params(df_raw, params: dict, risk: float = DEFAULT_RISK):
     orig_rsi    = cfg.RSI_BUY_MAX
 
     # Surcharge temporaire des paramètres
-    if "required_score"  in params: strat_module.REQUIRED_SCORE  = params["required_score"]
-    if "slope_threshold" in params: strat_module.SLOPE_THRESHOLD = params["slope_threshold"]
-    if "adx_min"         in params: cfg.ADX_MIN                  = params["adx_min"]
-    if "atr_sl_multiplier" in params: cfg.ATR_SL_MULTIPLIER      = params["atr_sl_multiplier"]
-    if "rsi_buy_max"     in params: cfg.RSI_BUY_MAX              = params["rsi_buy_max"]
+    if "required_score"    in params: strat_module.REQUIRED_SCORE  = params["required_score"]
+    if "slope_threshold"   in params: strat_module.SLOPE_THRESHOLD = params["slope_threshold"]
+    if "adx_min"           in params: cfg.ADX_MIN                  = params["adx_min"]
+    if "atr_sl_multiplier" in params: cfg.ATR_SL_MULTIPLIER        = params["atr_sl_multiplier"]
+    if "rsi_buy_max"       in params: cfg.RSI_BUY_MAX              = params["rsi_buy_max"]
 
     try:
         strategy = Strategy()
         risk_mgr = RiskManager(initial_balance=INITIAL_BALANCE)
         risk_mgr.RISK_PER_TRADE = risk
 
-        trades  = []
-        balance = INITIAL_BALANCE
+        trades   = []
+        balance  = INITIAL_BALANCE
         in_trade = False
         window   = 250
 
         for i in range(window, len(df_raw)):
             df_window = df_raw.iloc[i - window:i].copy()
             df_window = strategy.compute_indicators(df_window)
-            sig, score, _ = strategy.get_signal(df_window)
+            sig, score, _ = strategy.get_signal(df_window, min_score_override=min_score)
 
             if sig == SIGNAL_HOLD or in_trade:
                 continue
@@ -323,10 +324,12 @@ DEFAULT_TF = DEFAULT_TF  # fix forward reference
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Nemesis Backtester")
-    parser.add_argument("--symbol", default=DEFAULT_SYMBOL)
-    parser.add_argument("--days",   type=int,   default=DEFAULT_DAYS)
-    parser.add_argument("--risk",   type=float, default=DEFAULT_RISK)
-    parser.add_argument("--tf",     default=DEFAULT_TF)
+    parser.add_argument("--symbol",    default=DEFAULT_SYMBOL)
+    parser.add_argument("--days",      type=int,   default=DEFAULT_DAYS)
+    parser.add_argument("--risk",      type=float, default=DEFAULT_RISK)
+    parser.add_argument("--tf",        default=DEFAULT_TF)
+    parser.add_argument("--min_score", type=int,   default=None,
+                        help="Score minimum (défaut: config MIN_SCORE=5). Ex: 4 pour Futures")
     args = parser.parse_args()
 
     logger.remove()  # Silence les logs pendant le backtest
@@ -336,5 +339,6 @@ if __name__ == "__main__":
         days=args.days,
         risk=args.risk,
         timeframe=args.tf,
+        min_score=args.min_score,
     )
     print_report(trades, final_bal, args.symbol, args.days, args.risk)

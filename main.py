@@ -705,7 +705,9 @@ class TradingBot:
         # Indicateurs + signal
         df = self.strategy.compute_indicators(df)
         sig, score, confirmations = self.strategy.get_signal(
-            df, symbol=instrument, min_score_override=FUTURES_MIN_SCORE
+            df, symbol=instrument,
+            min_score_override=FUTURES_MIN_SCORE,
+            futures_mode=True,   # 24h/7j, LONG+SHORT dans tout régime
         )
 
         if sig == "HOLD":

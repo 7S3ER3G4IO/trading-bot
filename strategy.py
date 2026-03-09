@@ -166,7 +166,7 @@ class Strategy:
         logger.debug(f"📈 Régime marché : {regime} | Slope EMA200 = {slope:.4%}")
         return regime
 
-    def get_signal(self, df: pd.DataFrame, symbol: str = None, min_score_override: int = None) -> tuple:
+    def get_signal(self, df: pd.DataFrame, symbol: str = None, min_score_override: int = None, futures_mode: bool = False) -> tuple:
         """
         Retourne (signal, score, confirmations) où :
           signal        : "BUY" / "SELL" / "HOLD"
@@ -175,6 +175,7 @@ class Strategy:
 
         Si symbol est fourni, charge les paramètres optimisés depuis symbol_params.json.
         min_score_override : seuil personnalisé (ex: 4 pour Futures, 5 pour Spot)
+        futures_mode       : si True → pas de filtre session, LONG+SHORT dans tout régime
         """
         # Chargement params per-symbole si disponibles
         sym_p    = _SYMBOL_PARAMS.get(symbol, {}) if symbol else {}
@@ -186,13 +187,14 @@ class Strategy:
         if len(df) < 2:
             return SIGNAL_HOLD, 0, []
 
-        # Filtre session
-        if not self.is_session_ok():
+        # Filtre session (ignoré en Futures — 24h/7j)
+        if not futures_mode and not self.is_session_ok():
             return SIGNAL_HOLD, 0, []
 
         # ── Pré-filtre OBLIGATOIRE : Régime de marché ─────────────────────
         regime = self.market_regime(df, slope_threshold=slope_thr)
-        if regime == "RANGE":
+        # Filtre régime (en Futures on trade BULL + BEAR + RANGE)
+        if not futures_mode and regime == "RANGE":
             logger.debug("🔇 Marché en range (EMA200 flat) — pas de signal")
             return SIGNAL_HOLD, 0, []
 
@@ -236,9 +238,13 @@ class Strategy:
         htf_bull = curr["close"] > curr["ema_htf"]
         htf_bear = curr["close"] < curr["ema_htf"]
 
-        # ── Régime strict : seulement BUY en BULL, SELL en BEAR ──────────
-        allow_buy  = (regime == "BULL")
-        allow_sell = (regime == "BEAR")
+        # Régime strict pour Spot. En Futures : LONG+SHORT autorisés dans tout régime
+        if futures_mode:
+            allow_buy  = True
+            allow_sell = True
+        else:
+            allow_buy  = (regime == "BULL")
+            allow_sell = (regime == "BEAR")
 
         slope_pct  = float(curr["ema200_slope"]) * 100
 
