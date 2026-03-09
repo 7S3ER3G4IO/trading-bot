@@ -368,11 +368,19 @@ class CapitalClient:
 
     # ─── Taille minimale par instrument (Capital.com) ─────────────────────────
     MIN_SIZE = {
-        "GOLD":       0.10,   # XAUUSD
+        # Métaux précieux
+        "GOLD":       0.10,   # XAUUSD — min 0.1 unit
         "SILVER":     1.00,   # XAGUSD
-        "OIL":        0.10,   # WTI
+        # Pétrole
+        "OIL_BRENT":  1.00,   # Brent Crude — min 1 unit
+        "OIL_WTI":    1.00,   # WTI
+        "OIL":        0.10,   # fallback legacy
         "NATURALGAS": 0.10,
-    }  # Forex / indices / crypto : 0.01
+        # Indices (minimum 1 contrat)
+        "US500":      1.0,    # S&P 500
+        "US100":      1.0,    # NASDAQ 100
+        "DE40":       1.0,    # DAX 40
+    }  # Forex : 0.01 (par défaut)
 
     # ─── Calcul taille de position ────────────────────────────────────────────
 
@@ -388,6 +396,10 @@ class CapitalClient:
         Calcule la taille de position en unités Capital.com.
         Risque = risk_pct × balance / distance_SL
         """
+        if balance <= 0:
+            logger.warning(f"⚠️ position_size: balance={balance} invalide — taille minimale utilisée")
+            min_sz = self.MIN_SIZE.get(epic.upper(), 0.01)
+            return min_sz
         sl_dist = abs(entry - sl)
         if sl_dist == 0:
             return 0.0
