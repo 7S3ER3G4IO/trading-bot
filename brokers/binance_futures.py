@@ -17,16 +17,29 @@ from typing import Optional
 
 # ─── Instruments ─────────────────────────────────────────────────────────────
 FUTURES_INSTRUMENTS = [
+    "BTC/USDT:USDT",
     "ETH/USDT:USDT",
+    "SOL/USDT:USDT",
+    "BNB/USDT:USDT",
     "XRP/USDT:USDT",
     "ADA/USDT:USDT",
+    "LINK/USDT:USDT",
+    "AVAX/USDT:USDT",
     "DOGE/USDT:USDT",
 ]
 
+# Score minimum pour passer un ordre Futures (plus bas que Spot pour + d'opportunités)
+FUTURES_MIN_SCORE = 4  # sur 6 confirmations
+
 INSTRUMENT_NAMES = {
+    "BTC/USDT:USDT":  "Bitcoin",
     "ETH/USDT:USDT":  "Ethereum",
+    "SOL/USDT:USDT":  "Solana",
+    "BNB/USDT:USDT":  "BNB",
     "XRP/USDT:USDT":  "XRP",
     "ADA/USDT:USDT":  "Cardano",
+    "LINK/USDT:USDT": "Chainlink",
+    "AVAX/USDT:USDT": "Avalanche",
     "DOGE/USDT:USDT": "Dogecoin",
 }
 
@@ -303,9 +316,14 @@ class BinanceFuturesClient:
 
         # Précision par instrument
         precision = {
+            "BTC/USDT:USDT":  3,
             "ETH/USDT:USDT":  3,
+            "SOL/USDT:USDT":  2,
+            "BNB/USDT:USDT":  3,
             "XRP/USDT:USDT":  1,
             "ADA/USDT:USDT":  1,
+            "LINK/USDT:USDT": 2,
+            "AVAX/USDT:USDT": 2,
             "DOGE/USDT:USDT": 0,
         }.get(instrument, 3)
         return round(qty, precision)

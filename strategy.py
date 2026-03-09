@@ -166,7 +166,7 @@ class Strategy:
         logger.debug(f"📈 Régime marché : {regime} | Slope EMA200 = {slope:.4%}")
         return regime
 
-    def get_signal(self, df: pd.DataFrame, symbol: str = None) -> tuple:
+    def get_signal(self, df: pd.DataFrame, symbol: str = None, min_score_override: int = None) -> tuple:
         """
         Retourne (signal, score, confirmations) où :
           signal        : "BUY" / "SELL" / "HOLD"
@@ -174,10 +174,11 @@ class Strategy:
           confirmations : list[str], descriptions lisibles
 
         Si symbol est fourni, charge les paramètres optimisés depuis symbol_params.json.
+        min_score_override : seuil personnalisé (ex: 4 pour Futures, 5 pour Spot)
         """
         # Chargement params per-symbole si disponibles
         sym_p    = _SYMBOL_PARAMS.get(symbol, {}) if symbol else {}
-        req_score = sym_p.get("required_score", REQUIRED_SCORE)
+        req_score = min_score_override if min_score_override is not None else sym_p.get("required_score", REQUIRED_SCORE)
         slope_thr = sym_p.get("slope_threshold", SLOPE_THRESHOLD)
         adx_min_  = sym_p.get("adx_min", ADX_MIN)
         rsi_max_  = sym_p.get("rsi_buy_max", RSI_BUY_MAX)

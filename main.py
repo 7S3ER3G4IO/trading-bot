@@ -24,7 +24,7 @@ from market_context import MarketContext
 from database import Database
 from chart_generator import ChartGenerator
 from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
-from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, INSTRUMENT_NAMES
+from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, INSTRUMENT_NAMES, FUTURES_MIN_SCORE
 
 # ─── Features avancées 2026 ────────────────────────────────────
 try:
@@ -702,9 +702,11 @@ class TradingBot:
         if df is None or len(df) < 100:
             return
 
-        # Indicateurs + signal (même stratégie que crypto + Liquidity Sweep)
+        # Indicateurs + signal
         df = self.strategy.compute_indicators(df)
-        sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
+        sig, score, confirmations = self.strategy.get_signal(
+            df, symbol=instrument, min_score_override=FUTURES_MIN_SCORE
+        )
 
         if sig == "HOLD":
             return
