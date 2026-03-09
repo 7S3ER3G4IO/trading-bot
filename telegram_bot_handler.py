@@ -12,7 +12,14 @@ from loguru import logger
 from dotenv import load_dotenv
 import requests
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+try:
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+except ImportError:
+    class InlineKeyboardButton:  # type: ignore
+        def __init__(self, *a, **kw): pass
+    class InlineKeyboardMarkup:  # type: ignore
+        def __init__(self, *a, **kw): pass
+        def to_json(self): return "{}"
 
 load_dotenv()
 

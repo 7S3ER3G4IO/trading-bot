@@ -1402,9 +1402,28 @@ class TradingBot:
     # ─── Callbacks boutons inline ─────────────────────────────────────────────
 
     def _force_close(self, symbol: str) -> str:
+        """Ferme un trade : Capital.com (epic) ou Binance Spot."""
+        # ─── Capital.com : symbol = epic (GOLD, EURUSD...) ───
+        epic = symbol.upper().replace("/USDT", "").replace(":USDT", "")
+        state = self.capital_trades.get(epic) or self.capital_trades.get(symbol)
+        if state is not None:
+            closed = 0
+            for ref in state.get("refs", []):
+                if ref and self.capital.close_position(ref):
+                    closed += 1
+            self.capital_ws.unwatch(epic)
+            self.capital_trades[epic] = None
+            return (
+                f"🔴 <b>Capital.com {epic} fermé</b>\n"
+                f"{closed}/3 positions clôturées manuellement."
+            )
+
+        # ─── Binance Spot fallback ───
+        if not symbol.endswith("/USDT"):
+            symbol = f"{symbol}/USDT"
         t = self.trades.get(symbol)
         if not t:
-            return f"❌ Pas de trade actif sur `{symbol}`"
+            return f"❌ Pas de trade actif sur <code>{symbol}</code>"
         ticker = self.fetcher.get_ticker(symbol)
         price  = ticker["last"]
         self._close_partial(symbol, t.side, t.remaining)
@@ -1414,21 +1433,40 @@ class TradingBot:
         self.reporter.record_trade(symbol, t.side, "MANUAL", pnl_g, t.entry, price, t.remaining)
         self._end_trade(symbol)
         return (
-            f"🔴 *Trade `{symbol}` fermé manuellement*\n"
-            f"💵 Prix : `{price:,.2f}`\n"
-            f"💰 PnL net : `{pnl_g - fees:+.2f} USDT`"
+            f"🔴 <b>Trade {symbol} fermé manuellement</b>\n"
+            f"💰 PnL net : <b>{pnl_g - fees:+.2f} USDT</b>"
         )
 
     def _force_be(self, symbol: str) -> str:
+        """Force le Break-Even : Capital.com (epic) ou Binance Spot."""
+        # ─── Capital.com ───
+        epic  = symbol.upper().replace("/USDT", "").replace(":USDT", "")
+        state = self.capital_trades.get(epic) or self.capital_trades.get(symbol)
+        if state is not None:
+            entry = state["entry"]
+            moved = 0
+            for ref in state.get("refs", [])[1:]:  # pos 2 et 3
+                if ref and self.capital.modify_position_stop(ref, entry):
+                    moved += 1
+            state["tp1_hit"] = True
+            return (
+                f"🟡 <b>BE forcé — {epic}</b>\n"
+                f"SL déplacé à l'entrée : <code>{entry:.5f}</code>\n"
+                f"{moved}/2 positions modifiées."
+            )
+
+        # ─── Binance Spot fallback ───
+        if not symbol.endswith("/USDT"):
+            symbol = f"{symbol}/USDT"
         t = self.trades.get(symbol)
         if not t:
-            return f"❌ Pas de trade actif sur `{symbol}`"
+            return f"❌ Pas de trade actif sur <code>{symbol}</code>"
         t.current_sl = t.be
         t.be_active  = True
         self.db.update_trade(t.db_id, current_sl=t.be, be_active=1)
         return (
-            f"🔒 *Break Even forcé — `{symbol}`*\n"
-            f"SL déplacé à `{t.be:,.2f}` (entrée)"
+            f"🔒 <b>Break-Even forcé — {symbol}</b>\n"
+            f"SL déplacé à <code>{t.be:,.2f}</code> (entrée)"
         )
 
     def _do_pause(self):
