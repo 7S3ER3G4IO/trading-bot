@@ -5,11 +5,11 @@ Emojis forts as visual anchors. Pas d'ASCII art.
 """
 import os
 import io
-import asyncio
+import threading
+import requests
 from datetime import datetime, timezone
 from typing import Optional
-from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.error import TelegramError
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from loguru import logger
 from dotenv import load_dotenv
 from config import WALLET_CHANNEL_URL
@@ -20,44 +20,18 @@ load_dotenv()
 class TelegramNotifier:
 
     def __init__(self):
-        token        = os.getenv("TELEGRAM_BOT_TOKEN")
+        self._token  = os.getenv("TELEGRAM_BOT_TOKEN")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        self.bot     = None
+        self.bot     = self._token  # Compatibilité — truthy si configuré
 
-        if not token or not self.chat_id:
+        if not self._token or not self.chat_id:
             logger.warning("⚠️  Telegram désactivé — credentials manquants.")
+            self.bot = None
             return
-        try:
-            self.bot = Bot(token=token)
-            logger.info("📱 Telegram notifier initialisé.")
-        except Exception as e:
-            logger.error(f"❌ Telegram init : {e}")
+        self._api = f"https://api.telegram.org/bot{self._token}"
+        logger.info("📱 Telegram notifier initialisé (mode sync REST).")
 
-    # ─── Helpers ──────────────────────────────────────────────────────────────
-
-    def _run(self, coro):
-        """
-        Exécute une coroutine Telegram dans un thread isolé.
-        Évite tout conflit avec Flask ou tout autre event loop actif.
-        """
-        if not self.bot:
-            return
-
-        def _in_thread():
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(coro)
-            except Exception as e:
-                logger.error(f"❌ Telegram send : {e}")
-            finally:
-                try:
-                    loop.close()
-                except Exception:
-                    pass
-
-        t = threading.Thread(target=_in_thread, daemon=True, name="tg-send")
-        t.start()
-        t.join(timeout=10)   # Attend max 10s — évite les blocages
+    # ─── Helpers ──────────────────────────────────────────────────────
 
     def _wallet_button(self) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([[
@@ -65,33 +39,49 @@ class TelegramNotifier:
         ]])
 
     def _send(self, text: str, markup: Optional[InlineKeyboardMarkup] = None):
+        """Envoi synchrone via REST API — zéro asyncio."""
         if not self.bot:
             return
-        async def _go():
-            await self.bot.send_message(
-                chat_id=self.chat_id,
-                text=text,
-                parse_mode="HTML",
-                reply_markup=markup,
-            )
-        self._run(_go())
+        try:
+            payload: dict = {
+                "chat_id":    self.chat_id,
+                "text":       text,
+                "parse_mode": "HTML",
+            }
+            if markup:
+                import json
+                payload["reply_markup"] = json.dumps(markup.to_dict())
+            r = requests.post(f"{self._api}/sendMessage",
+                              json=payload, timeout=10)
+            if not r.ok:
+                logger.warning(f"⚠️  Telegram sendMessage {r.status_code}: {r.text[:80]}")
+        except Exception as e:
+            logger.error(f"❌ Telegram send : {e}")
 
     def send_message(self, text: str, markup: Optional[InlineKeyboardMarkup] = None):
         self._send(text, markup)
 
     def _send_photo(self, image_bytes: bytes, caption: str,
                     markup: Optional[InlineKeyboardMarkup] = None):
+        """Envoi photo synchrone via multipart REST — zéro asyncio."""
         if not self.bot or not image_bytes:
             return
-        async def _go():
-            buf = io.BytesIO(image_bytes)
-            buf.name = "chart.png"
-            await self.bot.send_photo(
-                chat_id=self.chat_id, photo=buf,
-                caption=caption, parse_mode="HTML",
-                reply_markup=markup,
-            )
-        self._run(_go())
+        try:
+            files   = {"photo": ("chart.png", io.BytesIO(image_bytes), "image/png")}
+            data: dict = {
+                "chat_id":    self.chat_id,
+                "caption":    caption,
+                "parse_mode": "HTML",
+            }
+            if markup:
+                import json
+                data["reply_markup"] = json.dumps(markup.to_dict())
+            r = requests.post(f"{self._api}/sendPhoto",
+                              data=data, files=files, timeout=30)
+            if not r.ok:
+                logger.warning(f"⚠️  Telegram sendPhoto {r.status_code}: {r.text[:80]}")
+        except Exception as e:
+            logger.error(f"❌ Telegram send photo : {e}")
 
     def _ticker(self, symbol: str) -> str:
         return symbol.replace("/USDT", "").replace(":USDT", "")
