@@ -249,17 +249,27 @@ class BinanceFuturesClient:
         sl: float,
         instrument: str,
     ) -> float:
-        """Calcule la quantité à trader pour risquer risk_pct% du capital."""
+        """
+        Calcule la quantité à trader pour risquer risk_pct% du capital.
+        Plafonnée à 90% du capital disponible / prix d'entrée (levier ×1).
+        Évite l'erreur -2019 Margin is insufficient.
+        """
         sl_dist = abs(entry - sl)
         if sl_dist <= 0 or entry <= 0:
             return 0.0
+
         risk_amt = balance * risk_pct
-        qty = risk_amt / sl_dist
+        qty_risk = risk_amt / sl_dist
+
+        # Plafond margin : à 1x, qty max = 90% du solde / prix entrée
+        qty_max_margin = (balance * 0.90) / entry
+        qty = min(qty_risk, qty_max_margin)
+
         # Précision par instrument
         precision = {
-            "ETH/USDT:USDT": 3,
-            "XRP/USDT:USDT": 1,
-            "ADA/USDT:USDT": 1,
+            "ETH/USDT:USDT":  3,
+            "XRP/USDT:USDT":  1,
+            "ADA/USDT:USDT":  1,
             "DOGE/USDT:USDT": 0,
         }.get(instrument, 3)
         return round(qty, precision)
