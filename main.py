@@ -7,7 +7,7 @@ import os
 import time
 import signal
 from typing import Optional, Dict
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from loguru import logger
 
 from logger import setup_logger
@@ -931,8 +931,6 @@ class TradingBot:
         total_size = self.capital.position_size(
             balance=balance, risk_pct=0.01, entry=entry, sl=sl, epic=instrument
         )
-        # Utilise la taille minimale par instrument depuis le client Capital.com
-        from brokers.capital_client import CapitalClient
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
         size1 = max(min_sz, round(total_size / 3, 2))
 
@@ -978,13 +976,18 @@ class TradingBot:
             "tp2_hit":   False,
         }
         # Session tracker (pour résumé London/NY)
-        name = CAPITAL_NAMES.get(instrument, instrument)
-        hour = datetime.now(timezone.utc).hour
+        name    = CAPITAL_NAMES.get(instrument, instrument)
         hour    = datetime.now(timezone.utc).hour
         minute_ = datetime.now(timezone.utc).minute
         # London : 08h-10h UTC | NY : 13h30-16h UTC
         tracker = self._london_tracker if (hour < 13 or (hour == 13 and minute_ < 30)) else self._ny_tracker
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
+
+        # Persiste immédiatement en BDD (survit aux redémarrages Railway mid-trade)
+        try:
+            self.db.save_capital_trade(instrument, self.capital_trades[instrument])
+        except Exception as exc:
+            logger.warning(f"⚠️ DB save_capital_trade open: {exc}")
 
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
 
