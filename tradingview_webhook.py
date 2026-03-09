@@ -98,9 +98,11 @@ class WebhookServer:
         self._started = True
 
         def _run():
-            import logging
-            log = logging.getLogger("werkzeug")
-            log.setLevel(logging.ERROR)  # Supprime le warning prod Flask
+            import logging, os as _os
+            # Désactive complètement tous les logs Flask/werkzeug
+            logging.getLogger("werkzeug").disabled = True
+            logging.getLogger("werkzeug").propagate = False
+            _os.environ["WERKZEUG_RUN_MAIN"] = "true"  # Supprime le warning prod
             for port in [WEBHOOK_PORT, WEBHOOK_PORT + 1, 5000]:
                 try:
                     self._app.run(
