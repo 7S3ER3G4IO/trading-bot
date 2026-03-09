@@ -599,10 +599,16 @@ class TradingBot:
             logger.info("⏸  Bot en pause manuelle")
             return
 
-        balance = self.fetcher.get_balance()["free"]
+        # Mode Futures Demo uniquement — balance = solde Futures
+        if self.futures and self.futures.available:
+            balance = self.futures.get_balance()
+        else:
+            balance = self.fetcher.get_balance()["free"]
+
         logger.info(
-            f"[{now.strftime('%H:%M:%S')}] Solde={balance:.2f} USDT | "
-            f"Trades={sum(1 for t in self.trades.values() if t)}/{len(SYMBOLS)}"
+            f"[{now.strftime('%H:%M:%S')}] "
+            f"{'🟣 Futures' if (self.futures and self.futures.available) else '💰 Spot'} "
+            f"{balance:.2f} USDT | Trades={sum(1 for t in self.futures_trades.values() if t)}/{len(FUTURES_INSTRUMENTS)}"
         )
 
         # Wallet stats auto-post toutes les 30 min dans le groupe dédié
