@@ -23,7 +23,7 @@ from economic_calendar import EconomicCalendar
 from market_context import MarketContext
 from database import Database
 from chart_generator import ChartGenerator
-from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
+from brokers.capital_client import CapitalClient, CAPITAL_INSTRUMENTS, INSTRUMENT_NAMES as CAPITAL_NAMES, PIP_FACTOR as CAPITAL_PIP
 from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, INSTRUMENT_NAMES, FUTURES_MIN_SCORE
 
 # ─── Features avancées 2026 ────────────────────────────────────
@@ -203,12 +203,12 @@ class TradingBot:
         self.context  = MarketContext()
         self.charter  = ChartGenerator()
 
-        # Broker OANDA (Forex / Gold / Indices)
-        self.oanda = OandaClient()
-        if self.oanda.available:
-            logger.info(f"🏦 OANDA actif — {len(OANDA_INSTRUMENTS)} instruments : {', '.join(OANDA_INSTRUMENTS)}")
+        # Broker Capital.com (Forex / Gold / Indices / Pétrole)
+        self.capital = CapitalClient()
+        if self.capital.available:
+            logger.info(f"🏦 Capital.com actif — {len(CAPITAL_INSTRUMENTS)} instruments : {', '.join(CAPITAL_INSTRUMENTS)}")
         else:
-            logger.info("ℹ️  OANDA non configuré — uniquement crypto Binance")
+            logger.info("ℹ️  Capital.com non configuré — en attente des credentials (CAPITAL_API_KEY / EMAIL / PASSWORD)")
 
         # Futures — activé via BINANCE_FUTURES_API_KEY (voir plus bas)
         self.futures = None
@@ -222,7 +222,7 @@ class TradingBot:
         self.risk             = RiskManager(bal)
         self.initial_balance  = bal
         self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
-        self.oanda_trades: Dict[str, Optional[str]]  = {s: None for s in OANDA_INSTRUMENTS}
+        self.capital_trades: Dict[str, Optional[str]] = {s: None for s in CAPITAL_INSTRUMENTS}
 
         # Log IP publique Railway (utile pour whitelist Binance API)
         try:
@@ -628,32 +628,30 @@ class TradingBot:
         #     except Exception as e:
         #         logger.error(f"❌ {symbol} : {e}")
 
-        # ─── Loop OANDA (désactivé — Futures Demo uniquement) ─────────────────
-        # Pour réactiver : retirer le commentaire ci-dessous
-        # if self.oanda.available and not self._manual_pause:
-        #     oanda_balance = self.oanda.get_balance()
-        #     for instrument in OANDA_INSTRUMENTS:
-        #         try:
-        #             self._process_oanda_symbol(instrument, oanda_balance)
-        #         except Exception as e:
-        #             logger.error(f"❌ OANDA {instrument} : {e}")
-
-        # ─── Boucle Binance Futures (ETH/XRP/ADA/DOGE — LONG & SHORT) ──────────
-        if self.futures and self.futures.available and not self._manual_pause:
-            try:
-                fut_free  = self.futures.get_balance()        # solde libre
-                fut_total = self.futures.get_total_balance()  # solde total (libre + marge)
-                # Budget fixe par instrument = total / nombre max de trades simultanees
-                # Evite de drainer tout le capital sur les premiers instruments
-                n_max = len(FUTURES_INSTRUMENTS)
-                per_instrument_budget = fut_total / n_max if fut_total > 0 else 0.0
-            except Exception:
-                fut_free = fut_total = per_instrument_budget = 0.0
-            for instrument in FUTURES_INSTRUMENTS:
+        # ─── Loop Capital.com — Breakout London/NY Open (actif principal) ─────────
+        if self.capital.available and not self._manual_pause:
+            capital_balance = self.capital.get_balance()
+            for instrument in CAPITAL_INSTRUMENTS:
                 try:
-                    self._process_futures_symbol(instrument, per_instrument_budget, fut_free)
+                    self._process_capital_symbol(instrument, capital_balance)
                 except Exception as e:
-                    logger.error(f"❌ Futures {instrument} : {e}")
+                    logger.error(f"❌ Capital.com {instrument} : {e}")
+
+        # ─── Boucle Binance Futures (désactivée — stratégie Capital.com uniquement) ─
+        # Pour réactiver : décommenter le bloc ci-dessous
+        # if self.futures and self.futures.available and not self._manual_pause:
+        #     try:
+        #         fut_free  = self.futures.get_balance()
+        #         fut_total = self.futures.get_total_balance()
+        #         n_max = len(FUTURES_INSTRUMENTS)
+        #         per_instrument_budget = fut_total / n_max if fut_total > 0 else 0.0
+        #     except Exception:
+        #         fut_free = fut_total = per_instrument_budget = 0.0
+        #     for instrument in FUTURES_INSTRUMENTS:
+        #         try:
+        #             self._process_futures_symbol(instrument, per_instrument_budget, fut_free)
+        #         except Exception as e:
+        #             logger.error(f"❌ Futures {instrument} : {e}")
 
     def _process_futures_symbol(self, instrument: str, balance: float, free_balance: float = 0.0):
         """
@@ -786,67 +784,85 @@ class TradingBot:
                 )
             self.telegram.send_message(msg)
 
-    def _process_oanda_symbol(self, instrument: str, balance: float):
+    def _process_capital_symbol(self, instrument: str, balance: float):
         """
-        Analyse un instrument OANDA (Forex/Gold/Indices) et passe un ordre
-        si le signal est suffisamment fort. Miroir de _process_symbol() pour Binance.
+        Analyse un instrument Capital.com (Forex/Gold/Indices/Oil) avec la stratégie
+        London/NY Open Breakout et passe un ordre si le signal est valide.
         """
-        from brokers.oanda_client import PIP_FACTOR
+        # Trade déjà ouvert — vérifier s'il est encore actif
+        if self.capital_trades.get(instrument):
+            open_pos  = self.capital.get_open_positions()
+            open_refs = {p.get("position", {}).get("dealReference") for p in open_pos}
+            if self.capital_trades[instrument] in open_refs:
+                return  # Trade toujours ouvert
+            else:
+                logger.info(f"✅ Capital.com {instrument} fermé (SL/TP touché)")
+                self.capital_trades[instrument] = None
 
-        # Trade déjà ouvert sur cet instrument — pas de nouveau signal
-        if self.oanda_trades.get(instrument):
+        # Données 5m (granularité optimale pour breakout de session)
+        df = self.capital.fetch_ohlcv(instrument, timeframe="5m", count=300)
+        if df is None or len(df) < 50:
             return
 
-        # Données OANDA → même format OHLCV que Binance
-        df = self.oanda.fetch_ohlcv(instrument, timeframe="15m", count=250)
-        if df is None or len(df) < 100:
-            return
-
-        # Indicateurs + signal via la même stratégie
-        df_htf = self.oanda.fetch_htf(instrument, timeframe="1h", count=50)
-        df     = self.strategy.compute_indicators(df, df_htf=df_htf)
+        # Indicateurs + signal breakout
+        df  = self.strategy.compute_indicators(df)
         sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
 
         if sig == "HOLD":
             return
 
         entry = float(df.iloc[-1]["close"])
-        atr   = self.strategy.get_atr(df)
-        levels = self.risk.calculate_levels(entry, atr, sig)
 
-        # Taille de position en unités OANDA (pas en BTC)
-        units_raw = self.oanda.position_size_units(
-            balance=balance, risk_pct=0.01,
-            entry=entry, sl=levels["sl"], instrument=instrument
-        )
-        if units_raw <= 0:
+        # SL/TP basés sur le range de session pré-London/NY
+        sr       = self.strategy.compute_session_range(df)
+        levels   = self.strategy.get_sl_tp(sig, entry, sr, rr=1.8)
+        sl_price = levels["sl"]
+        tp_price = levels["tp"]
+
+        if sl_price <= 0 or tp_price <= 0 or sr["size"] <= 0:
             return
 
-        units = units_raw if sig == "BUY" else -units_raw
-        tp_price = levels["tp1"]   # OANDA gère le SL/TP natif
+        # Taille de position (Capital.com = unités CFD)
+        size = self.capital.position_size(
+            balance=balance, risk_pct=0.01,
+            entry=entry, sl=sl_price, epic=instrument
+        )
+        if size <= 0:
+            return
 
-        trade_id = self.oanda.place_market_order(
-            instrument=instrument,
-            units=units,
-            sl_price=levels["sl"],
+        direction = "BUY" if sig == "BUY" else "SELL"
+        pip    = CAPITAL_PIP.get(instrument, 0.0001)
+        pips_sl = round(abs(entry - sl_price) / pip)
+        pips_tp = round(abs(entry - tp_price) / pip)
+        name    = CAPITAL_NAMES.get(instrument, instrument)
+        session = "London" if datetime.now(timezone.utc).hour < 12 else "NY"
+
+        deal_ref = self.capital.place_market_order(
+            epic=instrument,
+            direction=direction,
+            size=size,
+            sl_price=sl_price,
             tp_price=tp_price,
         )
 
-        if trade_id:
-            self.oanda_trades[instrument] = trade_id
-            pip = PIP_FACTOR.get(instrument, 0.0001)
-            pips_sl = round(abs(entry - levels["sl"]) / pip)
-            pips_tp = round(abs(entry - tp_price) / pip)
+        if deal_ref:
+            self.capital_trades[instrument] = deal_ref
+            emoji = "🟢 LONG" if sig == "BUY" else "🔴 SHORT"
             self.telegram.send_message(
-                f"🏦 <b>OANDA Signal</b> — {instrument}\n"
-                f"{'🟢 LONG' if sig == 'BUY' else '🔴 SHORT'}   Score {score}/6\n"
-                f"\n"
+                f"📈 <b>Capital.com Breakout — {name}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{emoji}   Session : {session} Open\n"
                 f"📍 Entrée : <code>{entry:.5f}</code>\n"
-                f"🛑 SL     : <code>{levels['sl']:.5f}</code> ({pips_sl} pips)\n"
-                f"🎯 TP     : <code>{tp_price:.5f}</code> ({pips_tp} pips)\n"
-                f"\n"
-                f"💼 Unités : {abs(units):.0f} | TradeID: {trade_id}"
+                f"🛑 SL     : <code>{sl_price:.5f}</code>  ({pips_sl} pips)\n"
+                f"🎯 TP     : <code>{tp_price:.5f}</code>  ({pips_tp} pips)\n"
+                f"💰 Range  : <b>{sr['pct']:.2f}%</b>  |  Score : {score}/3\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🏷 <i>Taille : {size}  |  Ref: {deal_ref}</i>\n"
+                f"🔍 {' | '.join(confirmations)}"
             )
+            logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl_price:.5f} TP={tp_price:.5f}")
+
+
 
     def _process_symbol(self, symbol: str, balance: float):
         trade = self.trades.get(symbol)

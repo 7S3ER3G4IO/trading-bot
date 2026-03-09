@@ -29,7 +29,7 @@ FUTURES_INSTRUMENTS = [
 ]
 
 # Score minimum pour passer un ordre Futures (plus bas que Spot pour + d'opportunités)
-FUTURES_MIN_SCORE = 4  # sur 6 confirmations
+FUTURES_MIN_SCORE = 5  # sur 6 confirmations (qualité > quantité)
 
 INSTRUMENT_NAMES = {
     "BTC/USDT:USDT":  "Bitcoin",
