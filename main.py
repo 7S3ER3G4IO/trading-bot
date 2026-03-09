@@ -862,7 +862,7 @@ class TradingBot:
         if size1 <= 0:
             return
 
-        # Ouvre les 3 positions
+        # ─── ÉTAPE 1 : Ordres en priorité absolue (à la milliseconde) ───
         ref1 = self.capital.place_market_order(instrument, direction, size1, sl, tp1)
         ref2 = self.capital.place_market_order(instrument, direction, size1, sl, tp2)
         ref3 = self.capital.place_market_order(instrument, direction, size1, sl, tp3)
@@ -870,31 +870,7 @@ class TradingBot:
         if not any([ref1, ref2, ref3]):
             return
 
-        # Sauvegarde l'état
-        self.capital_trades[instrument] = {
-            "refs":      [ref1, ref2, ref3],
-            "entry":     entry,
-            "sl":        sl,
-            "direction": direction,
-            "tp1_hit":   False,
-        }
-
-        pip     = CAPITAL_PIP.get(instrument, 0.0001)
-        name    = CAPITAL_NAMES.get(instrument, instrument)
-        session = "London" if datetime.now(timezone.utc).hour < 12 else "NY"
-        emoji   = "🟢 LONG" if sig == "BUY" else "🔴 SHORT"
-
-        # Notification Telegram améliorée avec graphique + score + boutons
-        tgc.notify_capital_entry(
-            instrument=instrument, name=name, sig=sig,
-            entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
-            size=size1, score=score, session=session,
-            range_pct=sr["pct"], range_high=sr["high"], range_low=sr["low"],
-            confirmations=confirmations, df=df,
-        )
-        logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
-
-        # WebSocket — abonne le monitoring temps réel pour cet instrument
+        # ─── ÉTAPE 2 : WebSocket — monitoring BE temps réel (à la milliseconde) ───
         self.capital_ws.watch(
             instrument=instrument,
             entry=entry,
@@ -904,6 +880,28 @@ class TradingBot:
             ref2=ref2 or "",
             ref3=ref3 or "",
         )
+
+        # ─── ÉTAPE 3 : Sauvegarde état ──────────────────────────────────────
+        self.capital_trades[instrument] = {
+            "refs":      [ref1, ref2, ref3],
+            "entry":     entry,
+            "sl":        sl,
+            "direction": direction,
+            "tp1_hit":   False,
+        }
+        logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
+
+        # ─── ÉTAPE 4 : Telegram en background (ne bloque pas la boucle) ────────
+        name    = CAPITAL_NAMES.get(instrument, instrument)
+        session = "London" if datetime.now(timezone.utc).hour < 12 else "NY"
+
+        import threading
+        _snap = dict(instrument=instrument, name=name, sig=sig,
+                     entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
+                     size=size1, score=score, session=session,
+                     range_pct=sr["pct"], range_high=sr["high"], range_low=sr["low"],
+                     confirmations=list(confirmations), df=df)
+        threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
 
     def _on_ws_be_triggered(self, instrument: str, entry: float):
         """
