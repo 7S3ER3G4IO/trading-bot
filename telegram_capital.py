@@ -81,8 +81,10 @@ def _send_photo(image_bytes: bytes, caption: str, markup=None):
         logger.error(f"❌ Telegram send_photo: {e}")
 
 
-def _trade_buttons(instrument: str) -> InlineKeyboardMarkup:
-    """Boutons inline pour gérer le trade depuis Telegram."""
+def _trade_buttons(instrument: str):
+    """Boutons inline pour gérer le trade depuis Telegram. Retourne None si lib manquante."""
+    if not InlineKeyboardMarkup or not InlineKeyboardButton:
+        return None
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("❌ Fermer maintenant", callback_data=f"close:{instrument}"),

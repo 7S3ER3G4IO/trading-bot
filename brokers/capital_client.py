@@ -224,6 +224,33 @@ class CapitalClient:
 
     # ─── Ordres ──────────────────────────────────────────────────────────────
 
+    def confirm_deal(self, deal_ref: str) -> Optional[str]:
+        """
+        Échange un dealReference temporaire contre le dealId permanent.
+        Doit être appelé après place_market_order pour obtenir l'ID utilisable
+        dans modify_position_stop et close_position.
+        """
+        if not self.available or not deal_ref:
+            return None
+        try:
+            r = self._session.get(
+                f"{BASE_URL}/confirms/{deal_ref}",
+                headers=self._headers(),
+                timeout=10,
+            )
+            r.raise_for_status()
+            data     = r.json()
+            deal_id  = data.get("dealId")
+            status   = data.get("dealStatus", "")
+            if status != "ACCEPTED":
+                logger.warning(f"⚠️  Capital.com ordre rejeté : {status} | {data.get('reason', '')}")
+                return None
+            logger.info(f"  ✅ Confirmé dealRef={deal_ref} → dealId={deal_id}")
+            return deal_id
+        except Exception as e:
+            logger.error(f"❌ Capital.com confirm_deal {deal_ref}: {e}")
+            return None
+
     def place_market_order(
         self,
         epic: str,
@@ -234,20 +261,21 @@ class CapitalClient:
     ) -> Optional[str]:
         """
         Passe un ordre marché Capital.com avec SL et TP.
-        Retourne le dealReference ou None si erreur.
+        Retourne le dealId (ID permanent) ou None si erreur.
+        Appelle confirm_deal() automatiquement pour échanger le dealReference.
         """
         if not self.available:
             return None
         try:
             data = {
-                "epic":         epic,
-                "direction":    direction,
-                "size":         str(round(size, 2)),
-                "orderType":    "MARKET",
-                "stopLevel":    round(sl_price, 5),
-                "profitLevel":  round(tp_price, 5),
+                "epic":           epic,
+                "direction":      direction,
+                "size":           str(round(size, 2)),
+                "orderType":      "MARKET",
+                "stopLevel":      round(sl_price, 5),
+                "profitLevel":    round(tp_price, 5),
                 "guaranteedStop": False,
-                "forceOpen":    True,
+                "forceOpen":      True,
             }
             r = self._session.post(
                 f"{BASE_URL}/positions",
@@ -256,10 +284,18 @@ class CapitalClient:
                 timeout=15,
             )
             r.raise_for_status()
-            resp = r.json()
+            resp     = r.json()
             deal_ref = resp.get("dealReference")
-            logger.info(f"✅ Capital.com {direction} {epic} size={size} | ref={deal_ref}")
-            return deal_ref
+            if not deal_ref:
+                logger.error(f"❌ Capital.com place_order : pas de dealReference dans {resp}")
+                return None
+
+            # Échange dealReference → dealId (ID permanent requis pour PUT/DELETE)
+            deal_id = self.confirm_deal(deal_ref)
+            if deal_id:
+                logger.info(f"✅ Capital.com {direction} {epic} size={size} | dealId={deal_id}")
+            return deal_id
+
         except Exception as e:
             logger.error(f"❌ Capital.com place_order {epic}: {e}")
             return None

@@ -235,6 +235,8 @@ class TradingBot:
         self.initial_balance  = bal
         self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
         self.capital_trades: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
+        # Trades Capital.com fermés aujourd'hui (pour le dashboard)
+        self._capital_closed_today: list = []
         # Structure par instrument :
         # { "refs": [ref_tp1, ref_tp2, ref_tp3],  # deal references
         #   "entry": float,   "direction": str,
@@ -1024,6 +1026,18 @@ class TradingBot:
             # Toutes les positions fermées → reset + unwatch WS
             if not ref1_open and not ref2_open and not ref3_open:
                 logger.info(f"✅ Capital.com {instrument} — toutes positions fermées")
+                # Enregistre pour le dashboard quotidien
+                try:
+                    current = self.capital.get_current_price(instrument)
+                    close_px = current["mid"] if current else entry
+                    pnl_est  = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
+                    self._capital_closed_today.append({
+                        "instrument": instrument,
+                        "pnl": round(pnl_est * 3, 4),  # 3 positions
+                        "direction": state["direction"],
+                    })
+                except Exception:
+                    pass
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
 
