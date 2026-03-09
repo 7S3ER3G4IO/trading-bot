@@ -17,6 +17,10 @@ ORDERBOOK_DEPTH   = 100     # Niveaux à analyser
 WALL_THRESHOLD    = 2.0     # Taille >= 2x moyenne = "mur"
 CLUSTER_PCT       = 0.002   # 0.2% pour regrouper niveaux proches
 
+# Seuils de proximité (trop proche = bloquer, assez loin = bonus)
+BLOCK_DIST   = 0.005   # 0.5% — muraille trop proche → bloquer (était 0.3%)
+BONUS_DIST   = 0.006   # 0.6% — liquidité cible assez loin → +1 bonus
+
 class LiquidityZones:
     """
     Détecte les zones de haute liquidité dans le carnet d'ordres.
@@ -133,11 +137,11 @@ class LiquidityZones:
             # LONG valide si résistance loin et support proche (stop protégé)
             if nearest_res:
                 dist_to_res = (nearest_res["price"] - current_price) / current_price
-                if dist_to_res < 0.003:  # résistance à moins de 0.3% → bloquer
+                if dist_to_res < BLOCK_DIST:  # résistance trop proche → bloquer
                     result["valid"]       = False
                     result["score_bonus"] = -1
                     result["message"]     = f"Résistance proche à {nearest_res['price']:.4f}"
-                elif dist_to_res > 0.008:  # résistance loin → bon potentiel
+                elif dist_to_res > BONUS_DIST:  # résistance loin → bon potentiel
                     result["score_bonus"] = 1
                     result["message"]     = f"Liquidité cible à {nearest_res['price']:.4f}"
 
@@ -145,11 +149,11 @@ class LiquidityZones:
             # SHORT valide si support loin et résistance proche
             if nearest_sup:
                 dist_to_sup = (current_price - nearest_sup["price"]) / current_price
-                if dist_to_sup < 0.003:  # support à moins de 0.3% → bloquer
+                if dist_to_sup < BLOCK_DIST:  # support trop proche → bloquer
                     result["valid"]       = False
                     result["score_bonus"] = -1
                     result["message"]     = f"Support proche à {nearest_sup['price']:.4f}"
-                elif dist_to_sup > 0.008:
+                elif dist_to_sup > BONUS_DIST:
                     result["score_bonus"] = 1
                     result["message"]     = f"Liquidité cible à {nearest_sup['price']:.4f}"
 

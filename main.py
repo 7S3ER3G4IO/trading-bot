@@ -780,12 +780,20 @@ class TradingBot:
         # ── #1 Fear & Greed Filter ──────────────────────────────────
         sentiment_scale = 1.0
         if self.sentiment:
+            fg = self.sentiment.get_fear_greed()
+            dash_filter("fear_greed", f"{fg['emoji']} {fg['value']}/100")
             if sig == "BUY" and not self.sentiment.should_allow_long():
-                logger.warning(f"🚨 {symbol} LONG bloqué par Fear&Greed")
+                logger.warning(f"🚨 {symbol} LONG bloqué par Fear&Greed ({fg['value']}/100)")
                 return
             if sig == "SELL" and not self.sentiment.should_allow_short():
-                logger.warning(f"🚨 {symbol} SHORT bloqué par Fear&Greed")
+                logger.warning(f"🚨 {symbol} SHORT bloqué par Fear&Greed ({fg['value']}/100)")
                 return
+            # Bonus +1 si SELL en Extreme Fear (trend baissier confirmé)
+            fg_bonus = self.sentiment.extreme_fear_bonus(sig)
+            if fg_bonus > 0:
+                score += fg_bonus
+                confirmations.append(f"+1 Extreme Fear (trend SELL)")
+                logger.info(f"😱 Bonus F&G SELL {symbol} : score → {score}")
             sentiment_scale = self.sentiment.position_scale()
 
         # ── #2 Funding Rate Filter ───────────────────────────────

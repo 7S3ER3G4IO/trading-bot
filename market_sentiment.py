@@ -71,20 +71,34 @@ class MarketSentiment:
             return {"value": 50, "label": "Neutral", "emoji": "😐", "category": "NEUTRAL"}
 
     def should_allow_long(self) -> bool:
-        """Bloquer les achats en avidité extrême (>80)."""
+        """Bloquer les achats en avidité extrême (>80) ET en peur extrême (<20)."""
         fg = self.get_fear_greed()
         if fg["category"] == "EXTREME_GREED":
             logger.warning(f"🚨 Fear & Greed {fg['value']}/100 — LONGS bloqués (extrême avidité)")
             return False
+        if fg["category"] == "EXTREME_FEAR":
+            logger.warning(f"😱 Fear & Greed {fg['value']}/100 — LONGS bloqués (extrême peur, marché baissier)")
+            return False
         return True
 
     def should_allow_short(self) -> bool:
-        """Bloquer les shorts en peur extrême (<20)."""
+        """Autoriser les shorts en peur extrême — bloquer en avidité extrême."""
         fg = self.get_fear_greed()
-        if fg["category"] == "EXTREME_FEAR":
-            logger.warning(f"😱 Fear & Greed {fg['value']}/100 — SHORTS bloqués (extrême peur)")
+        if fg["category"] == "EXTREME_GREED":
+            logger.warning(f"🚨 Fear & Greed {fg['value']}/100 — SHORTS bloqués (extrême avidité)")
             return False
+        # En EXTREME_FEAR, les shorts sont au contraire FAVORISÉS (trend)
         return True
+
+    def extreme_fear_bonus(self, signal: str) -> int:
+        """
+        Retourne +1 si le signal SELL est confirmé par Extreme Fear (<20).
+        Le marché descend → shorter dans le sens du marché = bonus.
+        """
+        fg = self.get_fear_greed()
+        if fg["category"] == "EXTREME_FEAR" and signal == "SELL":
+            return +1
+        return 0
 
     def position_scale(self) -> float:
         """
