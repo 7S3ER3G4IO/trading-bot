@@ -85,7 +85,8 @@ except ImportError:
 
 try:
     from tradingview_webhook import get_webhook_server
-    _WEBHOOK_OK = True
+    # Opt-in : seulement si WEBHOOK_SECRET est défini dans Railway
+    _WEBHOOK_OK = bool(os.getenv("WEBHOOK_SECRET"))
 except ImportError:
     _WEBHOOK_OK = False
 
@@ -239,11 +240,14 @@ class TradingBot:
         self._weekly_trades: list = []    # [(ts, win:bool)]
         self._wr_paused     = False       # Pause si WR hebdo < 35%
         # TradingView Webhook
+        # TradingView Webhook (opt-in — activer via WEBHOOK_SECRET dans Railway)
         if _WEBHOOK_OK:
             self._webhook = get_webhook_server()
             self._webhook.start()
+            logger.info(f"📡 Webhook TradingView actif")
         else:
             self._webhook = None
+            logger.debug("ℹ️  Webhook désactivé (WEBHOOK_SECRET non défini)")
 
         # ─── Batch 4 — Features avancées ────────────────────────────────────
         self.vol_regime = VolatilityRegime() if _VOLREG_OK else None
