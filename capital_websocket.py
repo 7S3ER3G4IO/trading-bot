@@ -134,8 +134,12 @@ class CapitalWebSocket:
             time.sleep(30)
             return
 
+        # ─── Rafraîchit les tokens avant chaque connexion (expire 10 min) ──
+        logger.debug("🔑 WS : rafraîchissement token Capital.com...")
+        self._client._authenticate()
+
         cst   = self._client._cst
-        token = self._client._token   # X-SECURITY-TOKEN
+        token = self._client._token
 
         ws = websocket.WebSocketApp(
             WS_URL,

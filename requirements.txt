@@ -12,7 +12,7 @@ mplfinance==0.12.9b7
 Pillow>=10.0.0
 requests>=2.31.0
 psycopg2-binary>=2.9.0
-oandapyV20>=0.7.2
+# oandapyV20 removed — replaced by Capital.com
 optuna>=3.0
 flask>=2.3
 scikit-learn>=1.3

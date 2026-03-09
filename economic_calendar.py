@@ -53,10 +53,10 @@ class EconomicCalendar:
                 date_str = item.findtext("date", "")
                 time_str = item.findtext("time", "")
 
-                # Uniquement HIGH impact et USD/Global
+                # Uniquement HIGH impact et USD/EUR/GBP/JPY (nos instruments)
                 if impact.lower() != "high":
                     continue
-                if country not in ("USD", "ALL", ""):
+                if country not in ("USD", "EUR", "GBP", "JPY", "ALL", ""):
                     continue
 
                 # Parser la date

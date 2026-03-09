@@ -342,8 +342,10 @@ class TradingBot:
 
         self.calendar.refresh()
         futures_bal = self.futures.get_balance() if (self.futures and self.futures.available) else 0.0
-        self.telegram.notify_start(bal, SYMBOLS, futures_balance=futures_bal)
-        logger.info(f"💰 Solde initial : {bal:.2f} USDT | Futures: {futures_bal:.2f} USDT")
+        # Utilise le solde Capital.com pour le message de démarrage si disponible
+        start_bal = self.capital.get_balance() if self.capital.available else bal
+        self.telegram.notify_start(start_bal, CAPITAL_INSTRUMENTS, futures_balance=futures_bal)
+        logger.info(f"💰 Solde Capital.com : {start_bal:.2f}€ | Futures: {futures_bal:.2f} USDT")
 
         # ─── #8 Dashboard Web ────────────────────────────────────────────────
         if _DASHBOARD_OK and os.getenv("DASHBOARD_ENABLED", "true").lower() == "true":
