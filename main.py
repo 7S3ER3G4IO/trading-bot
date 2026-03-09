@@ -987,7 +987,7 @@ class TradingBot:
                 entry=entry_or_sl, pips_tp1=pips_tp1, size=0,
             )
         elif event == "TP2":
-            # TP2 touché — SL pos3 déjà déplacé par le WS, on envoie juste la notif
+            state["tp2_hit"] = True   # ← FIX : évite double-trigger
             pips_tp2 = round(abs(state["entry"] - entry_or_sl) / pip)
             logger.info(f"⚡ WS TP2 trailing activé — {instrument} SL pos3 → {entry_or_sl:.5f}")
             self.telegram.send_message(

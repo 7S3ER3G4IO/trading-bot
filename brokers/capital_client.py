@@ -127,7 +127,9 @@ class CapitalClient:
     def _headers(self) -> dict:
         """Retourne les headers d'authentification, renouvelle si nécessaire."""
         if time.time() - self._auth_ts > self.SESSION_TTL:
-            self._authenticate()
+            ok = self._authenticate()
+            if not ok:
+                logger.error("❌ Capital.com : renouvellement session échoué — tokens potentiellement expirés")
         return {
             "X-CAP-API-KEY":    CAPITAL_API_KEY,
             "CST":              self._cst or "",
