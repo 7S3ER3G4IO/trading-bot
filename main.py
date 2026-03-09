@@ -590,20 +590,23 @@ class TradingBot:
         # Refresh Fear & Greed une fois par tick
         self.context.refresh_fear_greed()
 
-        for symbol in SYMBOLS:
-            try:
-                self._process_symbol(symbol, balance)
-            except Exception as e:
-                logger.error(f"❌ {symbol} : {e}")
+        # ─── Loop Spot Binance (désactivé — Futures Demo uniquement) ─────────
+        # Pour réactiver : retirer le commentaire ci-dessous
+        # for symbol in SYMBOLS:
+        #     try:
+        #         self._process_symbol(symbol, balance)
+        #     except Exception as e:
+        #         logger.error(f"❌ {symbol} : {e}")
 
-        # ─── Loop OANDA (Forex / Gold / Indices) ─────────────────────────────
-        if self.oanda.available and not self._manual_pause:
-            oanda_balance = self.oanda.get_balance()
-            for instrument in OANDA_INSTRUMENTS:
-                try:
-                    self._process_oanda_symbol(instrument, oanda_balance)
-                except Exception as e:
-                    logger.error(f"❌ OANDA {instrument} : {e}")
+        # ─── Loop OANDA (désactivé — Futures Demo uniquement) ─────────────────
+        # Pour réactiver : retirer le commentaire ci-dessous
+        # if self.oanda.available and not self._manual_pause:
+        #     oanda_balance = self.oanda.get_balance()
+        #     for instrument in OANDA_INSTRUMENTS:
+        #         try:
+        #             self._process_oanda_symbol(instrument, oanda_balance)
+        #         except Exception as e:
+        #             logger.error(f"❌ OANDA {instrument} : {e}")
 
         # ─── Boucle Binance Futures (ETH/XRP/ADA/DOGE — LONG & SHORT) ──────────
         if self.futures and self.futures.available and not self._manual_pause:
