@@ -1,37 +1,39 @@
 """
 brokers/binance_futures.py — Client Binance Futures USDT-Margined.
 
-Permet de trader :
-  ✅ XAU/USDT  — Or (non-corrélé à BTC → hedge naturel)
-  ✅ BTC/USDT  — Futures BTC (moins de frais que spot : 0.02%/0.04%)
-  ✅ ETH/USDT  — Futures ETH
-  ✅ Levier ×1 uniquement (équivalent spot, risque minimal)
+Trade les mêmes actifs que le spot en LONG et SHORT :
+  ✅ ETH/USDT  — Ethereum perpétuel
+  ✅ XRP/USDT  — XRP perpétuel
+  ✅ ADA/USDT  — Cardano perpétuel
+  ✅ DOGE/USDT — Dogecoin perpétuel
+  Levier ×1 uniquement — zéro risque de liquidation
 
 Variables d'environnement :
-  BINANCE_FUTURES_API_KEY    — Clé API futures testnet/live
-  BINANCE_FUTURES_SECRET     — Secret API futures testnet/live
-  BINANCE_FUTURES_TESTNET    — "true" pour testnet (défaut: true)
+  BINANCE_FUTURES_API_KEY  — Clé API futures mainnet
+  BINANCE_FUTURES_SECRET   — Secret API futures mainnet
+  BINANCE_FUTURES_TESTNET  — "true" pour testnet (défaut: false)
 """
 
 import os, ccxt
 from loguru import logger
 from typing import Optional
 
-# ─── Instruments disponibles sur Binance Futures ──────────────────────────────
+# ─── Instruments — mêmes actifs que le bot spot ──────────────────────────────
 FUTURES_INSTRUMENTS = [
-    "XAU/USDT:USDT",   # Or — non-corrélé à la crypto (corr=-0.64 avec BTC)
+    "ETH/USDT:USDT",
+    "XRP/USDT:USDT",
+    "ADA/USDT:USDT",
+    "DOGE/USDT:USDT",
 ]
 
-# Instruments à afficher proprement dans les notifications
 INSTRUMENT_NAMES = {
-    "XAU/USDT:USDT": "Gold (XAU)",
-    "BTC/USDT:USDT": "Bitcoin",
-    "ETH/USDT:USDT": "Ethereum",
-    "SOL/USDT:USDT": "Solana",
-    "XRP/USDT:USDT": "XRP",
+    "ETH/USDT:USDT":  "Ethereum",
+    "XRP/USDT:USDT":  "XRP",
+    "ADA/USDT:USDT":  "Cardano",
+    "DOGE/USDT:USDT": "Dogecoin",
 }
 
-LEVERAGE = 1  # On utilise ×1 uniquement — équivalent spot sans risque de liquidation
+LEVERAGE = 1  # ×1 uniquement — équivalent spot, aucun risque de liquidation
 
 
 class BinanceFuturesClient:

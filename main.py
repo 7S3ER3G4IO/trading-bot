@@ -24,9 +24,7 @@ from market_context import MarketContext
 from database import Database
 from chart_generator import ChartGenerator
 from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
-# Binance Futures désactivé — spot ETH/XRP/ADA/DOGE uniquement
-# from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS
-FUTURES_INSTRUMENTS = []  # Vide = boucle futures inactive
+from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS
 
 # ─── Features avancées 2026 ────────────────────────────────────
 try:
@@ -274,6 +272,17 @@ class TradingBot:
         self.twap            = TWAPExecutor()      if _TWAP_OK      else None
         self.liquidity_zones = LiquidityZones()    if _LIQUIDITY_OK else None
         self.hmm_regime      = MarketRegimeHMM()   if _HMM_OK       else None
+        # Futures — activé si BINANCE_FUTURES_API_KEY défini dans Railway
+        if os.getenv("BINANCE_FUTURES_API_KEY") and os.getenv("BINANCE_FUTURES_SECRET"):
+            try:
+                self.futures = BinanceFuturesClient()
+                logger.info(f"⚡ Futures Binance actif — {len(FUTURES_INSTRUMENTS)} instruments")
+            except Exception as e:
+                logger.warning(f"⚠️  Futures init : {e}")
+                self.futures = None
+        else:
+            self.futures = None
+            logger.info("ℹ️  Futures désactivé (BINANCE_FUTURES_API_KEY non défini)")
         # DCA pyramiding state : {symbol: {"entry_price", "qty", "ts"}}
         self._dca_positions: dict = {}
         # Benchmark BTC : {date: btc_price}
@@ -568,9 +577,17 @@ class TradingBot:
                 except Exception as e:
                     logger.error(f"❌ OANDA {instrument} : {e}")
 
-        # ─── Boucle Binance Futures désactivée (XAU supprimé) ────────────────
-        # Relancer en ajoutant BINANCE_FUTURES_API_KEY + BINANCE_FUTURES_SECRET
-        # dans Railway pour réactiver.
+        # ─── Boucle Binance Futures (ETH/XRP/ADA/DOGE — LONG & SHORT) ──────────
+        if self.futures and self.futures.available and not self._manual_pause:
+            try:
+                fut_balance = self.futures.get_balance()
+            except Exception:
+                fut_balance = 0.0
+            for instrument in FUTURES_INSTRUMENTS:
+                try:
+                    self._process_futures_symbol(instrument, fut_balance)
+                except Exception as e:
+                    logger.error(f"❌ Futures {instrument} : {e}")
 
     def _process_futures_symbol(self, instrument: str, balance: float):
         """
