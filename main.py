@@ -25,6 +25,8 @@ from database import Database
 from chart_generator import ChartGenerator
 from brokers.capital_client import CapitalClient, CAPITAL_INSTRUMENTS, INSTRUMENT_NAMES as CAPITAL_NAMES, PIP_FACTOR as CAPITAL_PIP
 from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, INSTRUMENT_NAMES, FUTURES_MIN_SCORE
+import telegram_capital as tgc
+from telegram_capital import SessionTracker
 
 # ─── Features avancées 2026 ────────────────────────────────────
 try:
@@ -227,6 +229,11 @@ class TradingBot:
         # { "refs": [ref_tp1, ref_tp2, ref_tp3],  # deal references
         #   "entry": float,   "direction": str,
         #   "tp1_hit": bool,  "sl": float  }
+        # Suivi sessions pour les résumés
+        self._london_tracker = SessionTracker()
+        self._ny_tracker     = SessionTracker()
+        self._last_dashboard_day: Optional[int] = None  # pour le dashboard quotidien
+        self._news_paused    = False  # True quand un événement macro est imminent
 
         # Log IP publique Railway (utile pour whitelist Binance API)
         try:
@@ -868,18 +875,13 @@ class TradingBot:
         session = "London" if datetime.now(timezone.utc).hour < 12 else "NY"
         emoji   = "🟢 LONG" if sig == "BUY" else "🔴 SHORT"
 
-        self.telegram.send_message(
-            f"📈 <b>Capital.com Breakout — {name}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{emoji}   Session : {session} Open\n"
-            f"📍 Entrée : <code>{entry:.5f}</code>\n"
-            f"🛑 SL     : <code>{sl:.5f}</code>  ({round(abs(entry-sl)/pip)} pips)\n"
-            f"🎯 TP1    : <code>{tp1:.5f}</code>  ({round(abs(entry-tp1)/pip)} pips)\n"
-            f"🎯 TP2    : <code>{tp2:.5f}</code>  ({round(abs(entry-tp2)/pip)} pips)\n"
-            f"🎯 TP3    : <code>{tp3:.5f}</code>  ({round(abs(entry-tp3)/pip)} pips)\n"
-            f"💰 Range  : <b>{sr['pct']:.2f}%</b>  |  Score : {score}/3\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📆 3 positions × {size1} unités"
+        # Notification Telegram améliorée avec graphique + score + boutons
+        tgc.notify_capital_entry(
+            instrument=instrument, name=name, sig=sig,
+            entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
+            size=size1, score=score, session=session,
+            range_pct=sr["pct"], range_high=sr["high"], range_low=sr["low"],
+            confirmations=confirmations, df=df,
         )
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
 
@@ -912,6 +914,8 @@ class TradingBot:
             if not tp1_hit and refs[0] and not ref1_open:
                 state["tp1_hit"] = True
                 name = CAPITAL_NAMES.get(instrument, instrument)
+                pip  = CAPITAL_PIP.get(instrument, 0.0001)
+                pips_tp1 = round(abs(entry - state["sl"]) / pip * 0.8)  # ~pips TP1
                 logger.info(f"🎯 TP1 touché {instrument} — activation Break-Even")
 
                 # Déplace SL au break-even sur les positions restantes
@@ -919,11 +923,8 @@ class TradingBot:
                     if ref and ref in open_refs:
                         self.capital.modify_position_stop(ref, entry)
 
-                self.telegram.send_message(
-                    f"🎯 <b>TP1 touché — {name}</b>\n"
-                    f"SL déplacé à l'entrée (<code>{entry:.5f}</code>) \n"
-                    f"🟡 Break-Even activé sur TP2 + TP3 — risque zéro !"
-                )
+                tgc.notify_tp1_be(name=name, instrument=instrument,
+                                  entry=entry, pips_tp1=pips_tp1, size=size1 if (size1 := state.get("size", 0)) else 0)
 
             # Toutes les positions fermées → reset
             if not ref1_open and not ref2_open and not ref3_open:
