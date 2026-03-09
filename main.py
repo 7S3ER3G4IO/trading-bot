@@ -318,8 +318,9 @@ class TradingBot:
         self._restore_from_db()
 
         self.calendar.refresh()
-        self.telegram.notify_start(bal, SYMBOLS)
-        logger.info(f"💰 Solde initial : {bal:.2f} USDT")
+        futures_bal = self.futures.get_balance() if (self.futures and self.futures.available) else 0.0
+        self.telegram.notify_start(bal, SYMBOLS, futures_balance=futures_bal)
+        logger.info(f"💰 Solde initial : {bal:.2f} USDT | Futures: {futures_bal:.2f} USDT")
 
         # ─── #8 Dashboard Web ────────────────────────────────────────────────
         if _DASHBOARD_OK and os.getenv("DASHBOARD_ENABLED", "true").lower() == "true":
