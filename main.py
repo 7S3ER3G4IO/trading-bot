@@ -606,6 +606,39 @@ class TradingBot:
             ).start()
             logger.info("🎲 Monte Carlo hebdo lancé en arrière-plan")
 
+        # ── Résumés de session + Dashboard quotidien ─────────────────────────
+        # London close recap : 11h00 UTC
+        if now.hour == 11 and now.minute == 0:
+            try:
+                cap_bal = self.capital.get_balance() if self.capital.available else 0.0
+                self._london_tracker.send_session_recap("London", cap_bal)
+            except Exception as _e:
+                logger.error(f"❌ London recap: {_e}")
+
+        # NY close recap : 17h00 UTC
+        if now.hour == 17 and now.minute == 0:
+            try:
+                cap_bal = self.capital.get_balance() if self.capital.available else 0.0
+                self._ny_tracker.send_session_recap("NY", cap_bal)
+            except Exception as _e:
+                logger.error(f"❌ NY recap: {_e}")
+
+        # Dashboard quotidien : 21h00 UTC (22h Paris)
+        if (now.hour == 21 and now.minute == 0 and
+                self._last_dashboard_day != today):
+            self._last_dashboard_day = today
+            try:
+                cap_bal    = self.capital.get_balance() if self.capital.available else 0.0
+                day_trades = getattr(self, "_capital_closed_today", [])
+                tgc.send_daily_dashboard(
+                    balance=cap_bal,
+                    initial_balance=self.initial_balance,
+                    day_trades=day_trades,
+                    win_rate_instrument={},
+                )
+                self._capital_closed_today = []   # reset pour le lendemain
+            except Exception as _e:
+                logger.error(f"❌ Daily dashboard: {_e}")
 
         # Calendrier économique
         pause, reason = self.calendar.should_pause_trading()
@@ -1533,52 +1566,86 @@ class TradingBot:
             logger.error(f"❌ _do_monte_carlo: {e}")
 
     def _status_text(self) -> str:
-        balance = self.fetcher.get_balance()["free"]
-        self.context.refresh_fear_greed()
-        nb_open = sum(1 for t in self.trades.values() if t)
-        paused  = "⏸️ PAUSED" if (self._manual_pause or self.handler.is_paused()) else "🟢 ACTIF"
+        # Balance Capital.com en priorité
+        if self.capital.available:
+            balance = self.capital.get_balance()
+            bal_str = f"{balance:,.2f}€  (Capital.com)"
+        else:
+            balance = self.fetcher.get_balance()["free"]
+            bal_str = f"{balance:,.2f} USDT"
 
-        open_lines = ""
-        for sym, t in self.trades.items():
-            if t:
-                ticker = self.fetcher.get_ticker(sym)
-                price  = ticker["last"]
-                pnl_est = (price - t.entry) * t.remaining * (1 if t.side=="BUY" else -1)
-                open_lines += f"  • `{sym}` {t.side} PnL≈{pnl_est:+.2f}\n"
+        paused = "⏸️ PAUSED" if (self._manual_pause or self.handler.is_paused()) else "🟢 ACTIF"
 
-        ctx = self.context.get_context_line()
+        # Positions Capital.com
+        cap_lines = ""
+        cap_open  = 0
+        for epic, state in self.capital_trades.items():
+            if state is None:
+                continue
+            cap_open += 1
+            name = CAPITAL_NAMES.get(epic, epic)
+            tp1_icon = "✅" if state.get("tp1_hit") else "○"
+            cap_lines += f"  • <b>{name}</b> {state.get('direction','?')}  TP1{tp1_icon}\n"
+
+        ctx = self.context.get_context_line() if hasattr(self.context, 'get_context_line') else ""
         return (
-            f"⚡ *Nemesis — Statut*\n"
+            f"⚡ <b>NEMESIS — Statut</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Capital : `{balance:,.2f} USDT`\n"
-            f"📊 Trades ouverts : `{nb_open}/{len(SYMBOLS)}`\n"
-            f"{open_lines}"
+            f"💰 Capital : <b>{bal_str}</b>\n"
+            f"📊 Positions Capital.com : <b>{cap_open}/{len(CAPITAL_INSTRUMENTS)}</b>\n"
+            f"{cap_lines}"
             f"🤖 État : {paused}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ctx}"
         )
 
     def _trades_text(self):
-        open_trades = {s: t for s, t in self.trades.items() if t}
-        if not open_trades:
-            return "📋 *Aucun trade actif.*", None
+        """Retourne le texte + markup des positions Capital.com actives."""
+        lines, markup_epic = [], None
 
-        lines, markup_sym = [], None
-        for sym, t in open_trades.items():
-            ticker = self.fetcher.get_ticker(sym)
-            price  = ticker["last"]
-            pnl    = (price - t.entry) * t.remaining * (1 if t.side=="BUY" else -1)
-            tp_status = f"TP1{'✅' if t.tp1_hit else '○'} TP2{'✅' if t.tp2_hit else '○'}"
+        for epic, state in self.capital_trades.items():
+            if state is None:
+                continue
+            name     = CAPITAL_NAMES.get(epic, epic)
+            entry    = state.get("entry", 0)
+            direction = state.get("direction", "?")
+            tp1_icon  = "✅" if state.get("tp1_hit") else "○"
+
+            # Prix courant via REST (lent mais fiable)
+            price_data = self.capital.get_current_price(epic)
+            if price_data:
+                price   = price_data["mid"]
+                pip     = CAPITAL_PIP.get(epic, 0.0001)
+                pnl_pips = round((price - entry) / pip) if direction == "BUY" else round((entry - price) / pip)
+                price_line = f"\n  📍 Prix : <code>{price:.5f}</code>  ({pnl_pips:+.0f} pips)"
+            else:
+                price_line = ""
+
             lines.append(
-                f"*{sym}* {t.side}\n"
-                f"  💵 Entrée: `{t.entry:,.2f}` | Prix: `{price:,.2f}`\n"
-                f"  PnL≈`{pnl:+.2f}` | {tp_status}\n"
-                f"  SL: `{t.current_sl:,.2f}` {'🔒BE' if t.be_active else ''}"
+                f"<b>{name}</b> {direction} TP1{tp1_icon}\n"
+                f"  📍 Entrée : <code>{entry:.5f}</code>{price_line}\n"
+                f"  🛑 SL : <code>{state.get('sl', 0):.5f}</code>"
             )
-            markup_sym = sym  # Boutons du dernier trade
+            markup_epic = epic
 
-        text = "📋 *Trades actifs :*\n━━━━━━━━━━━━━━━━━━━━━━━\n" + "\n\n".join(lines)
-        markup = TelegramBotHandler.trade_keyboard(markup_sym) if markup_sym else None
+        # Fallback Binance Spot si pas de positions Capital.com
+        if not lines:
+            for sym, t in self.trades.items():
+                if not t:
+                    continue
+                ticker = self.fetcher.get_ticker(sym)
+                price  = ticker["last"]
+                pnl    = (price - t.entry) * t.remaining * (1 if t.side=="BUY" else -1)
+                lines.append(
+                    f"<b>{sym}</b> {t.side}\n"
+                    f"  PnL≈{pnl:+.2f} | SL: <code>{t.current_sl:,.2f}</code>"
+                )
+
+        if not lines:
+            return "📋 <b>Aucune position ouverte.</b>", None
+
+        text   = "📋 <b>Positions actives :</b>\n━━━━━━━━━━━━━━━━━━━━━━━\n" + "\n\n".join(lines)
+        markup = TelegramBotHandler.trade_keyboard(markup_epic) if markup_epic else None
         return text, markup
 
 
