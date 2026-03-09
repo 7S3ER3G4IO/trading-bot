@@ -1,24 +1,21 @@
 """
-brokers/binance_futures.py — Client Binance Futures USDT-Margined.
+brokers/binance_futures.py — Client Binance Futures USDT-Margined (Demo ou Mainnet).
 
-Trade les mêmes actifs que le spot en LONG et SHORT :
-  ✅ ETH/USDT  — Ethereum perpétuel
-  ✅ XRP/USDT  — XRP perpétuel
-  ✅ ADA/USDT  — Cardano perpétuel
-  ✅ DOGE/USDT — Dogecoin perpétuel
-  Levier ×1 uniquement — zéro risque de liquidation
+Utilise requests + HMAC-SHA256 directement vers demo-fapi.binance.com
+pour contourner les limites de ccxt avec l'endpoint demo Binance.
 
 Variables d'environnement :
-  BINANCE_FUTURES_API_KEY  — Clé API futures mainnet
-  BINANCE_FUTURES_SECRET   — Secret API futures mainnet
-  BINANCE_FUTURES_TESTNET  — "true" pour testnet (défaut: false)
+  BINANCE_FUTURES_API_KEY  — Clé API futures (demo ou mainnet)
+  BINANCE_FUTURES_SECRET   — Secret API futures
+  BINANCE_FUTURES_TESTNET  — "true" pour demo-fapi (défaut: true)
 """
 
-import os, ccxt
+import os, time, hmac, hashlib
+import requests as _req
 from loguru import logger
 from typing import Optional
 
-# ─── Instruments — mêmes actifs que le bot spot ──────────────────────────────
+# ─── Instruments ─────────────────────────────────────────────────────────────
 FUTURES_INSTRUMENTS = [
     "ETH/USDT:USDT",
     "XRP/USDT:USDT",
@@ -33,73 +30,124 @@ INSTRUMENT_NAMES = {
     "DOGE/USDT:USDT": "Dogecoin",
 }
 
-LEVERAGE = 1  # ×1 uniquement — équivalent spot, aucun risque de liquidation
+# Symbol mapping: ccxt format → Binance REST format
+_SYM = {
+    "ETH/USDT:USDT":  "ETHUSDT",
+    "XRP/USDT:USDT":  "XRPUSDT",
+    "ADA/USDT:USDT":  "ADAUSDT",
+    "DOGE/USDT:USDT": "DOGEUSDT",
+}
+
+LEVERAGE = 1  # ×1 — zéro risque de liquidation
+
+
+def _to_sym(instrument: str) -> str:
+    return _SYM.get(instrument, instrument.replace("/USDT:USDT", "USDT").replace("/", ""))
 
 
 class BinanceFuturesClient:
     """
-    Client USDT-Margined Futures pour Binance.
-    Gère les ordres, positions et données OHLCV sur le marché futures.
+    Client REST direct pour Binance Futures Demo (demo-fapi.binance.com).
+    Utilise HMAC-SHA256 pour l'authentification — bypass ccxt.
     """
 
     def __init__(self):
-        api_key = os.getenv("BINANCE_FUTURES_API_KEY", "")
-        secret  = os.getenv("BINANCE_FUTURES_SECRET", "")
-        demo    = os.getenv("BINANCE_FUTURES_TESTNET", "true").lower() == "true"
+        self._api_key = os.getenv("BINANCE_FUTURES_API_KEY", "")
+        self._secret  = os.getenv("BINANCE_FUTURES_SECRET", "")
+        demo          = os.getenv("BINANCE_FUTURES_TESTNET", "true").lower() != "false"
 
-        self.available = bool(api_key and secret)
+        self.available = bool(self._api_key and self._secret)
         self._demo     = demo
 
         if not self.available:
             logger.info("ℹ️  Binance Futures non configuré (BINANCE_FUTURES_API_KEY manquant)")
             return
 
-        # URL de base selon mode demo ou live
         if demo:
-            fapi_base = "https://demo-fapi.binance.com"
-            logger.info("🧪 Binance Futures Demo Trading (0 vrai argent — 5000 USDT virtuels)")
+            self._base = "https://demo-fapi.binance.com"
+            logger.info("🧪 Binance Futures Demo (demo-fapi.binance.com) — argent fictif")
         else:
-            fapi_base = "https://fapi.binance.com"
-            logger.info("🔴 Binance Futures LIVE")
+            self._base = "https://fapi.binance.com"
+            logger.info("🔴 Binance Futures LIVE (fapi.binance.com)")
 
-        self.exchange = ccxt.binance({
-            "apiKey": api_key,
-            "secret": secret,
-            "options": {
-                "defaultType": "future",
-                "adjustForTimeDifference": True,
-            },
-            "enableRateLimit": True,
-            "urls": {
-                "api": {
-                    "fapiPublic":   f"{fapi_base}/fapi/v1",
-                    "fapiPrivate":  f"{fapi_base}/fapi/v1",
-                    "fapiPublicV2": f"{fapi_base}/fapi/v2",
-                    "fapiPrivateV2": f"{fapi_base}/fapi/v2",
-                }
-            },
-        })
+        self._session = _req.Session()
+        self._session.headers.update({"X-MBX-APIKEY": self._api_key})
+
+        # Test de connexion
+        try:
+            bal = self.get_balance()
+            logger.info(f"✅ Futures connecté — solde USDT: {bal:.2f}")
+        except Exception as e:
+            logger.warning(f"⚠️  Futures connexion: {e}")
+
+    # ─── Signature HMAC ──────────────────────────────────────────────────────
+
+    def _sign(self, params: dict) -> dict:
+        params["timestamp"] = int(time.time() * 1000)
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        sig = hmac.new(
+            self._secret.encode(), query.encode(), hashlib.sha256
+        ).hexdigest()
+        params["signature"] = sig
+        return params
+
+    def _get(self, path: str, params: dict = None, signed: bool = False):
+        url = self._base + path
+        p   = params or {}
+        if signed:
+            p = self._sign(p)
+        r = self._session.get(url, params=p, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def _post(self, path: str, params: dict = None):
+        url = self._base + path
+        p   = self._sign(params or {})
+        r = self._session.post(url, params=p, timeout=10)
+        try:
+            data = r.json()
+        except Exception:
+            r.raise_for_status()
+            return {}
+        if isinstance(data, dict) and "code" in data and data["code"] != 200:
+            raise ValueError(f"Binance error {data.get('code')}: {data.get('msg')}")
+        return data
+
+    # ─── API publique ────────────────────────────────────────────────────────
 
     def get_balance(self) -> float:
         """Retourne le solde USDT disponible dans le wallet futures."""
         if not self.available:
             return 0.0
         try:
-            bal = self.exchange.fetch_balance()
-            return float(bal.get("USDT", {}).get("free", 0))
+            data = self._get("/fapi/v2/balance", signed=True)
+            for asset in data:
+                if asset.get("asset") == "USDT":
+                    return float(asset.get("availableBalance", 0))
+            return 0.0
         except Exception as e:
             logger.error(f"❌ Futures balance: {e}")
             return 0.0
 
     def fetch_ohlcv(self, instrument: str, timeframe: str = "5m", count: int = 300):
-        """Retourne un DataFrame OHLCV depuis Binance Futures."""
+        """Retourne un DataFrame OHLCV depuis Binance Futures demo."""
         if not self.available:
             return None
         try:
             import pandas as pd
-            tf_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h"}
-            ohlcv  = self.exchange.fetch_ohlcv(instrument, tf_map.get(timeframe, "5m"), limit=count)
-            df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+            sym = _to_sym(instrument)
+            data = self._get("/fapi/v1/klines", params={
+                "symbol": sym, "interval": timeframe, "limit": count
+            })
+            df = pd.DataFrame(data, columns=[
+                "timestamp", "open", "high", "low", "close", "volume",
+                "close_time", "quote_vol", "trades", "taker_buy_base",
+                "taker_buy_quote", "ignore"
+            ])
+            df = df[["timestamp", "open", "high", "low", "close", "volume"]].copy()
+            df[["open", "high", "low", "close", "volume"]] = (
+                df[["open", "high", "low", "close", "volume"]].astype(float)
+            )
             df.index = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
             return df.drop("timestamp", axis=1)
         except Exception as e:
@@ -107,15 +155,12 @@ class BinanceFuturesClient:
             return None
 
     def set_leverage(self, instrument: str, leverage: int = LEVERAGE):
-        """Configure le levier pour un instrument (×1 par défaut)."""
+        """Configure le levier (×1 par défaut)."""
         if not self.available:
             return
         try:
-            sym = instrument.replace(":USDT", "").replace("/", "")
-            self.exchange.fapiPrivate_post_leverage({
-                "symbol": sym,
-                "leverage": leverage,
-            })
+            sym = _to_sym(instrument)
+            self._post("/fapi/v1/leverage", {"symbol": sym, "leverage": leverage})
             logger.debug(f"⚙️  Levier {instrument} → ×{leverage}")
         except Exception as e:
             logger.warning(f"⚠️  set_leverage {instrument}: {e}")
@@ -123,51 +168,47 @@ class BinanceFuturesClient:
     def place_market_order(
         self,
         instrument: str,
-        side: str,          # "BUY" ou "SELL"
-        qty: float,         # Quantité en unités de l'actif
+        side: str,        # "BUY" ou "SELL"
+        qty: float,
         sl_price: float,
         tp_price: float,
     ) -> Optional[str]:
-        """
-        Place un ordre market avec SL et TP natifs via Binance Futures.
-        Retourne le trade_id si succès.
-        """
+        """Place un ordre MARKET avec SL et TP. Retourne l'order ID."""
         if not self.available:
             return None
         try:
             self.set_leverage(instrument, LEVERAGE)
-
-            bs = side.upper()  # "BUY" ou "SELL"
-            opp = "SELL" if bs == "BUY" else "BUY"  # Côté pour SL/TP
+            sym = _to_sym(instrument)
+            bs  = side.upper()
+            opp = "SELL" if bs == "BUY" else "BUY"
 
             # Ordre principal
-            order = self.exchange.create_order(
-                symbol=instrument,
-                type="MARKET",
-                side=bs,
-                amount=qty,
-            )
-            trade_id = str(order.get("id", ""))
+            order = self._post("/fapi/v1/order", {
+                "symbol": sym, "side": bs, "type": "MARKET",
+                "quantity": qty, "positionSide": "BOTH",
+            })
+            trade_id = str(order.get("orderId", ""))
             logger.info(f"📈 Futures {bs} {instrument} qty={qty:.4f} → ID {trade_id}")
 
-            # Stop Loss (ordre opposé stop-market)
+            # Stop Loss
             try:
-                sl_side   = "stopMarket"
-                self.exchange.create_order(
-                    symbol=instrument, type="STOP_MARKET",
-                    side=opp, amount=qty,
-                    params={"stopPrice": sl_price, "reduceOnly": True},
-                )
+                self._post("/fapi/v1/order", {
+                    "symbol": sym, "side": opp, "type": "STOP_MARKET",
+                    "quantity": qty, "stopPrice": round(sl_price, 4),
+                    "positionSide": "BOTH", "reduceOnly": "true",
+                    "timeInForce": "GTE_GTC",
+                })
             except Exception as e:
                 logger.warning(f"⚠️  SL futures: {e}")
 
-            # Take Profit (ordre opposé take-profit-market)
+            # Take Profit
             try:
-                self.exchange.create_order(
-                    symbol=instrument, type="TAKE_PROFIT_MARKET",
-                    side=opp, amount=qty,
-                    params={"stopPrice": tp_price, "reduceOnly": True},
-                )
+                self._post("/fapi/v1/order", {
+                    "symbol": sym, "side": opp, "type": "TAKE_PROFIT_MARKET",
+                    "quantity": qty, "stopPrice": round(tp_price, 4),
+                    "positionSide": "BOTH", "reduceOnly": "true",
+                    "timeInForce": "GTE_GTC",
+                })
             except Exception as e:
                 logger.warning(f"⚠️  TP futures: {e}")
 
@@ -182,15 +223,18 @@ class BinanceFuturesClient:
         if not self.available:
             return False
         try:
-            positions = self.exchange.fetch_positions([instrument])
+            sym = _to_sym(instrument)
+            # Récupère la position
+            positions = self._get("/fapi/v2/positionRisk", params={"symbol": sym}, signed=True)
             for pos in positions:
-                amt = float(pos.get("contracts", 0))
+                amt = float(pos.get("positionAmt", 0))
                 if abs(amt) > 0:
                     side = "SELL" if amt > 0 else "BUY"
-                    self.exchange.create_order(
-                        instrument, "MARKET", side, abs(amt),
-                        params={"reduceOnly": True}
-                    )
+                    self._post("/fapi/v1/order", {
+                        "symbol": sym, "side": side, "type": "MARKET",
+                        "quantity": abs(amt), "reduceOnly": "true",
+                        "positionSide": "BOTH",
+                    })
                     logger.info(f"✅ Position {instrument} fermée")
                     return True
         except Exception as e:
@@ -205,15 +249,17 @@ class BinanceFuturesClient:
         sl: float,
         instrument: str,
     ) -> float:
-        """
-        Calcule la quantité à acheter pour risquer risk_pct% du capital.
-        Formule : qty = (balance × risk%) / |entry - sl|
-        """
+        """Calcule la quantité à trader pour risquer risk_pct% du capital."""
         sl_dist = abs(entry - sl)
         if sl_dist <= 0 or entry <= 0:
             return 0.0
         risk_amt = balance * risk_pct
         qty = risk_amt / sl_dist
-        # Arrondi selon la précision de l'instrument
-        precision = 3 if "XAU" in instrument else 3
+        # Précision par instrument
+        precision = {
+            "ETH/USDT:USDT": 3,
+            "XRP/USDT:USDT": 1,
+            "ADA/USDT:USDT": 1,
+            "DOGE/USDT:USDT": 0,
+        }.get(instrument, 3)
         return round(qty, precision)
