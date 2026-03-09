@@ -146,7 +146,7 @@ def notify_capital_entry(
         try:
             from chart_capital import generate_trade_chart
             chart_bytes = generate_trade_chart(
-                df=df, instrument=name, sig=sig,
+                df=df, instrument=instrument, sig=sig,  # instrument = epic (GOLD, EURUSD...)
                 entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
                 range_high=range_high, range_low=range_low,
                 score=score, session=session,
@@ -301,7 +301,7 @@ def send_daily_dashboard(
         f"<b>Performance par instrument :</b>\n"
         f"{instr_lines if instr_lines else no_trade_msg}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔄 Prochaine session : London 09h00 Paris 🇬🇧"
+        f"🔄 Prochaine session : London 08h00 UTC 🇬🇧"
     )
 
 

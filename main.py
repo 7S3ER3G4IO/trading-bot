@@ -666,8 +666,8 @@ class TradingBot:
             except Exception as _e:
                 logger.error(f"❌ NY recap: {_e}")
 
-        # Dashboard quotidien : 21h00 UTC (22h Paris)
-        if (now.hour == 21 and now.minute == 0 and
+        # Dashboard quotidien : heure définie dans config.py (20h UTC = 21h Paris)
+        if (now.hour == DAILY_REPORT_HOUR_UTC and now.minute == 0 and
                 self._last_dashboard_day != today):
             self._last_dashboard_day = today
             try:
