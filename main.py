@@ -382,12 +382,22 @@ class TradingBot:
 
     def run(self):
         logger.info(f"⏱  Boucle toutes les {LOOP_INTERVAL_SECONDS}s | CTRL+C pour arrêter\n")
+        _err_count = 0  # Compteur d'erreurs consécutives
         while bot_running:
             try:
                 self._tick()
+                _err_count = 0  # Reset si tick OK
             except Exception as e:
-                logger.error(f"❌ Erreur boucle : {e}")
-                self.telegram.notify_error(str(e))
+                _err_count += 1
+                bal = 0.0
+                try:
+                    bal = self.fetcher.get_balance()["free"]
+                except Exception:
+                    pass
+                logger.error(f"❌ Erreur boucle #{_err_count} : {e}")
+                self.telegram.notify_error(str(e), balance=bal, count=_err_count)
+                if _err_count >= 3:
+                    self.telegram.notify_crash(str(e), consecutive=_err_count)
             time.sleep(LOOP_INTERVAL_SECONDS)
         logger.info("✅ Bot arrêté.")
 

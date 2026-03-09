@@ -296,11 +296,46 @@ class TelegramNotifier:
             f"Capital protégé : {balance:,.2f} USDT"
         )
 
-    def notify_error(self, error: str):
+    def notify_error(self, error: str, balance: float = 0.0, count: int = 1):
+        """Alerte Telegram à chaque erreur de boucle."""
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        severity = "🟠" if count < 3 else "🔴"
         self._send(
-            f"⚠️ <b>ERREUR SYSTÈME</b>\n"
+            f"{severity} <b>ERREUR BOT</b> · #{count}\n"
             f"\n"
-            f"<code>{error[:200]}</code>"
+            f"⏰ <b>{now}</b>\n"
+            f"💰 Balance : <b>{balance:,.2f} USDT</b>\n"
+            f"\n"
+            f"<code>{error[:300]}</code>\n"
+            f"\n"
+            f"<i>Bot continu - Railway logs pour détails</i>"
+        )
+
+    def notify_crash(self, error: str, consecutive: int):
+        """Alerte critique : erreurs consécutives détectées."""
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        self._send(
+            f"🚨 <b>ALERTE CRITIQUE — BOT INSTABLE</b>\n"
+            f"\n"
+            f"⏰ {now}\n"
+            f"🔄 {consecutive} erreurs consécutives\n"
+            f"\n"
+            f"<code>{error[:200]}</code>\n"
+            f"\n"
+            f"⚠️ Vérifie Railway → Deploy Logs\n"
+            f"🔗 https://trading-bot-production-7b2a.up.railway.app"
+        )
+
+    def notify_restart(self, balance: float):
+        """Envoyé au redémarrage du bot après un crash."""
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        self._send(
+            f"✅ <b>BOT REDÉMARRÉ</b>\n"
+            f"\n"
+            f"⏰ {now}\n"
+            f"💰 Balance : <b>{balance:,.2f} USDT</b>\n"
+            f"\n"
+            f"<i>AlphaTrader v2.5 actif — Railway Production</i>"
         )
 
     def notify_pre_signal(self, side: str, symbol: str, price: float, score: int):
