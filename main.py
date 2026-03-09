@@ -899,8 +899,10 @@ class TradingBot:
             instrument=instrument,
             entry=entry,
             tp1=tp1,
+            tp2=tp2,
             tp1_ref=ref1 or "",
-            other_refs=[r for r in [ref2, ref3] if r],
+            ref2=ref2 or "",
+            ref3=ref3 or "",
         )
 
     def _on_ws_be_triggered(self, instrument: str, entry: float):

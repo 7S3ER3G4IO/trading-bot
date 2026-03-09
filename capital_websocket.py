@@ -63,23 +63,27 @@ class CapitalWebSocket:
 
     # ─── Interface publique ───────────────────────────────────────────────────
 
-    def watch(self, instrument: str, entry: float, tp1: float,
-              tp1_ref: str, other_refs: List[str]):
+    def watch(self, instrument: str, entry: float,
+              tp1: float, tp2: float,
+              tp1_ref: str, ref2: str, ref3: str):
         """
-        Ajoute un instrument à surveiller.
-        Appelé depuis main.py après ouverture des 3 positions.
+        Ajoute un instrument à surveiller avec les 2 niveaux de trailing.
+        - TP1 franchi → SL pos2 et pos3 à l'entrée (BE)
+        - TP2 franchi → SL pos3 à tp1 (lock-in)
         """
         with self._lock:
             self._watched[instrument] = {
-                "entry":      entry,
-                "tp1":        tp1,
-                "tp1_ref":    tp1_ref,
-                "other_refs": other_refs,
-                "tp1_hit":    False,
+                "entry":    entry,
+                "tp1":      tp1,
+                "tp2":      tp2,
+                "tp1_ref":  tp1_ref,
+                "ref2":     ref2,
+                "ref3":     ref3,
+                "tp1_hit":  False,
+                "tp2_hit":  False,
             }
-        logger.debug(f"🔍 WS watch {instrument}  TP1={tp1:.5f}")
+        logger.debug(f"🔍 WS watch {instrument}  TP1={tp1:.5f}  TP2={tp2:.5f}")
 
-        # (Re)abonne le WS à cet instrument
         if self._ws and self._running:
             self._subscribe([instrument])
 
@@ -184,72 +188,98 @@ class CapitalWebSocket:
 
     def _on_message(self, ws, message: str):
         """
-        Reçoit chaque tick de prix et vérifie si TP1 est franchi.
+        Reçoit chaque tick de prix et vérifie si TP1 ou TP2 est franchi.
         Appelé des dizaines de fois par seconde — doit être ultra-rapide.
         """
         try:
             data = json.loads(message)
             dest = data.get("destination", "")
 
-            # On ne traite que les mises à jour de prix
             if "ohlc" not in dest and "marketData" not in dest:
                 return
 
             payload = data.get("payload", {})
             epic    = payload.get("epic", "")
-
             if not epic:
                 return
 
-            # Prix mid (moyenne bid/offer)
             bid   = payload.get("bid")
             offer = payload.get("offer")
             if bid is None or offer is None:
                 return
             mid = (float(bid) + float(offer)) / 2
 
-            # Vérification TP1
             with self._lock:
                 state = self._watched.get(epic)
-            if state is None or state["tp1_hit"]:
+            if state is None:
                 return
 
-            entry = state["entry"]
-            tp1   = state["tp1"]
-
-            # TP1 touché ? (LONG: mid >= tp1 | SHORT: mid <= tp1)
+            entry      = state["entry"]
+            tp1        = state["tp1"]
+            tp2        = state["tp2"]
             long_trade = tp1 > entry
-            tp1_hit = (mid >= tp1) if long_trade else (mid <= tp1)
 
-            if tp1_hit:
-                self._trigger_be(epic, state, mid)
+            # ─── TP1 : BE sur pos2 et pos3 ───
+            if not state["tp1_hit"]:
+                tp1_hit = (mid >= tp1) if long_trade else (mid <= tp1)
+                if tp1_hit:
+                    self._trigger_be(epic, state, mid)
+
+            # ─── TP2 : trailing — SL pos3 → niveau TP1 ───
+            elif state["tp1_hit"] and not state["tp2_hit"]:
+                tp2_hit = (mid >= tp2) if long_trade else (mid <= tp2)
+                if tp2_hit:
+                    self._trigger_tp2_trailing(epic, state, mid)
 
         except Exception as e:
             logger.error(f"❌ WS on_message: {e}")
 
     def _trigger_be(self, epic: str, state: dict, current_price: float):
         """
-        TP1 franchi → active le Break-Even immédiatement sur les positions restantes.
+        TP1 franchi → BE immédiat sur pos2 et pos3 (SL → entrée).
         """
         with self._lock:
             if state["tp1_hit"]:
-                return   # évite les doubles déclenchements
+                return
             state["tp1_hit"] = True
 
         entry = state["entry"]
-        refs  = state["other_refs"]
-        logger.info(f"⚡ WS BE déclenché {epic} @ {current_price:.5f}  (entrée={entry:.5f})")
+        logger.info(f"⚡ WS TP1 franchi {epic} @ {current_price:.5f} — BE pos2+pos3")
 
-        # Déplace le SL des positions 2 et 3 vers l'entrée (BE)
-        for ref in refs:
+        for ref in [state["ref2"], state["ref3"]]:
             if ref:
                 success = self._client.modify_position_stop(ref, entry)
                 if success:
                     logger.info(f"  ✅ BE activé {ref}")
 
-        # Callback vers main.py (notification Telegram, etc.)
         if self._on_be:
             try:
                 self._on_be(epic, entry)
             except Exception as e:
                 logger.error(f"❌ WS callback BE: {e}")
+
+    def _trigger_tp2_trailing(self, epic: str, state: dict, current_price: float):
+        """
+        TP2 franchi → SL pos3 déplacé au niveau TP1 (lock-in profits).
+        """
+        with self._lock:
+            if state["tp2_hit"]:
+                return
+            state["tp2_hit"] = True
+
+        tp1   = state["tp1"]
+        ref3  = state["ref3"]
+
+        logger.info(f"⚡ WS TP2 franchi {epic} @ {current_price:.5f} — SL pos3 → TP1 ({tp1:.5f})")
+
+        if ref3:
+            success = self._client.modify_position_stop(ref3, tp1)
+            if success:
+                logger.info(f"  ✅ Trailing pos3 activé — SL={tp1:.5f}")
+
+        # Notification via le callback principal (réutilise on_be avec contexte tp2)
+        if self._on_be:
+            try:
+                self._on_be(epic, tp1, "TP2")
+            except Exception:
+                pass
