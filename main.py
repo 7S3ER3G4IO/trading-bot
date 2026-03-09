@@ -28,6 +28,7 @@ from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, I
 import telegram_capital as tgc
 from telegram_capital import SessionTracker
 from capital_websocket import CapitalWebSocket
+from concurrent.futures import ThreadPoolExecutor  # import top-level (perf)
 
 # ─── Features avancées 2026 ────────────────────────────────────
 try:
@@ -863,7 +864,6 @@ class TradingBot:
             return
 
         # ─── ÉTAPE 1 : Ordres en parallèle (toutes les 3 positions simultanément) ───
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         def _place(tp):
             return self.capital.place_market_order(instrument, direction, size1, sl, tp)
 
@@ -911,28 +911,38 @@ class TradingBot:
                      confirmations=list(confirmations), df=df)
         threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
 
-    def _on_ws_be_triggered(self, instrument: str, entry: float):
+    def _on_ws_be_triggered(self, instrument: str, entry_or_sl: float, event: str = "TP1"):
         """
-        Callback WebSocket — appelé en < 500ms quand TP1 est franchi.
+        Callback WebSocket — appelé en < 500ms quand TP1 ou TP2 est franchi.
+        event="TP1" : SL pos2+pos3 → entrée (BE)
+        event="TP2" : SL pos3 → TP1 (trailing lock-in)
         Met à jour l'état interne et envoie la notification Telegram.
         """
         state = self.capital_trades.get(instrument)
         if state is None:
             return
 
-        # Marque TP1 comme touché dans l'état capital_trades
-        state["tp1_hit"] = True
-
         name = CAPITAL_NAMES.get(instrument, instrument)
         pip  = CAPITAL_PIP.get(instrument, 0.0001)
-        rng  = abs(entry - state["sl"])  # taille approximative du range
-        pips_tp1 = round(rng * 0.8 / pip)
 
-        logger.info(f"⚡ WS BE instant — {instrument} @ {entry:.5f}")
-        tgc.notify_tp1_be(
-            name=name, instrument=instrument,
-            entry=entry, pips_tp1=pips_tp1, size=0,
-        )
+        if event == "TP1":
+            state["tp1_hit"] = True
+            rng = abs(state["entry"] - state["sl"])
+            pips_tp1 = round(rng * 0.8 / pip)
+            logger.info(f"⚡ WS BE instant — {instrument} @ {entry_or_sl:.5f}")
+            tgc.notify_tp1_be(
+                name=name, instrument=instrument,
+                entry=entry_or_sl, pips_tp1=pips_tp1, size=0,
+            )
+        elif event == "TP2":
+            # TP2 touché — SL pos3 déjà déplacé par le WS, on envoie juste la notif
+            pips_tp2 = round(abs(state["entry"] - entry_or_sl) / pip)
+            logger.info(f"⚡ WS TP2 trailing activé — {instrument} SL pos3 → {entry_or_sl:.5f}")
+            self.telegram.send_message(
+                f"🎯 <b>TP2 touché — {name}</b>\n"
+                f"SL pos3 déplacé à TP1 (<code>{entry_or_sl:.5f}</code>)\n"
+                f"🟢 Gains TP1 verrouillés sur position 3 !"
+            )
 
     def _monitor_capital_positions(self):
         """
@@ -960,24 +970,26 @@ class TradingBot:
             ref3_open = refs[2] in open_refs if refs[2] else False
 
             # TP1 touché si ref1 a disparu des positions ouvertes
+            # Note : si le WebSocket est actif, il gère déjà le BE.
+            # Ce polling est le fallback si le WS est déconnecté.
             if not tp1_hit and refs[0] and not ref1_open:
                 state["tp1_hit"] = True
                 name = CAPITAL_NAMES.get(instrument, instrument)
                 pip  = CAPITAL_PIP.get(instrument, 0.0001)
-                pips_tp1 = round(abs(entry - state["sl"]) / pip * 0.8)  # ~pips TP1
-                logger.info(f"🎯 TP1 touché {instrument} — activation Break-Even")
+                pips_tp1 = round(abs(entry - state["sl"]) / pip * 0.8)
+                logger.info(f"🎯 [POLL FALLBACK] TP1 touché {instrument} — activation Break-Even")
 
-                # Déplace SL au break-even sur les positions restantes
                 for ref in [refs[1], refs[2]]:
                     if ref and ref in open_refs:
                         self.capital.modify_position_stop(ref, entry)
 
                 tgc.notify_tp1_be(name=name, instrument=instrument,
-                                  entry=entry, pips_tp1=pips_tp1, size=size1 if (size1 := state.get("size", 0)) else 0)
+                                   entry=entry, pips_tp1=pips_tp1, size=0)
 
-            # Toutes les positions fermées → reset
+            # Toutes les positions fermées → reset + unwatch WS
             if not ref1_open and not ref2_open and not ref3_open:
                 logger.info(f"✅ Capital.com {instrument} — toutes positions fermées")
+                self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
 
 
