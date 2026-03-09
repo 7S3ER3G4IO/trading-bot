@@ -1101,15 +1101,24 @@ class TradingBot:
             if not ref1_open and not ref2_open and not ref3_open:
                 logger.info(f"✅ Capital.com {instrument} — toutes positions fermées")
                 # Enregistre pour le dashboard quotidien
+                name_close = CAPITAL_NAMES.get(instrument, instrument)
+                pip_close  = CAPITAL_PIP.get(instrument, 0.0001)
                 try:
-                    current = self.capital.get_current_price(instrument)
+                    current  = self.capital.get_current_price(instrument)
                     close_px = current["mid"] if current else entry
                     pnl_est  = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
+                    pips_pnl = round(pnl_est / pip_close)
+                    result   = "WIN" if pnl_est > 0 else "LOSS"
                     self._capital_closed_today.append({
                         "instrument": instrument,
                         "pnl": round(pnl_est * 3, 4),
                         "direction": state["direction"],
                     })
+                    # Session tracker — résumé London/NY
+                    h_close = datetime.now(timezone.utc).hour
+                    m_close = datetime.now(timezone.utc).minute
+                    tracker_close = self._london_tracker if (h_close < 13 or (h_close == 13 and m_close < 30)) else self._ny_tracker
+                    tracker_close.record_close(name=name_close, pnl=pnl_est * 3, result=result)
                 except Exception:
                     pass
                 # Persiste la fermeture en BDD
