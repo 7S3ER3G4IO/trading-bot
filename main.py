@@ -244,7 +244,7 @@ class TradingBot:
         # Suivi sessions pour les résumés
         self._london_tracker = SessionTracker()
         self._ny_tracker     = SessionTracker()
-        self._last_dashboard_day: Optional[int] = None  # pour le dashboard quotidien
+        self._last_dashboard_day: Optional[date] = None  # pour le dashboard quotidien 21h UTC
         self._news_paused    = False  # True quand un événement macro est imminent
 
         # Log IP publique Railway (utile pour whitelist Binance API)
@@ -980,7 +980,10 @@ class TradingBot:
         # Session tracker (pour résumé London/NY)
         name = CAPITAL_NAMES.get(instrument, instrument)
         hour = datetime.now(timezone.utc).hour
-        tracker = self._london_tracker if hour < 12 else self._ny_tracker
+        hour    = datetime.now(timezone.utc).hour
+        minute_ = datetime.now(timezone.utc).minute
+        # London : 08h-10h UTC | NY : 13h30-16h UTC
+        tracker = self._london_tracker if (hour < 13 or (hour == 13 and minute_ < 30)) else self._ny_tracker
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
 
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
@@ -1524,12 +1527,19 @@ class TradingBot:
         epic = symbol.upper().replace("/USDT", "").replace(":USDT", "")
         state = self.capital_trades.get(epic) or self.capital_trades.get(symbol)
         if state is not None:
+            # Vérifie les positions réellement ouvertes avant de fermer
+            open_pos  = self.capital.get_open_positions()
+            open_refs = {p.get("position", {}).get("dealId") for p in open_pos if p.get("position", {}).get("dealId")}
             closed = 0
             for ref in state.get("refs", []):
-                if ref and self.capital.close_position(ref):
+                if ref and ref in open_refs and self.capital.close_position(ref):
                     closed += 1
             self.capital_ws.unwatch(epic)
             self.capital_trades[epic] = None
+            try:
+                self.db.close_capital_trade(epic)
+            except Exception:
+                pass
             return (
                 f"🔴 <b>Capital.com {epic} fermé</b>\n"
                 f"{closed}/3 positions clôturées manuellement."
@@ -1566,6 +1576,11 @@ class TradingBot:
                 if ref and self.capital.modify_position_stop(ref, entry):
                     moved += 1
             state["tp1_hit"] = True
+            # Persiste tp1_hit en BDD pour survivre au redémarrage Railway
+            try:
+                self.db.save_capital_trade(epic, state)
+            except Exception:
+                pass
             return (
                 f"🟡 <b>BE forcé — {epic}</b>\n"
                 f"SL déplacé à l'entrée : <code>{entry:.5f}</code>\n"

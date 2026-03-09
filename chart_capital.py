@@ -8,6 +8,7 @@ Utilise mplfinance pour créer une image PNG avec :
 import io
 from typing import Optional
 import pandas as pd
+from loguru import logger
 
 try:
     import mplfinance as mpf
@@ -139,6 +140,5 @@ def generate_trade_chart(
         return buf.read()
 
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"❌ chart_capital: {e}")
+        logger.error(f"❌ chart_capital: {e}")
         return None

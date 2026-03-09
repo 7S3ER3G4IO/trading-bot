@@ -170,9 +170,10 @@ class TelegramBotHandler:
             self._reply("▶️ *Bot actif* — Surveillance reprise.")
         elif cmd == "/close":
             if len(parts) < 2:
-                self._reply("Usage : <code>/close XRP</code>")
+                self._reply("Usage : <code>/close GOLD</code> ou <code>/close BTC</code>")
                 return
-            symbol = f"{parts[1].upper()}/USDT"
+            # On passe le nom brut au callback — _force_close gère l'epic vs symbol
+            symbol = parts[1].upper()
             result = self._close_trade(symbol) if self._close_trade else "Erreur"
             self._reply(result)
 
@@ -273,7 +274,7 @@ class TelegramBotHandler:
 
     # ─── Helpers HTTP ─────────────────────────────────────────────────────────
 
-    def _reply(self, text: str, markup: Optional[InlineKeyboardMarkup] = None):
+    def _reply(self, text: str, markup=None):
         payload = {
             "chat_id":    self.chat_id,
             "text":       text,
@@ -281,7 +282,14 @@ class TelegramBotHandler:
         }
         if markup:
             import json
-            payload["reply_markup"] = markup.to_json()
+            # Supporte python-telegram-bot (to_dict) et le stub fallback
+            try:
+                payload["reply_markup"] = json.dumps(markup.to_dict())
+            except AttributeError:
+                try:
+                    payload["reply_markup"] = markup.to_json()
+                except AttributeError:
+                    pass
         try:
             requests.post(f"{self._base}/sendMessage", json=payload, timeout=10)
         except Exception as e:
