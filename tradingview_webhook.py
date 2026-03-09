@@ -27,7 +27,9 @@ except ImportError:
     logger.warning("⚠️  Flask non installé — webhook désactivé")
 
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "alphatrader_webhook_2026")
-WEBHOOK_PORT   = int(os.getenv("WEBHOOK_PORT", "8080"))
+# Sur Railway le port PUBLIC est fourni par $PORT (généralement 8080)
+# On utilise ce port pour que Railway route vers notre webhook
+WEBHOOK_PORT   = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8081")))
 
 
 class WebhookServer:
@@ -96,19 +98,28 @@ class WebhookServer:
         self._started = True
 
         def _run():
-            try:
-                self._app.run(
-                    host="0.0.0.0",
-                    port=WEBHOOK_PORT,
-                    debug=False,
-                    use_reloader=False,
-                )
-            except Exception as e:
-                logger.error(f"Webhook server error: {e}")
+            import logging
+            log = logging.getLogger("werkzeug")
+            log.setLevel(logging.ERROR)  # Supprime le warning prod Flask
+            for port in [WEBHOOK_PORT, WEBHOOK_PORT + 1, 5000]:
+                try:
+                    self._app.run(
+                        host="0.0.0.0",
+                        port=port,
+                        debug=False,
+                        use_reloader=False,
+                    )
+                    break   # succès → sortir
+                except OSError:
+                    logger.warning(f"⚠️  Webhook : port {port} occupé, essai suivant...")
+                    continue
+                except Exception as e:
+                    logger.error(f"Webhook server error: {e}")
+                    break
 
         t = threading.Thread(target=_run, daemon=True, name="webhook-server")
         t.start()
-        logger.info(f"📡 Webhook TradingView actif → port {WEBHOOK_PORT}/webhook/tradingview")
+        logger.info(f"📡 Webhook TradingView démarrage → port {WEBHOOK_PORT}")
 
     def pop_signals(self) -> list:
         """Retourne et vide tous les signaux en attente."""

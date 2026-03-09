@@ -77,7 +77,7 @@ class OandaClient:
             self._api = None
             return
         if not OANDA_API_KEY or not OANDA_ACCOUNT_ID:
-            logger.warning("⚠️  OANDA_API_KEY ou OANDA_ACCOUNT_ID manquants — broker OANDA désactivé")
+            logger.debug("ℹ️  OANDA_API_KEY ou OANDA_ACCOUNT_ID manquants — broker OANDA désactivé")
             self._api = None
             return
 
