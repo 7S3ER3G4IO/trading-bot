@@ -5,7 +5,7 @@ Pause trading 30min avant et 30min après chaque annonce critique.
 """
 
 import xml.etree.ElementTree as ET
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime, timezone, timedelta
 from urllib.request import urlopen
 from urllib.error import URLError
@@ -77,7 +77,7 @@ class EconomicCalendar:
         except Exception as e:
             logger.error(f"❌ Erreur parsing calendrier : {e}")
 
-    def should_pause_trading(self) -> tuple[bool, str]:
+    def should_pause_trading(self) -> Tuple[bool, str]:
         """
         Retourne (True, raison) si le trading doit être mis en pause,
         (False, "") sinon.

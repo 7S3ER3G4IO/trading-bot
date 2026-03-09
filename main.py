@@ -1469,6 +1469,8 @@ class TradingBot:
         """Poste les stats wallet toutes les 30 min dans le groupe dédié."""
         try:
             open_trades = []
+
+            # Trades Binance (Spot/Futures)
             for sym, t in self.trades.items():
                 if t:
                     ticker = self.fetcher.get_ticker(sym)
@@ -1476,9 +1478,26 @@ class TradingBot:
                     pnl    = (price - t.entry) * t.remaining * (1 if t.side == "BUY" else -1)
                     open_trades.append({"symbol": sym, "side": t.side, "pnl": pnl})
 
+            # Trades Capital.com (CFD) — inclus dans le wallet
+            for instrument, state in self.capital_trades.items():
+                if state is not None:
+                    try:
+                        cur = self.capital.get_current_price(instrument)
+                        if cur:
+                            price = cur["mid"]
+                            entry = state["entry"]
+                            mult  = 1 if state["direction"] == "BUY" else -1
+                            pnl   = (price - entry) * mult
+                            name  = CAPITAL_NAMES.get(instrument, instrument)
+                            open_trades.append({"symbol": name, "side": state["direction"], "pnl": pnl})
+                    except Exception:
+                        pass
+
             daily_pnl  = sum(tr.pnl_net for tr in self.reporter._trades)
+            # Ajoute les PnL Capital.com fermés aujourd'hui
+            daily_pnl += sum(t.get("pnl", 0) for t in self._capital_closed_today)
             total_pnl  = balance - self.initial_balance
-            nb_trades  = len(self.reporter._trades)
+            nb_trades  = len(self.reporter._trades) + len(self._capital_closed_today)
             wins       = sum(1 for tr in self.reporter._trades if tr.result != "SL")
             win_rate   = (wins / nb_trades * 100) if nb_trades > 0 else 0
 
