@@ -336,26 +336,41 @@ class CapitalClient:
             logger.error(f"❌ Capital.com close_position {deal_id}: {e}")
             return False
 
-    def modify_position_stop(self, deal_ref: str, new_stop: float) -> bool:
+    def modify_position_stop(self, deal_id: str, new_stop: float) -> bool:
         """
         Déplace le Stop-Loss d'une position existante (pour le Break-Even).
-        Utilise PUT /positions/{dealId} avec le nouveau stopLevel.
+        Capital.com PUT /positions/{dealId} requiert :
+          - stopLevel : nouveau niveau de SL
+          - guaranteedStop : false (doit être explicité)
+          - trailingStop   : false (sinon le SL devient trailing)
         """
-        if not self.available:
+        if not self.available or not deal_id:
             return False
         try:
             r = self._session.put(
-                f"{BASE_URL}/positions/{deal_ref}",
+                f"{BASE_URL}/positions/{deal_id}",
                 headers=self._headers(),
-                json={"stopLevel": round(new_stop, 5)},
+                json={
+                    "stopLevel":      round(new_stop, 5),
+                    "guaranteedStop": False,
+                    "trailingStop":   False,
+                },
                 timeout=15,
             )
             r.raise_for_status()
-            logger.info(f"✅ Capital.com BE activé — {deal_ref} → SL={new_stop:.5f}")
+            logger.info(f"✅ Capital.com BE activé — {deal_id} → SL={new_stop:.5f}")
             return True
         except Exception as e:
-            logger.error(f"❌ Capital.com modify_stop {deal_ref}: {e}")
+            logger.error(f"❌ Capital.com modify_stop {deal_id}: {e}")
             return False
+
+    # ─── Taille minimale par instrument (Capital.com) ─────────────────────────
+    MIN_SIZE = {
+        "GOLD":       0.10,   # XAUUSD
+        "SILVER":     1.00,   # XAGUSD
+        "OIL":        0.10,   # WTI
+        "NATURALGAS": 0.10,
+    }  # Forex / indices / crypto : 0.01
 
     # ─── Calcul taille de position ────────────────────────────────────────────
 
@@ -375,8 +390,8 @@ class CapitalClient:
         if sl_dist == 0:
             return 0.0
         risk_amt = balance * risk_pct
-        size = risk_amt / sl_dist
-        # Taille minimum = 0.01 pour la plupart des instruments
-        size = max(0.01, round(size, 2))
-        logger.debug(f"  Capital.com size {epic}: {size} (risque={risk_amt:.2f}$ / SL={sl_dist:.5f})")
+        size     = risk_amt / sl_dist
+        min_sz   = self.MIN_SIZE.get(epic.upper(), 0.01)
+        size     = max(min_sz, round(size, 2))
+        logger.debug(f"  Capital.com size {epic}: {size} (risque={risk_amt:.2f} / SL_dist={sl_dist:.5f} / min={min_sz})")
         return size

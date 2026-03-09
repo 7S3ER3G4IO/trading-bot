@@ -596,7 +596,7 @@ class TradingBot:
             self._last_morning_day = today
             import threading
             threading.Thread(
-                target=lambda: generate_morning_brief(SYMBOLS, self.telegram),
+                target=lambda: generate_morning_brief(CAPITAL_INSTRUMENTS, self.telegram),
                 daemon=True,
                 name="morning-brief"
             ).start()
@@ -936,9 +936,19 @@ class TradingBot:
             "refs":      [ref1, ref2, ref3],
             "entry":     entry,
             "sl":        sl,
+            "tp1":       tp1,
+            "tp2":       tp2,
+            "tp3":       tp3,
             "direction": direction,
             "tp1_hit":   False,
+            "tp2_hit":   False,
         }
+        # Session tracker (pour résumé London/NY)
+        name = CAPITAL_NAMES.get(instrument, instrument)
+        hour = datetime.now(timezone.utc).hour
+        tracker = self._london_tracker if hour < 12 else self._ny_tracker
+        tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
+
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
 
         # ─── ÉTAPE 4 : Telegram en background (ne bloque pas la boucle) ────────
@@ -1540,7 +1550,7 @@ class TradingBot:
         """Envoie le Morning Brief immédiatement (commande /brief Telegram)."""
         try:
             if _MORNING_OK:
-                generate_morning_brief(SYMBOLS, self.telegram)
+                generate_morning_brief(CAPITAL_INSTRUMENTS, self.telegram)
             else:
                 self.telegram._send("⚠️ morning_brief module non disponible.")
         except Exception as e:
