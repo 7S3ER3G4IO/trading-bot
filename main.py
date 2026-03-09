@@ -210,15 +210,25 @@ class TradingBot:
         else:
             logger.info("ℹ️  OANDA non configuré — uniquement crypto Binance")
 
-        # Broker Binance Futures — DÉSACTIVÉ (XAU non traité, évite erreur -2008)
+        # Futures — activé via BINANCE_FUTURES_API_KEY (voir plus bas)
+        # futures_trades initiarisé ici, réutilisé partout
         self.futures = None
+        self.futures_trades: dict = {}
 
+        # ─── Solde + Risk + State ──────────────────────────────────────────
         bal = self.fetcher.get_balance()["free"]
         self.risk             = RiskManager(bal)
         self.initial_balance  = bal
-        self.trades: Dict[str, Optional[TradeState]]       = {s: None for s in SYMBOLS}
-        self.oanda_trades: Dict[str, Optional[str]]         = {s: None for s in OANDA_INSTRUMENTS}
-        # self.futures_trades désactivé
+        self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
+        self.oanda_trades: Dict[str, Optional[str]]  = {s: None for s in OANDA_INSTRUMENTS}
+
+        # Log IP publique Railway (utile pour whitelist Binance API)
+        try:
+            import requests as _rq
+            _ip = _rq.get("https://ifconfig.me", timeout=5).text.strip()
+            logger.info(f"🌐 IP publique Railway : {_ip}  ← à whitelist sur Binance API")
+        except Exception:
+            pass
 
         self.last_reset_day       = datetime.now(timezone.utc).date()
         self.last_report_hour     = -1
