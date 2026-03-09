@@ -717,7 +717,8 @@ class TradingBot:
         # Wallet stats auto-post toutes les 30 min dans le groupe dédié
         wallet_interval = timedelta(minutes=30)
         if now - self._last_wallet_post >= wallet_interval:
-            self._post_wallet_stats(balance)
+            if balance > 0:   # Ne pas poster si balance=0 (erreur API)
+                self._post_wallet_stats(balance)
             self._last_wallet_post = now
 
         # Refresh Fear & Greed une fois par tick

@@ -148,8 +148,7 @@ class Database:
         if not self._pg:
             for col in ["sl_order_id TEXT", "tp1_order_id TEXT", "tp2_order_id TEXT"]:
                 try:
-                    self._conn.execute(f"ALTER TABLE trades ADD COLUMN {col}")
-                    self._conn.commit()
+                    self._execute(f"ALTER TABLE trades ADD COLUMN {col}")
                 except Exception:
                     pass
 
@@ -206,13 +205,8 @@ class Database:
             "SELECT * FROM trades WHERE status='OPEN'",
             fetch=True
         )
-        if self._pg:
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-        else:
-            cur2 = self._conn.execute("SELECT * FROM trades WHERE status='OPEN'")
-            cols = [d[0] for d in cur2.description]
-            rows = [dict(zip(cols, row)) for row in cur2.fetchall()]
+        cols = [d[0] for d in cur.description] if cur.description else []
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
         if rows:
             logger.info(f"🔄 {len(rows)} trades ouverts restaurés depuis la BDD")
         return rows
@@ -228,47 +222,45 @@ class Database:
                 AND closed_at::date >= (CURRENT_DATE - INTERVAL '{days} days')
                 ORDER BY closed_at DESC
             """
-            cur = self._execute(sql, fetch=True)
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
         else:
-            cur = self._conn.execute(f"""
+            sql = f"""
                 SELECT * FROM trades WHERE status='CLOSED'
                 AND date(closed_at) >= date('now', '-{days} days')
                 ORDER BY closed_at DESC
-            """)
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+            """
+        cur = self._execute(sql, fetch=True)
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def get_weekly_pnl(self) -> float:
         if self._pg:
-            cur = self._execute("""
+            sql = """
                 SELECT COALESCE(SUM(total_pnl - fees), 0) FROM trades
                 WHERE status='CLOSED'
                 AND closed_at::date >= (CURRENT_DATE - INTERVAL '7 days')
-            """, fetch=True)
+            """
         else:
-            cur = self._conn.execute("""
+            sql = """
                 SELECT COALESCE(SUM(total_pnl - fees), 0) FROM trades
                 WHERE status='CLOSED'
                 AND date(closed_at) >= date('now', '-7 days')
-            """)
-        return cur.fetchone()[0] or 0.0
+            """
+        return self._execute(sql, fetch=True).fetchone()[0] or 0.0
 
     def get_total_fees(self, days: int = 30) -> float:
         if self._pg:
-            cur = self._execute(f"""
+            sql = f"""
                 SELECT COALESCE(SUM(fees), 0) FROM trades
                 WHERE status='CLOSED'
                 AND closed_at::date >= (CURRENT_DATE - INTERVAL '{days} days')
-            """, fetch=True)
+            """
         else:
-            cur = self._conn.execute(f"""
+            sql = f"""
                 SELECT COALESCE(SUM(fees), 0) FROM trades
                 WHERE status='CLOSED'
                 AND date(closed_at) >= date('now', '-{days} days')
-            """)
-        return cur.fetchone()[0] or 0.0
+            """
+        return self._execute(sql, fetch=True).fetchone()[0] or 0.0
 
     # ─── Capital.com trades ───────────────────────────────────────────
 
@@ -324,6 +316,8 @@ class Database:
                 "SELECT * FROM capital_trades WHERE status='OPEN'",
                 fetch=True
             )
+            if not cur or not cur.description:
+                return []
             cols = [d[0] for d in cur.description]
             rows = [dict(zip(cols, row)) for row in cur.fetchall()]
             if rows:
