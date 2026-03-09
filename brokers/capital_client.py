@@ -224,32 +224,39 @@ class CapitalClient:
 
     # ─── Ordres ──────────────────────────────────────────────────────────────
 
-    def confirm_deal(self, deal_ref: str) -> Optional[str]:
+    def confirm_deal(self, deal_ref: str, retries: int = 3) -> Optional[str]:
         """
         Échange un dealReference temporaire contre le dealId permanent.
-        Doit être appelé après place_market_order pour obtenir l'ID utilisable
-        dans modify_position_stop et close_position.
+        Retry avec délai car Capital.com peut prendre quelques centaines de ms
+        à confirmer un ordre même après avoir retourné le dealReference.
         """
         if not self.available or not deal_ref:
             return None
-        try:
-            r = self._session.get(
-                f"{BASE_URL}/confirms/{deal_ref}",
-                headers=self._headers(),
-                timeout=10,
-            )
-            r.raise_for_status()
-            data     = r.json()
-            deal_id  = data.get("dealId")
-            status   = data.get("dealStatus", "")
-            if status != "ACCEPTED":
-                logger.warning(f"⚠️  Capital.com ordre rejeté : {status} | {data.get('reason', '')}")
-                return None
-            logger.info(f"  ✅ Confirmé dealRef={deal_ref} → dealId={deal_id}")
-            return deal_id
-        except Exception as e:
-            logger.error(f"❌ Capital.com confirm_deal {deal_ref}: {e}")
-            return None
+        for attempt in range(retries):
+            try:
+                r = self._session.get(
+                    f"{BASE_URL}/confirms/{deal_ref}",
+                    headers=self._headers(),
+                    timeout=10,
+                )
+                r.raise_for_status()
+                data     = r.json()
+                deal_id  = data.get("dealId")
+                status   = data.get("dealStatus", "")
+                if status == "ACCEPTED" and deal_id:
+                    logger.info(f"  ✅ Confirmé dealRef={deal_ref} → dealId={deal_id}")
+                    return deal_id
+                if status == "REJECTED":
+                    logger.warning(f"⚠️  Capital.com ordre rejeté : {data.get('reason', '')}")
+                    return None
+                # Status = PENDING / vide → retry
+                logger.debug(f"  ⏳ Confirm attempt {attempt+1}/{retries} status={status!r}")
+                time.sleep(0.5)
+            except Exception as e:
+                logger.error(f"❌ Capital.com confirm_deal attempt {attempt+1}: {e}")
+                time.sleep(0.5)
+        logger.error(f"❌ confirm_deal épuisé après {retries} essais — dealRef={deal_ref}")
+        return None
 
     def place_market_order(
         self,

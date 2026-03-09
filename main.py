@@ -467,8 +467,9 @@ class TradingBot:
         logger.info("✅ Bot arrêté.")
 
     def _tick(self):
-        now = datetime.now(timezone.utc)
-        cet = now + timedelta(hours=1)
+        now  = datetime.now(timezone.utc)
+        cet  = now + timedelta(hours=1)
+        today = now.date()   # en scope partout dans _tick
 
         # ── Dashboard update ────────────────────────────────────────────────
         try:
@@ -560,17 +561,22 @@ class TradingBot:
             logger.info(f"📊 Nouveau jour — balance de début : {bal:.2f} USDT")
 
         # ── #1 Protection Drawdown Journalier ────────────────────────────
+        # Utilise le solde Capital.com si disponible, sinon Binance
         try:
-            current_bal = self.fetcher.get_balance()["free"]
-            daily_dd_pct = (self._daily_start_balance - current_bal) / self._daily_start_balance * 100
-            if daily_dd_pct >= self.DAILY_DD_LIMIT and not self._dd_paused:
-                self._dd_paused = True
-                self.telegram.send_message(
-                    f"⛔ <b>Protection DD Journalier</b>\n"
-                    f"Perte du jour : <code>{daily_dd_pct:.1f}%</code> (seuil : {self.DAILY_DD_LIMIT}%)\n"
-                    f"Trading suspendu jusqu'à minuit UTC. 🛌"
-                )
-                logger.warning(f"⛔ DD journalier {daily_dd_pct:.1f}% ≥ {self.DAILY_DD_LIMIT}% — pause auto")
+            if self.capital.available:
+                current_bal = self.capital.get_balance()
+            else:
+                current_bal = self.fetcher.get_balance()["free"]
+            if self._daily_start_balance > 0:
+                daily_dd_pct = (self._daily_start_balance - current_bal) / self._daily_start_balance * 100
+                if daily_dd_pct >= self.DAILY_DD_LIMIT and not self._dd_paused:
+                    self._dd_paused = True
+                    self.telegram.send_message(
+                        f"⛔ <b>Protection DD Journalier</b>\n"
+                        f"Perte du jour : <code>{daily_dd_pct:.1f}%</code> (seuil : {self.DAILY_DD_LIMIT}%)\n"
+                        f"Trading suspendu jusqu'à minuit UTC. 🛌"
+                    )
+                    logger.warning(f"⛔ DD journalier {daily_dd_pct:.1f}% ≥ {self.DAILY_DD_LIMIT}% — pause auto")
         except Exception:
             pass
 
@@ -585,7 +591,6 @@ class TradingBot:
             self._run_auto_hyperopt()
 
         # ── Matinale 07h UTC (session London) ────────────────────────────
-        today = now.date()
         if (now.hour == 7 and now.minute == 0 and
                 self._last_morning_day != today and _MORNING_OK):
             self._last_morning_day = today
@@ -992,7 +997,12 @@ class TradingBot:
             return
 
         open_pos  = self.capital.get_open_positions()
-        open_refs = {p.get("position", {}).get("dealReference") for p in open_pos}
+        # Capital.com GET /positions retourne dealId dans l'objet position
+        open_refs = {
+            p.get("position", {}).get("dealId")
+            for p in open_pos
+            if p.get("position", {}).get("dealId")
+        }
 
         for instrument, state in list(self.capital_trades.items()):
             if state is None:
