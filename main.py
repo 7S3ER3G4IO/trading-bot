@@ -641,18 +641,25 @@ class TradingBot:
         # ─── Boucle Binance Futures (ETH/XRP/ADA/DOGE — LONG & SHORT) ──────────
         if self.futures and self.futures.available and not self._manual_pause:
             try:
-                fut_balance = self.futures.get_balance()
+                fut_free  = self.futures.get_balance()        # solde libre
+                fut_total = self.futures.get_total_balance()  # solde total (libre + marge)
+                # Budget fixe par instrument = total / nombre max de trades simultanees
+                # Evite de drainer tout le capital sur les premiers instruments
+                n_max = len(FUTURES_INSTRUMENTS)
+                per_instrument_budget = fut_total / n_max if fut_total > 0 else 0.0
             except Exception:
-                fut_balance = 0.0
+                fut_free = fut_total = per_instrument_budget = 0.0
             for instrument in FUTURES_INSTRUMENTS:
                 try:
-                    self._process_futures_symbol(instrument, fut_balance)
+                    self._process_futures_symbol(instrument, per_instrument_budget, fut_free)
                 except Exception as e:
                     logger.error(f"❌ Futures {instrument} : {e}")
 
-    def _process_futures_symbol(self, instrument: str, balance: float):
+    def _process_futures_symbol(self, instrument: str, balance: float, free_balance: float = 0.0):
         """
         Analyse un instrument Binance Futures (LONG & SHORT).
+        balance      = budget fixe par instrument (total / nb instruments)
+        free_balance = solde libre restant (pour vérifier la marge disponible)
         Endpoint : demo-fapi.binance.com (5000 USDT virtuels).
         Session : 24h/7j (crypto — aucune restriction horaire).
         """
@@ -695,6 +702,12 @@ class TradingBot:
             logger.info(f"📊 Futures {instrument} fermé — PnL: {pnl:+.2f} USDT")
             del self.futures_trades[instrument]
             return  # Réouverture possible au prochain tick
+
+        # Pas assez de marge libre pour ouvrir ce trade
+        min_free_required = balance * 0.5  # au moins 50% du budget-instrument doit être libre
+        if free_balance > 0 and free_balance < min_free_required:
+            logger.debug(f"⏳ Futures {instrument} : marge libre insuffisante ({free_balance:.0f} < {min_free_required:.0f} USDT)")
+            return
 
         # ── B. Pas de position ouverte — chercher un signal ───────────────────
         # Données OHLCV depuis Binance Futures Demo (5m)

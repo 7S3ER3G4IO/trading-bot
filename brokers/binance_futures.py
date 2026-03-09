@@ -129,7 +129,7 @@ class BinanceFuturesClient:
     # ─── API publique ────────────────────────────────────────────────────────
 
     def get_balance(self) -> float:
-        """Retourne le solde USDT disponible dans le wallet futures."""
+        """Retourne le solde USDT disponible (libre) dans le wallet futures."""
         if not self.available:
             return 0.0
         try:
@@ -140,6 +140,20 @@ class BinanceFuturesClient:
             return 0.0
         except Exception as e:
             logger.error(f"❌ Futures balance: {e}")
+            return 0.0
+
+    def get_total_balance(self) -> float:
+        """Retourne le solde USDT total (libre + marge utilisée) du wallet futures."""
+        if not self.available:
+            return 0.0
+        try:
+            data = self._get("/fapi/v2/balance", signed=True)
+            for asset in data:
+                if asset.get("asset") == "USDT":
+                    return float(asset.get("balance", 0))
+            return 0.0
+        except Exception as e:
+            logger.error(f"❌ Futures total balance: {e}")
             return 0.0
 
     def get_position(self, instrument: str) -> dict:
@@ -239,24 +253,26 @@ class BinanceFuturesClient:
             trade_id = str(order.get("orderId", ""))
             logger.info(f"📈 Futures {bs} {instrument} qty={qty:.4f} → ID {trade_id}")
 
-            # Stop Loss
+            # Stop Loss — closePosition=true ferme automatiquement toute la position
             try:
                 self._post("/fapi/v1/order", {
                     "symbol": sym, "side": opp, "type": "STOP_MARKET",
-                    "quantity": qty, "stopPrice": round(sl_price, 4),
-                    "positionSide": "BOTH", "reduceOnly": "true",
-                    "timeInForce": "GTE_GTC",
+                    "stopPrice": round(sl_price, 4),
+                    "positionSide": "BOTH",
+                    "closePosition": "true",
+                    "workingType": "MARK_PRICE",
                 })
             except Exception as e:
                 logger.warning(f"⚠️  SL futures: {e}")
 
-            # Take Profit
+            # Take Profit — closePosition=true ferme automatiquement toute la position
             try:
                 self._post("/fapi/v1/order", {
                     "symbol": sym, "side": opp, "type": "TAKE_PROFIT_MARKET",
-                    "quantity": qty, "stopPrice": round(tp_price, 4),
-                    "positionSide": "BOTH", "reduceOnly": "true",
-                    "timeInForce": "GTE_GTC",
+                    "stopPrice": round(tp_price, 4),
+                    "positionSide": "BOTH",
+                    "closePosition": "true",
+                    "workingType": "MARK_PRICE",
                 })
             except Exception as e:
                 logger.warning(f"⚠️  TP futures: {e}")
@@ -314,16 +330,16 @@ class BinanceFuturesClient:
         qty_max_margin = (balance * 0.90) / entry
         qty = min(qty_risk, qty_max_margin)
 
-        # Précision par instrument
+        # Précision par instrument (step size Binance Futures)
         precision = {
             "BTC/USDT:USDT":  3,
             "ETH/USDT:USDT":  3,
-            "SOL/USDT:USDT":  2,
-            "BNB/USDT:USDT":  3,
-            "XRP/USDT:USDT":  1,
-            "ADA/USDT:USDT":  1,
-            "LINK/USDT:USDT": 2,
-            "AVAX/USDT:USDT": 2,
+            "SOL/USDT:USDT":  1,
+            "BNB/USDT:USDT":  2,
+            "XRP/USDT:USDT":  0,
+            "ADA/USDT:USDT":  0,
+            "LINK/USDT:USDT": 1,
+            "AVAX/USDT:USDT": 1,
             "DOGE/USDT:USDT": 0,
         }.get(instrument, 3)
         return round(qty, precision)
