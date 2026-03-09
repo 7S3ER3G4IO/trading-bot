@@ -862,10 +862,18 @@ class TradingBot:
         if size1 <= 0:
             return
 
-        # ─── ÉTAPE 1 : Ordres en priorité absolue (à la milliseconde) ───
-        ref1 = self.capital.place_market_order(instrument, direction, size1, sl, tp1)
-        ref2 = self.capital.place_market_order(instrument, direction, size1, sl, tp2)
-        ref3 = self.capital.place_market_order(instrument, direction, size1, sl, tp3)
+        # ─── ÉTAPE 1 : Ordres en parallèle (toutes les 3 positions simultanément) ───
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        def _place(tp):
+            return self.capital.place_market_order(instrument, direction, size1, sl, tp)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f1 = pool.submit(_place, tp1)
+            f2 = pool.submit(_place, tp2)
+            f3 = pool.submit(_place, tp3)
+            ref1 = f1.result()
+            ref2 = f2.result()
+            ref3 = f3.result()
 
         if not any([ref1, ref2, ref3]):
             return
