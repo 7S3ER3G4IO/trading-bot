@@ -293,6 +293,27 @@ class CapitalClient:
             logger.error(f"❌ Capital.com close_position {deal_id}: {e}")
             return False
 
+    def modify_position_stop(self, deal_ref: str, new_stop: float) -> bool:
+        """
+        Déplace le Stop-Loss d'une position existante (pour le Break-Even).
+        Utilise PUT /positions/{dealId} avec le nouveau stopLevel.
+        """
+        if not self.available:
+            return False
+        try:
+            r = self._session.put(
+                f"{BASE_URL}/positions/{deal_ref}",
+                headers=self._headers(),
+                json={"stopLevel": round(new_stop, 5)},
+                timeout=15,
+            )
+            r.raise_for_status()
+            logger.info(f"✅ Capital.com BE activé — {deal_ref} → SL={new_stop:.5f}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Capital.com modify_stop {deal_ref}: {e}")
+            return False
+
     # ─── Calcul taille de position ────────────────────────────────────────────
 
     def position_size(

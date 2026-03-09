@@ -222,7 +222,11 @@ class TradingBot:
         self.risk             = RiskManager(bal)
         self.initial_balance  = bal
         self.trades: Dict[str, Optional[TradeState]] = {s: None for s in SYMBOLS}
-        self.capital_trades: Dict[str, Optional[str]] = {s: None for s in CAPITAL_INSTRUMENTS}
+        self.capital_trades: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
+        # Structure par instrument :
+        # { "refs": [ref_tp1, ref_tp2, ref_tp3],  # deal references
+        #   "entry": float,   "direction": str,
+        #   "tp1_hit": bool,  "sl": float  }
 
         # Log IP publique Railway (utile pour whitelist Binance API)
         try:
@@ -636,6 +640,11 @@ class TradingBot:
                     self._process_capital_symbol(instrument, capital_balance)
                 except Exception as e:
                     logger.error(f"❌ Capital.com {instrument} : {e}")
+            # Monitoring Break-Even (TP1 touché → SL déplacé à l'entrée)
+            try:
+                self._monitor_capital_positions()
+            except Exception as e:
+                logger.error(f"❌ Capital.com monitor BE : {e}")
 
         # ─── Boucle Binance Futures (désactivée — stratégie Capital.com uniquement) ─
         # Pour réactiver : décommenter le bloc ci-dessous
@@ -786,81 +795,142 @@ class TradingBot:
 
     def _process_capital_symbol(self, instrument: str, balance: float):
         """
-        Analyse un instrument Capital.com (Forex/Gold/Indices/Oil) avec la stratégie
-        London/NY Open Breakout et passe un ordre si le signal est valide.
+        Analyse un instrument Capital.com avec la stratégie London/NY Open Breakout.
+        Ouvre 3 positions (taille/3) avec 3 niveaux de TP :
+          TP1 = range × 0.8   (sortie rapide + déclencheur BE)
+          TP2 = range × 1.8   (objectif principal)
+          TP3 = range × 3.0   (laisser courir)
         """
-        # Trade déjà ouvert — vérifier s'il est encore actif
-        if self.capital_trades.get(instrument):
-            open_pos  = self.capital.get_open_positions()
-            open_refs = {p.get("position", {}).get("dealReference") for p in open_pos}
-            if self.capital_trades[instrument] in open_refs:
-                return  # Trade toujours ouvert
-            else:
-                logger.info(f"✅ Capital.com {instrument} fermé (SL/TP touché)")
-                self.capital_trades[instrument] = None
+        state = self.capital_trades.get(instrument)
 
-        # Données 5m (granularité optimale pour breakout de session)
+        # Trade déjà ouvert — on ne re-entre pas
+        if state is not None:
+            return
+
+        # Données 5m
         df = self.capital.fetch_ohlcv(instrument, timeframe="5m", count=300)
         if df is None or len(df) < 50:
             return
 
-        # Indicateurs + signal breakout
         df  = self.strategy.compute_indicators(df)
         sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
-
         if sig == "HOLD":
             return
 
-        entry = float(df.iloc[-1]["close"])
-
-        # SL/TP basés sur le range de session pré-London/NY
+        entry    = float(df.iloc[-1]["close"])
         sr       = self.strategy.compute_session_range(df)
-        levels   = self.strategy.get_sl_tp(sig, entry, sr, rr=1.8)
-        sl_price = levels["sl"]
-        tp_price = levels["tp"]
-
-        if sl_price <= 0 or tp_price <= 0 or sr["size"] <= 0:
-            return
-
-        # Taille de position (Capital.com = unités CFD)
-        size = self.capital.position_size(
-            balance=balance, risk_pct=0.01,
-            entry=entry, sl=sl_price, epic=instrument
-        )
-        if size <= 0:
-            return
-
         direction = "BUY" if sig == "BUY" else "SELL"
-        pip    = CAPITAL_PIP.get(instrument, 0.0001)
-        pips_sl = round(abs(entry - sl_price) / pip)
-        pips_tp = round(abs(entry - tp_price) / pip)
+        rng      = sr["size"]
+
+        if rng <= 0 or sr["pct"] < 0.08:
+            return
+
+        # SL commun (autre extrémité du range + buffer 10%)
+        if sig == "BUY":
+            sl    = sr["low"]  - rng * 0.1
+            tp1   = entry + rng * 0.8
+            tp2   = entry + rng * 1.8
+            tp3   = entry + rng * 3.0
+        else:
+            sl    = sr["high"] + rng * 0.1
+            tp1   = entry - rng * 0.8
+            tp2   = entry - rng * 1.8
+            tp3   = entry - rng * 3.0
+
+        # Taille totale puis split en 3
+        total_size = self.capital.position_size(
+            balance=balance, risk_pct=0.01, entry=entry, sl=sl, epic=instrument
+        )
+        size1 = max(0.01, round(total_size / 3, 2))
+
+        if size1 <= 0:
+            return
+
+        # Ouvre les 3 positions
+        ref1 = self.capital.place_market_order(instrument, direction, size1, sl, tp1)
+        ref2 = self.capital.place_market_order(instrument, direction, size1, sl, tp2)
+        ref3 = self.capital.place_market_order(instrument, direction, size1, sl, tp3)
+
+        if not any([ref1, ref2, ref3]):
+            return
+
+        # Sauvegarde l'état
+        self.capital_trades[instrument] = {
+            "refs":      [ref1, ref2, ref3],
+            "entry":     entry,
+            "sl":        sl,
+            "direction": direction,
+            "tp1_hit":   False,
+        }
+
+        pip     = CAPITAL_PIP.get(instrument, 0.0001)
         name    = CAPITAL_NAMES.get(instrument, instrument)
         session = "London" if datetime.now(timezone.utc).hour < 12 else "NY"
+        emoji   = "🟢 LONG" if sig == "BUY" else "🔴 SHORT"
 
-        deal_ref = self.capital.place_market_order(
-            epic=instrument,
-            direction=direction,
-            size=size,
-            sl_price=sl_price,
-            tp_price=tp_price,
+        self.telegram.send_message(
+            f"📈 <b>Capital.com Breakout — {name}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{emoji}   Session : {session} Open\n"
+            f"📍 Entrée : <code>{entry:.5f}</code>\n"
+            f"🛑 SL     : <code>{sl:.5f}</code>  ({round(abs(entry-sl)/pip)} pips)\n"
+            f"🎯 TP1    : <code>{tp1:.5f}</code>  ({round(abs(entry-tp1)/pip)} pips)\n"
+            f"🎯 TP2    : <code>{tp2:.5f}</code>  ({round(abs(entry-tp2)/pip)} pips)\n"
+            f"🎯 TP3    : <code>{tp3:.5f}</code>  ({round(abs(entry-tp3)/pip)} pips)\n"
+            f"💰 Range  : <b>{sr['pct']:.2f}%</b>  |  Score : {score}/3\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📆 3 positions × {size1} unités"
         )
+        logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
 
-        if deal_ref:
-            self.capital_trades[instrument] = deal_ref
-            emoji = "🟢 LONG" if sig == "BUY" else "🔴 SHORT"
-            self.telegram.send_message(
-                f"📈 <b>Capital.com Breakout — {name}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{emoji}   Session : {session} Open\n"
-                f"📍 Entrée : <code>{entry:.5f}</code>\n"
-                f"🛑 SL     : <code>{sl_price:.5f}</code>  ({pips_sl} pips)\n"
-                f"🎯 TP     : <code>{tp_price:.5f}</code>  ({pips_tp} pips)\n"
-                f"💰 Range  : <b>{sr['pct']:.2f}%</b>  |  Score : {score}/3\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🏷 <i>Taille : {size}  |  Ref: {deal_ref}</i>\n"
-                f"🔍 {' | '.join(confirmations)}"
-            )
-            logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl_price:.5f} TP={tp_price:.5f}")
+    def _monitor_capital_positions(self):
+        """
+        Surveille les positions ouvertes Capital.com.
+        Quand TP1 est touché (position 1 fermée) :
+          → Déplace le SL des positions 2 et 3 au niveau d'entrée (Break-Even).
+        Quand toutes les positions sont fermées → réinitialise l'état.
+        """
+        if not self.capital.available:
+            return
+
+        open_pos  = self.capital.get_open_positions()
+        open_refs = {p.get("position", {}).get("dealReference") for p in open_pos}
+
+        for instrument, state in list(self.capital_trades.items()):
+            if state is None:
+                continue
+
+            refs     = state["refs"]         # [ref1, ref2, ref3]
+            entry    = state["entry"]
+            tp1_hit  = state["tp1_hit"]
+
+            ref1_open = refs[0] in open_refs if refs[0] else False
+            ref2_open = refs[1] in open_refs if refs[1] else False
+            ref3_open = refs[2] in open_refs if refs[2] else False
+
+            # TP1 touché si ref1 a disparu des positions ouvertes
+            if not tp1_hit and refs[0] and not ref1_open:
+                state["tp1_hit"] = True
+                name = CAPITAL_NAMES.get(instrument, instrument)
+                logger.info(f"🎯 TP1 touché {instrument} — activation Break-Even")
+
+                # Déplace SL au break-even sur les positions restantes
+                for ref in [refs[1], refs[2]]:
+                    if ref and ref in open_refs:
+                        self.capital.modify_position_stop(ref, entry)
+
+                self.telegram.send_message(
+                    f"🎯 <b>TP1 touché — {name}</b>\n"
+                    f"SL déplacé à l'entrée (<code>{entry:.5f}</code>) \n"
+                    f"🟡 Break-Even activé sur TP2 + TP3 — risque zéro !"
+                )
+
+            # Toutes les positions fermées → reset
+            if not ref1_open and not ref2_open and not ref3_open:
+                logger.info(f"✅ Capital.com {instrument} — toutes positions fermées")
+                self.capital_trades[instrument] = None
+
+
 
 
 
