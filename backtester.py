@@ -280,6 +280,43 @@ def print_report(trades, final_balance: float, symbol: str, days: int, risk: flo
 """)
 
 
+def format_telegram_report(trades, final_balance: float, symbol: str, days: int) -> str:
+    """Formate les résultats backtest pour envoi Telegram (HTML)."""
+    if not trades:
+        return f"⚠️ <b>Backtest {symbol}</b>\n<code>Aucun trade déclenché sur {days} jours.</code>"
+
+    wins      = [t for t in trades if t.result not in ("SL",)]
+    losses    = [t for t in trades if t.result == "SL"]
+    bes       = [t for t in trades if t.result == "BE"]
+    total_net = sum(t.pnl - t.fees for t in trades)
+    win_rate  = len(wins) / len(trades) * 100
+    rendement = (final_balance - INITIAL_BALANCE) / INITIAL_BALANCE * 100
+    max_dd    = 0.0
+    peak, bal = INITIAL_BALANCE, INITIAL_BALANCE
+    for t in trades:
+        bal += t.pnl - t.fees
+        if bal > peak: peak = bal
+        dd = (peak - bal) / peak * 100
+        if dd > max_dd: max_dd = dd
+
+    sign   = "+" if total_net >= 0 else ""
+    r_sign = "+" if rendement >= 0 else ""
+    emoji  = "🟢" if total_net >= 0 else "🔴"
+
+    return (
+        f"🧪 <b>Backtest {symbol} — {days} jours</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Trades : <b>{len(trades)}</b>  W:{len(wins)} L:{len(losses)} BE:{len(bes)}\n"
+        f"🎯 Win Rate : <b>{win_rate:.1f}%</b>\n"
+        f"{emoji} PnL net : <b>{sign}{total_net:.2f} USDT</b>\n"
+        f"📈 Rendement : <b>{r_sign}{rendement:.1f}%</b>\n"
+        f"📉 Max Drawdown : <b>{max_dd:.1f}%</b>\n"
+        f"💰 Capital final : <b>{final_balance:,.0f} USDT</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<i>Capital initial : {INITIAL_BALANCE:,.0f} USDT | Risk/trade : 1%</i>"
+    )
+
+
 # ─── Entrée principale ────────────────────────────────────────────────────────
 
 DEFAULT_TF = DEFAULT_TF  # fix forward reference

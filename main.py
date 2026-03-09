@@ -298,15 +298,19 @@ class TradingBot:
         # Benchmark BTC : {date: btc_price}
         self._btc_ref_price: float = 0.0
         self._bot_ref_balance: float = bal
+        # Monte Carlo : semaine ISO du dernier envoi
+        self._last_monte_carlo_week: int = -1
 
         # Enregistre les callbacks pour les boutons inline / commandes
         self.handler.register_callbacks(
-            get_status  = self._status_text,
-            get_trades  = self._trades_text,
-            close_trade = self._force_close,
-            force_be    = self._force_be,
-            pause       = self._do_pause,
-            resume      = self._do_resume,
+            get_status   = self._status_text,
+            get_trades   = self._trades_text,
+            close_trade  = self._force_close,
+            force_be     = self._force_be,
+            pause        = self._do_pause,
+            resume       = self._do_resume,
+            send_brief   = self._do_brief,
+            send_backtest= self._do_backtest,
         )
         self.handler.start_polling()
 
@@ -540,6 +544,17 @@ class TradingBot:
                 name="morning-brief"
             ).start()
             logger.info("☀️  Matinale lancée en arrière-plan")
+
+        # ── Monte Carlo hebdomadaire (dimanche 22h UTC) ───────────────────────
+        current_week = now.isocalendar()[1]
+        if (now.weekday() == 6 and now.hour == 22 and now.minute == 0 and
+                self._last_monte_carlo_week != current_week):
+            self._last_monte_carlo_week = current_week
+            import threading
+            threading.Thread(
+                target=self._do_monte_carlo, daemon=True, name="monte-carlo"
+            ).start()
+            logger.info("🎲 Monte Carlo hebdo lancé en arrière-plan")
 
 
         # Calendrier économique
@@ -1170,6 +1185,59 @@ class TradingBot:
     def _do_resume(self):
         self._manual_pause = False
         logger.info("▶️  Bot repris manuellement")
+
+    def _do_brief(self):
+        """Envoie le Morning Brief immédiatement (commande /brief Telegram)."""
+        try:
+            if _MORNING_OK:
+                generate_morning_brief(SYMBOLS, self.telegram)
+            else:
+                self.telegram._send("⚠️ morning_brief module non disponible.")
+        except Exception as e:
+            logger.error(f"❌ _do_brief: {e}")
+            self.telegram._send(f"❌ Erreur Morning Brief : {e}")
+
+    def _do_backtest(self, symbol: str = "ETH/USDT", days: int = 30):
+        """Lance un backtest et envoie le rapport sur Telegram (commande /backtest)."""
+        try:
+            from backtester import run_backtest, format_telegram_report
+            logger.info(f"🧪 Backtest {symbol} {days}j lancé...")
+            trades, final_bal = run_backtest(symbol, days, risk=0.01)
+            report = format_telegram_report(trades, final_bal, symbol, days)
+            self.telegram._send(report)
+        except Exception as e:
+            logger.error(f"❌ _do_backtest: {e}")
+            self.telegram._send(f"❌ Erreur Backtest : {e}")
+
+    def _do_monte_carlo(self):
+        """Lance Monte Carlo sur les PnLs récents et envoie le résumé Telegram."""
+        try:
+            from monte_carlo import get_trade_pnls, run_monte_carlo, generate_chart
+            pnls = get_trade_pnls("ETH/USDT", days=30)
+            if len(pnls) < 5:
+                self.telegram._send("📊 <b>Monte Carlo</b>\n<code>Pas assez de trades (< 5) pour simuler.</code>")
+                return
+            results = run_monte_carlo(pnls, n_trials=1000)
+            p5  = results.get("p5_return", 0)
+            p50 = results.get("p50_return", 0)
+            p95 = results.get("p95_return", 0)
+            msg = (
+                "🎲 <b>Monte Carlo — 1000 simulations</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📉 Scénario pessimiste (P5)  : <b>{p5:+.1f}%</b>\n"
+                f"📊 Scénario médian    (P50)  : <b>{p50:+.1f}%</b>\n"
+                f"📈 Scénario optimiste (P95)  : <b>{p95:+.1f}%</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "<i>Basé sur les 30 derniers jours de backtest</i>"
+            )
+            self.telegram._send(msg)
+            try:
+                chart = generate_chart(results, "ETH/USDT")
+                self.telegram._send_photo(chart, caption="📊 Distribution Monte Carlo")
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error(f"❌ _do_monte_carlo: {e}")
 
     def _status_text(self) -> str:
         balance = self.fetcher.get_balance()["free"]

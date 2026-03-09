@@ -48,16 +48,19 @@ class TelegramBotHandler:
 
     def register_callbacks(self, get_status, get_trades, close_trade,
                            force_be, pause, resume,
-                           get_performance=None, get_count=None, get_equity=None):
+                           get_performance=None, get_count=None, get_equity=None,
+                           send_brief=None, send_backtest=None):
         self._get_status      = get_status
         self._get_trades      = get_trades
         self._close_trade     = close_trade
         self._force_be        = force_be
         self._pause_cb        = pause
         self._resume_cb       = resume
-        self._get_performance = get_performance  # #11 /performance
-        self._get_count       = get_count        # #11 /count
-        self._get_equity      = get_equity       # #11 /equity
+        self._get_performance = get_performance
+        self._get_count       = get_count
+        self._get_equity      = get_equity
+        self._send_brief      = send_brief      # /brief — Morning Brief immédiat
+        self._send_backtest   = send_backtest   # /backtest [sym] [jours]
 
     def is_paused(self) -> bool:
         return self._paused
@@ -120,6 +123,8 @@ class TelegramBotHandler:
                 "📈 /performance — Sharpe, Sortino, WR\n"
                 "🔢 /count — Nombre de trades ouverts\n"
                 "💹 /equity — Courbe de performance\n"
+                "☕ /brief — Morning Brief maintenant\n"
+                "🧪 /backtest ETH 30 — Backtest 30 jours\n"
                 "⏸️ /pause — Pauser le bot\n"
                 "▶️ /resume — Reprendre\n"
                 "🔴 /close XRP — Fermer un trade\n"
@@ -208,6 +213,32 @@ class TelegramBotHandler:
                 "<code>Lancer : python3 dynamic_pairlist.py\n"
                 "pour voir les actifs les plus volatils.</code>"
             )
+
+        elif cmd == "/brief":
+            self._reply("☕ <b>Morning Brief en cours...</b>\n<code>Envoi dans quelques secondes.</code>")
+            if self._send_brief:
+                import threading
+                threading.Thread(target=self._send_brief, daemon=True).start()
+            else:
+                self._reply("<code>Module morning_brief non disponible.</code>")
+
+        elif cmd == "/backtest":
+            symbol_raw = parts[1].upper() if len(parts) > 1 else "ETH"
+            days       = int(parts[2]) if len(parts) > 2 else 30
+            if not symbol_raw.endswith("USDT"):
+                symbol_raw = f"{symbol_raw}/USDT"
+            self._reply(
+                f"🧪 <b>Backtest {symbol_raw} {days}j lancé...</b>\n"
+                f"<code>Résultats dans ~60 secondes.</code>"
+            )
+            if self._send_backtest:
+                import threading
+                threading.Thread(
+                    target=lambda: self._send_backtest(symbol_raw, days),
+                    daemon=True
+                ).start()
+            else:
+                self._reply("<code>Module backtester non disponible.</code>")
 
     def _handle_callback(self, cq: dict):
         cq_id  = cq["id"]
