@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-morning_brief.py — Matinale AlphaTrader style Station X
+morning_brief.py — Matinale Nemesis style Station X
 
 Génère chaque matin :
   1. Un graphique chandelier de chaque actif (dernières 48h)
@@ -89,7 +89,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
         df_plot,
         type="candle",
         style=style,
-        title=f"\n  ⚡ AlphaTrader — {ticker}/USDT | Biais : {bias}",
+        title=f"\n  ⚡ Nemesis — {ticker}/USDT | Biais : {bias}",
         volume=True,
         addplot=add_plots if add_plots else None,
         datetime_format="%H:%M",
@@ -99,7 +99,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
     )
 
     axes[0].set_title(
-        f"⚡ AlphaTrader — {ticker}/USDT | Biais : {bias}",
+        f"⚡ Nemesis — {ticker}/USDT | Biais : {bias}",
         color=title_color,
         fontsize=13,
         fontweight="bold",
@@ -109,7 +109,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
     # Timestamp
     fig.text(
         0.99, 0.01,
-        f"AlphaTrader v2.5 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
+        f"Nemesis v1.0 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
         ha="right", va="bottom",
         fontsize=8, color="#666688",
     )
@@ -379,5 +379,5 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
 
 if __name__ == "__main__":
     from config import SYMBOLS
-    print("\n🌅 Test Matinale AlphaTrader\n")
+    print("\n🌅 Test Matinale Nemesis\n")
     generate_morning_brief(SYMBOLS, telegram_notifier=None)

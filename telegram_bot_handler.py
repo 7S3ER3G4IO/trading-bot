@@ -117,7 +117,7 @@ class TelegramBotHandler:
 
         if cmd == "/start":
             self._reply(
-                "⚡ <b>AlphaTrader v2.5</b>\n\n"
+                "⚡ <b>Nemesis v1.0</b>\n\n"
                 "📊 /status — Solde &amp; état\n"
                 "📋 /trades — Positions actives\n"
                 "📈 /performance — Sharpe, Sortino, WR\n"
@@ -133,7 +133,7 @@ class TelegramBotHandler:
             )
         elif cmd == "/help":
             self._reply(
-                "*⚡ AlphaTrader — Aide*\n"
+                "*⚡ Nemesis — Aide*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━\n"
                 "🤖 Bot de trading algorithmique\n"
                 "📊 BTC • ETH • SOL • BNB | 15m\n"

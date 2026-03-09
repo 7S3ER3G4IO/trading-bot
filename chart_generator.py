@@ -119,7 +119,7 @@ class ChartGenerator:
             pair   = symbol.replace("/", "")
             action = "ACHAT" if side == "BUY" else "VENTE"
             ax.set_title(
-                f"⚡ AlphaTrader | {pair} {action} | Score {score}/6 | {indicators_desc}",
+                f"⚡ Nemesis | {pair} {action} | Score {score}/6 | {indicators_desc}",
                 color="#ffffff", fontsize=10, pad=10
             )
 

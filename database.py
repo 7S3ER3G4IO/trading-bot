@@ -21,7 +21,7 @@ import sqlite3
 # Format Supabase Session Pooler (IPv4 compatible) :
 # postgresql://postgres.XXXX:[PWD]@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
 DATABASE_URL = os.getenv("DATABASE_URL")
-_SQLITE_PATH = "logs/alphatrader.db"
+_SQLITE_PATH = "logs/nemesis.db"
 
 
 class Database:

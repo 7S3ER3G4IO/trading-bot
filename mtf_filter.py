@@ -128,7 +128,7 @@ class MTFFilter:
 if __name__ == "__main__":
     from config import SYMBOLS
     mtf = MTFFilter()
-    print(f"\n📊 Multi-Timeframe Confluence — AlphaTrader\n")
+    print(f"\n📊 Multi-Timeframe Confluence — Nemesis\n")
     for sym in SYMBOLS:
         ctx = mtf.get_htf_context(sym)
         aligned = "✅ Aligné" if ctx["aligned"] else "⚠️  Contradictoire"

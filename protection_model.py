@@ -149,7 +149,7 @@ class ProtectionModel:
 
 if __name__ == "__main__":
     pm = ProtectionModel()
-    print(f"\n🛡  Protection Model — AlphaTrader\n")
+    print(f"\n🛡  Protection Model — Nemesis\n")
     pm.on_trade_closed("ETH/USDT", -10)
     pm.on_trade_closed("ETH/USDT", -8)
     pm.on_trade_closed("ETH/USDT", -12)

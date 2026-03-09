@@ -6,7 +6,7 @@ Usage : python3 monitor_week.py
 import os, sqlite3, json
 from datetime import datetime, timezone, timedelta
 
-DB_PATH     = "logs/alphatrader.db"
+DB_PATH     = "logs/nemesis.db"
 TRADES_JSON = "logs/daily_trades.json"
 
 def fmt_pct(n, total):
@@ -15,7 +15,7 @@ def fmt_pct(n, total):
 def run():
     now = datetime.now(timezone(timedelta(hours=1)))
     print(f"\n{'='*55}")
-    print(f"  ⚡ AlphaTrader — Monitoring Semaine  {now.strftime('%d/%m/%Y %H:%M')}")
+    print(f"  ⚡ Nemesis — Monitoring Semaine  {now.strftime('%d/%m/%Y %H:%M')}")
     print(f"{'='*55}")
 
     # ─── Base de données ───────────────────────────────────────

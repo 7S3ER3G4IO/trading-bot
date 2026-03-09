@@ -195,7 +195,7 @@ if __name__ == "__main__":
     import random
     dd = DriftDetector()
     dd.set_reference(0.35, 55.0)
-    print(f"\n📉 Drift Detector — AlphaTrader\n")
+    print(f"\n📉 Drift Detector — Nemesis\n")
     # Simulation d'une dégradation
     for i in range(15):
         win = random.random() < 0.55

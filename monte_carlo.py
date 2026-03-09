@@ -219,7 +219,7 @@ if __name__ == "__main__":
     from config import SYMBOLS
     symbols = [args.symbol] if args.symbol else SYMBOLS
 
-    print(f"\n🎲 Monte Carlo Simulation — AlphaTrader")
+    print(f"\n🎲 Monte Carlo Simulation — Nemesis")
     print(f"   {args.sims} simulations | {args.days}j historique\n")
 
     for sym in symbols:

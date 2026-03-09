@@ -1,5 +1,5 @@
 # CONDITIONS GÉNÉRALES D'UTILISATION (CGU)
-## ⚡ AlphaTrader — Bot de Trading Algorithmique
+## ⚡ Nemesis — Bot de Trading Algorithmique
 
 *Version 1.0 — Mars 2026*
 
@@ -8,7 +8,7 @@
 ## Article 1 — Objet
 
 Les présentes Conditions Générales d'Utilisation (CGU) définissent les modalités  
-d'utilisation du logiciel **AlphaTrader**, bot de trading algorithmique automatisé.
+d'utilisation du logiciel **Nemesis**, bot de trading algorithmique automatisé.
 
 ## Article 2 — Acceptation
 
@@ -17,7 +17,7 @@ Si vous n'acceptez pas ces conditions, vous devez cesser toute utilisation.
 
 ## Article 3 — Nature du service
 
-AlphaTrader est un **logiciel d'automatisation d'ordres**. Il ne s'agit **pas** :
+Nemesis est un **logiciel d'automatisation d'ordres**. Il ne s'agit **pas** :
 - D'un service de conseil en investissement
 - D'un service de gestion d'actifs
 - D'une garantie de performance ou de rendement
@@ -44,7 +44,7 @@ de l'utilisateur.
 
 ## Article 7 — Propriété intellectuelle
 
-Le code source d'AlphaTrader est la propriété de son auteur.  
+Le code source d'Nemesis est la propriété de son auteur.  
 Toute reproduction, distribution ou revente sans autorisation est interdite.
 
 ## Article 8 — Limitation de responsabilité
@@ -71,4 +71,4 @@ Pour toute question : contactez le développeur via Telegram.
 
 ---
 
-*En utilisant AlphaTrader, vous confirmez avoir lu, compris et accepté ces CGU.*
+*En utilisant Nemesis, vous confirmez avoir lu, compris et accepté ces CGU.*

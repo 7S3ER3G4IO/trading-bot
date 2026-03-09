@@ -1,5 +1,5 @@
 """
-backtester.py — Backtest de la stratégie AlphaTrader sur données historiques Binance.
+backtester.py — Backtest de la stratégie Nemesis sur données historiques Binance.
 Utilise les vrais indicateurs (même code que strategy.py) sur jusqu'à 12 mois de données.
 
 Usage :
@@ -259,7 +259,7 @@ def print_report(trades, final_balance: float, symbol: str, days: int, risk: flo
 
     print(f"""
 {'='*55}
-  ⚡ AlphaTrader — Résultats Backtest
+  ⚡ Nemesis — Résultats Backtest
 {'='*55}
   Symbole     : {symbol}
   Période     : {days} jours
@@ -322,7 +322,7 @@ def format_telegram_report(trades, final_balance: float, symbol: str, days: int)
 DEFAULT_TF = DEFAULT_TF  # fix forward reference
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AlphaTrader Backtester")
+    parser = argparse.ArgumentParser(description="Nemesis Backtester")
     parser.add_argument("--symbol", default=DEFAULT_SYMBOL)
     parser.add_argument("--days",   type=int,   default=DEFAULT_DAYS)
     parser.add_argument("--risk",   type=float, default=DEFAULT_RISK)

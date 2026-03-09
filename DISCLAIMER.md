@@ -1,13 +1,13 @@
 # ⚠️ AVERTISSEMENT LÉGAL — DISCLAIMER
 
-**⚡ AlphaTrader** est un outil logiciel d'automatisation des ordres de trading.  
+**⚡ Nemesis** est un outil logiciel d'automatisation des ordres de trading.  
 Il est fourni **à titre strictement éducatif et expérimental**.
 
 ---
 
 ## 1. Pas de conseil en investissement
 
-Le bot AlphaTrader **ne constitue pas un conseil financier, un conseil en investissement,  
+Le bot Nemesis **ne constitue pas un conseil financier, un conseil en investissement,  
 ni une recommandation d'achat ou de vente** de tout actif financier ou cryptomonnaie.
 
 Les performances passées — y compris les résultats de backtesting — **ne garantissent  

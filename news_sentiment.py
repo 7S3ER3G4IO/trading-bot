@@ -131,7 +131,7 @@ class NewsSentiment:
 if __name__ == "__main__":
     ns = NewsSentiment()
     s  = ns.get_sentiment()
-    print(f"\n📰 News Sentiment — AlphaTrader\n")
+    print(f"\n📰 News Sentiment — Nemesis\n")
     print(f"  Signal   : {s['emoji']} {s['signal']}")
     print(f"  Score    : {s['score']:+.2f}")
     print(f"  Articles : {s['articles']}")

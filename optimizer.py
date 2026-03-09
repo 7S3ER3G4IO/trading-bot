@@ -343,7 +343,7 @@ def _default_params() -> dict:
 
 def print_report(all_params: dict):
     print(f"\n{'='*68}")
-    print(f"  ⚡ AlphaTrader Hyperopt — Résultats")
+    print(f"  ⚡ Nemesis Hyperopt — Résultats")
     print(f"{'='*68}")
     print(f"  {'Symbole':<12} {'Sc':>3} {'ADX':>4} {'SL×':>4} {'TP×':>4} {'RSI':>4}  {'WR%':>5}  {'PnL':>8}  DD%")
     print(f"  {'-'*62}")
@@ -369,7 +369,7 @@ def print_report(all_params: dict):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AlphaTrader Hyperopt — Optuna Bayesian Optimization")
+    parser = argparse.ArgumentParser(description="Nemesis Hyperopt — Optuna Bayesian Optimization")
     parser.add_argument("--symbol", default=None,   help="Symbole unique (ex: BTC/USDT)")
     parser.add_argument("--days",   type=int, default=14, help="Jours d'historique (défaut: 14)")
     parser.add_argument("--tf",     default="5m",   help="Timeframe (défaut: 5m)")
@@ -379,7 +379,7 @@ if __name__ == "__main__":
     from config import SYMBOLS as ALL_SYMBOLS
     symbols = [args.symbol] if args.symbol else ALL_SYMBOLS
 
-    print(f"\n🚀 AlphaTrader Hyperopt — Optuna TPE Bayesian Optimization")
+    print(f"\n🚀 Nemesis Hyperopt — Optuna TPE Bayesian Optimization")
     print(f"   {len(symbols)} symbole(s) × {args.trials} trials | {args.days}j | {args.tf}")
     print(f"   Sessions : London (7-11h UTC) + NY (13-17h UTC)")
     print(f"   Espace   : ADX[15-40] × SL[0.6-2.0] × TP[1.5-4.0] × Score[4-6] × RSI[55-75]")

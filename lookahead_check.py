@@ -88,7 +88,7 @@ if __name__ == "__main__":
     from config import SYMBOLS
     symbols = [args.symbol] if args.symbol else SYMBOLS
 
-    print(f"\n🔍 Lookahead Bias Check — AlphaTrader\n")
+    print(f"\n🔍 Lookahead Bias Check — Nemesis\n")
     all_ok = True
     for sym in symbols:
         res = check_lookahead(sym, days=args.days, verbose=args.verbose)

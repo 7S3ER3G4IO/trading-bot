@@ -137,7 +137,7 @@ class OnChainData:
 
 if __name__ == "__main__":
     oc = OnChainData()
-    print(f"\n⛓  On-Chain Data — AlphaTrader\n")
+    print(f"\n⛓  On-Chain Data — Nemesis\n")
 
     gm = oc.get_global_market()
     print(f"  BTC Dominance   : {gm.get('btc_dominance', '?')}%")

@@ -86,7 +86,7 @@ class FundingRateFilter:
 if __name__ == "__main__":
     from config import SYMBOLS
     ff = FundingRateFilter()
-    print(f"\n💸 Funding Rate Filter — AlphaTrader\n")
+    print(f"\n💸 Funding Rate Filter — Nemesis\n")
     for sym in SYMBOLS:
         rate  = ff.get_funding_rate(sym)
         long_ok  = ff.should_allow_long(sym)

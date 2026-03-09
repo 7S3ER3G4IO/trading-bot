@@ -1,5 +1,5 @@
 """
-main.py — ⚡ AlphaTrader v2.5
+main.py — ⚡ Nemesis v1.0
 Multi-Asset | DD Protection | Auto-Hyperopt | ATR Filter | Dashboard Web
 """
 
@@ -187,7 +187,7 @@ class TradingBot:
     def __init__(self):
         setup_logger()
         logger.info("=" * 60)
-        logger.info("  ⚡  ALPHATRADER v2.0 — Multi-Asset + 3 TP + BE")
+        logger.info("  ⚡  NEMESIS v1.0 — Multi-Asset + 3 TP + BE")
         logger.info(f"  📊  {' | '.join(SYMBOLS)}")
         logger.info("=" * 60)
 
@@ -1343,7 +1343,7 @@ class TradingBot:
 
         ctx = self.context.get_context_line()
         return (
-            f"⚡ *AlphaTrader — Statut*\n"
+            f"⚡ *Nemesis — Statut*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 Capital : `{balance:,.2f} USDT`\n"
             f"📊 Trades ouverts : `{nb_open}/{len(SYMBOLS)}`\n"

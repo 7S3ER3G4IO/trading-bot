@@ -1,5 +1,5 @@
 """
-telegram_notifier.py — AlphaTrader v2.5
+telegram_notifier.py — Nemesis v1.0
 Style : Station X — propre, minimaliste, professionnel.
 Emojis forts as visual anchors. Pas d'ASCII art.
 """
@@ -323,7 +323,7 @@ class TelegramNotifier:
             f"⏰ {now}\n"
             f"💰 Balance : <b>{balance:,.2f} USDT</b>\n"
             f"\n"
-            f"<i>AlphaTrader v2.5 actif — Railway Production</i>"
+            f"<i>Nemesis v1.0 actif — Railway Production</i>"
         )
 
     def notify_pre_signal(self, side: str, symbol: str, price: float, score: int):
@@ -383,7 +383,7 @@ class TelegramNotifier:
             trades_block = "Aucun trade ouvert\n"
 
         msg = (
-            f"⚡ <b>ALPHATRADER — WALLET LIVE</b>\n"
+            f"⚡ <b>NEMESIS — WALLET LIVE</b>\n"
             f"\n"
             f"💰 Capital : <b>{balance:,.2f} USDT</b>\n"
             f"{trend} PnL du jour : <b>{daily_pnl:+.2f} USDT</b> ({pct_day:+.1f}%)\n"

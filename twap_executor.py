@@ -142,7 +142,7 @@ class TWAPExecutor:
 
 
 if __name__ == "__main__":
-    print(f"\n⏱️  TWAP Executor — AlphaTrader\n")
+    print(f"\n⏱️  TWAP Executor — Nemesis\n")
     print(f"  Seuil d'activation : {TWAP_THRESHOLD} USDT")
     print(f"  Configuration     : {TWAP_SLICES} tranches × {TWAP_INTERVAL}s")
     print(f"\n  Exemple ETH/USDT, 1000$ LONG :")

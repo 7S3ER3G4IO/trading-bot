@@ -63,7 +63,7 @@ LOOP_INTERVAL_SECONDS = 30    # Scan toutes les 30s (12 paires = besoin plus rap
 
 # ─── TELEGRAM CHANNELS ──────────────────────────────────────────────────────
 # Groupe Telegram créé pour les stats wallet en temps réel
-WALLET_CHANNEL_URL = "https://t.me/+kXWR58eDOGYxZDNk"  # AlphaTrader Wallet group
+WALLET_CHANNEL_URL = "https://t.me/+kXWR58eDOGYxZDNk"  # Nemesis Wallet group
 WALLET_CHAT_ID     = "-5200613208"                       # Chat ID du groupe wallet
 
 # ─── LOGS ────────────────────────────────────────────────────────────────────

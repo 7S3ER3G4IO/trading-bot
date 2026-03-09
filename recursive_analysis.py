@@ -85,7 +85,7 @@ if __name__ == "__main__":
     from config import SYMBOLS
     symbols = [args.symbol] if args.symbol else SYMBOLS
 
-    print(f"\n🔁 Recursive Analysis — AlphaTrader\n")
+    print(f"\n🔁 Recursive Analysis — Nemesis\n")
     for sym in symbols:
         print(f"\n  ═══ {sym} ═══")
         recursive_check(sym, days=args.days)

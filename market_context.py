@@ -36,7 +36,7 @@ class MarketContext:
         try:
             req = Request(
                 "https://api.alternative.me/fng/?limit=1",
-                headers={"User-Agent": "AlphaTrader/1.0"}
+                headers={"User-Agent": "Nemesis/1.0"}
             )
             with urlopen(req, timeout=10) as r:
                 data = json.loads(r.read())["data"][0]
@@ -103,7 +103,7 @@ class MarketContext:
         news_line = f"📅 Prochaine news HIGH : `{next_news}`" if next_news else "✅ Pas d'annonce majeure prévue"
 
         return (
-            f"☀️ *AlphaTrader — Morning Brief*\n"
+            f"☀️ *Nemesis — Morning Brief*\n"
             f"*{date_str.capitalize()}*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{fg_line}\n"

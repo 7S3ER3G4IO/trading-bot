@@ -140,7 +140,7 @@ if __name__ == "__main__":
 
     vr  = VolatilityRegime()
     exc = get_exchange()
-    print(f"\n📊 Volatility Regime — AlphaTrader\n")
+    print(f"\n📊 Volatility Regime — Nemesis\n")
     for sym in SYMBOLS:
         df  = fetch_historical(exc, sym, "5m", 3)
         res = vr.get_regime(df, sym)

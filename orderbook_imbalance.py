@@ -98,7 +98,7 @@ class OrderBookImbalance:
 if __name__ == "__main__":
     from config import SYMBOLS
     obi = OrderBookImbalance()
-    print(f"\n📗 Order Book Imbalance — AlphaTrader\n")
+    print(f"\n📗 Order Book Imbalance — Nemesis\n")
     for sym in SYMBOLS:
         score = obi.fetch_obi(sym)
         bar   = "🟢" if score > 0.2 else "🔴" if score < -0.2 else "⚪"

@@ -116,7 +116,7 @@ class EquityCurve:
             return 0.0
         return (float(bals[-1]) - float(bals[0])) / float(bals[0]) * 100
 
-    def generate_chart(self, title: str = "AlphaTrader") -> bytes:
+    def generate_chart(self, title: str = "Nemesis") -> bytes:
         """Génère le graphique d'équité en dark mode. Retourne bytes PNG."""
         bals = self._balances()
         if len(bals) < 2:
@@ -178,7 +178,7 @@ class EquityCurve:
                  color="#9999bb", fontfamily="monospace")
 
         fig.text(0.99, 0.01,
-                 f"AlphaTrader v2.5 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
+                 f"Nemesis v1.0 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
                  ha="right", va="bottom", fontsize=7, color="#666688")
 
         plt.tight_layout(rect=[0, 0.04, 1, 1])

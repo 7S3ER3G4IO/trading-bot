@@ -145,7 +145,7 @@ def print_smc_report(trades, final_balance, max_dd, symbol, days, tf):
 
     print(f"""
 {'='*58}
-  ⚡ AlphaTrader SMC — Résultats Backtest
+  ⚡ Nemesis SMC — Résultats Backtest
 {'='*58}
   Symbole     : {symbol}
   Timeframe   : {tf} (scalping)

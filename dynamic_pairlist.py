@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--min-vol", type=float, default=5_000_000)
     args = parser.parse_args()
 
-    print(f"\n⚡ Dynamic Pairlist — AlphaTrader\n")
+    print(f"\n⚡ Dynamic Pairlist — Nemesis\n")
     pairs = get_top_volatile_pairs(args.top, args.min_vol)
 
     if args.update:

@@ -159,7 +159,7 @@ if __name__ == "__main__":
 
     symbols = [args.symbol] if args.symbol else SYMBOLS[:2]
 
-    print(f"\n🔄 Walk-Forward Optimization — AlphaTrader")
+    print(f"\n🔄 Walk-Forward Optimization — Nemesis")
     print(f"   IS={IS_DAYS}j | OOS={OOS_DAYS}j | Fenêtres={args.windows} | Trials={args.trials}\n")
 
     all_results = {}

@@ -2,7 +2,7 @@
 tradingview_webhook.py — TradingView Webhook Server (#2)
 
 Serveur Flask léger qui reçoit les alertes TradingView
-et les injecte dans la file de signaux d'AlphaTrader.
+et les injecte dans la file de signaux d'Nemesis.
 
 Configuration TradingView (Alert → Webhook URL) :
   URL : http://YOUR_RAILWAY_URL/webhook/tradingview
@@ -26,7 +26,7 @@ except ImportError:
     _FLASK_OK = False
     logger.warning("⚠️  Flask non installé — webhook désactivé")
 
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "alphatrader_webhook_2026")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "nemesis_webhook_2026")
 # Sur Railway le port PUBLIC est fourni par $PORT (généralement 8080)
 # On utilise ce port pour que Railway route vers notre webhook
 WEBHOOK_PORT   = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8081")))
@@ -89,7 +89,7 @@ class WebhookServer:
 
         @self._app.route("/health", methods=["GET"])
         def health():
-            return jsonify({"status": "ok", "bot": "AlphaTrader v2.5"}), 200
+            return jsonify({"status": "ok", "bot": "Nemesis v1.0"}), 200
 
     def start(self):
         """Démarre le serveur en thread daemon."""
@@ -145,7 +145,7 @@ def get_webhook_server() -> WebhookServer:
 
 
 if __name__ == "__main__":
-    print(f"\n📡 Webhook TradingView — AlphaTrader")
+    print(f"\n📡 Webhook TradingView — Nemesis")
     print(f"   Port     : {WEBHOOK_PORT}")
     print(f"   Endpoint : POST /webhook/tradingview")
     print(f"   Secret   : {WEBHOOK_SECRET[:6]}***")

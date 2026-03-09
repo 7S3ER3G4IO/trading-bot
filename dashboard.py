@@ -1,5 +1,5 @@
 """
-dashboard.py — AlphaTrader Web Dashboard
+dashboard.py — Nemesis Web Dashboard
 Interface premium dark — accessible via URL Railway.
 Auto-refresh toutes les 15s. Zéro dépendance externe JS.
 """
@@ -17,7 +17,7 @@ except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "flask", "-q"])
     from flask import Flask, jsonify, render_template_string, Response
 
-app   = Flask("alphatrader_dashboard")
+app   = Flask("nemesis_dashboard")
 app.logger.disabled = True
 
 # ─── State partagé ─────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ _HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>⚡ AlphaTrader Dashboard</title>
+<title>⚡ Nemesis Dashboard</title>
 <style>
   :root {
     --bg:      #060911;
@@ -148,7 +148,7 @@ _HTML = r"""<!DOCTYPE html>
 <!-- Header -->
 <div class="header">
   <div class="logo">
-    <h1>⚡ AlphaTrader</h1>
+    <h1>⚡ Nemesis</h1>
     <span class="badge">{{ "PAUSED" if s.paused else "LIVE" }}</span>
   </div>
   <div class="header-right">
@@ -273,7 +273,7 @@ _HTML = r"""<!DOCTYPE html>
 </div>
 
 <div style="text-align:center;color:var(--muted);font-size:.72rem;margin-top:12px">
-  AlphaTrader v2.5 · Audit 2026 · Refresh automatique 15s
+  Nemesis v1.0 · Audit 2026 · Refresh automatique 15s
 </div>
 
 <script>setTimeout(()=>location.reload(), 15000);</script>
@@ -293,7 +293,7 @@ def api_state():
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "bot": "AlphaTrader v2.5", "balance": _state["balance"]})
+    return jsonify({"ok": True, "bot": "Nemesis v1.0", "balance": _state["balance"]})
 
 
 @app.route("/ip")
@@ -361,7 +361,7 @@ def start_dashboard(port: int = None):
 
 
 if __name__ == "__main__":
-    print("\n⚡ AlphaTrader Dashboard — mode standalone")
+    print("\n⚡ Nemesis Dashboard — mode standalone")
     port = start_dashboard()
     print(f"   → http://localhost:{port}")
     # Données de démo
