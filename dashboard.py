@@ -7,7 +7,8 @@ import os, sys, threading, time, json, logging
 from datetime import datetime, timezone
 
 sys.path.insert(0, ".")
-logging.getLogger("werkzeug").disabled = True
+# Silence werkzeug proprement (sans WERKZEUG_RUN_MAIN qui casse tout)
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 try:
     from flask import Flask, jsonify, render_template_string, Response
@@ -330,9 +331,9 @@ def start_dashboard(port: int = None):
     if port is None:
         port = int(os.getenv("PORT", "8080"))
 
-    os.environ["WERKZEUG_RUN_MAIN"] = "true"
-
     def _run():
+        # Supprime le warning 'development server' de werkzeug
+        logging.getLogger("werkzeug").setLevel(logging.ERROR)
         app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
     t = threading.Thread(target=_run, daemon=True, name="dashboard")
