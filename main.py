@@ -593,7 +593,11 @@ class TradingBot:
             self.futures_log          = []   # reset bilan futures journalier
             self.futures_pnl_total    = 0.0
             self._dd_paused           = False  # Reprend le trading au bout du jour
-            self.last_reset_day       = cet.date()
+            # Reset Capital.com daily state
+            self._capital_closed_today = []          # évite que les trades du jour fuient dans le dashboard J+1
+            self._london_tracker       = type(self._london_tracker)()  # fresh SessionTracker London
+            self._ny_tracker           = type(self._ny_tracker)()      # fresh SessionTracker NY
+            self.last_reset_day        = cet.date()
             logger.info(f"📊 Nouveau jour — balance de début : {bal:.2f} USDT")
 
         # ── #1 Protection Drawdown Journalier ────────────────────────────

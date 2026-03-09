@@ -28,9 +28,12 @@ class DataFetcher:
         secret  = os.getenv("BINANCE_SECRET")
 
         if not api_key or not secret:
-            raise EnvironmentError(
-                "❌ BINANCE_API_KEY et BINANCE_SECRET manquants dans le fichier .env"
-            )
+            # Capital.com-only mode : Binance désactivé, pas de crash
+            logger.warning("⚠️ DataFetcher : BINANCE_API_KEY / BINANCE_SECRET manquants — mode Capital.com uniquement")
+            self.exchange = None
+            return
+
+        self.available = True
 
         if USE_TESTNET:
             # Mode testnet — utilise les URLs sandbox ccxt natives (sans hardcoding)
@@ -53,7 +56,9 @@ class DataFetcher:
             logger.info(f"✅ Connecté à Binance LIVE — {SYMBOL} | TF : {TIMEFRAME}")
 
     def get_ohlcv(self, symbol: str = SYMBOL, timeframe: str = TIMEFRAME, limit: int = LIMIT) -> pd.DataFrame:
-        """Retourne un DataFrame OHLCV."""
+        """Retourne un DataFrame OHLCV. Retourne DataFrame vide sur erreur (ne crash pas)."""
+        if not self.exchange:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
         try:
             raw = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -63,10 +68,12 @@ class DataFetcher:
             return df
         except Exception as e:
             logger.error(f"❌ Erreur fetch_ohlcv : {e}")
-            raise
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
     def get_balance(self) -> dict:
-        """Retourne le solde USDT disponible."""
+        """Retourne le solde USDT disponible. Retourne un dict vide sur erreur (ne crash pas)."""
+        if not self.exchange:
+            return {"free": 0.0, "used": 0.0, "total": 0.0}
         try:
             balance = self.exchange.fetch_balance()
             usdt = balance.get("USDT", {})
@@ -79,13 +86,15 @@ class DataFetcher:
             return result
         except Exception as e:
             logger.error(f"❌ Erreur fetch_balance : {e}")
-            raise
+            return {"free": 0.0, "used": 0.0, "total": 0.0}
 
     def get_ticker(self, symbol: str = SYMBOL) -> dict:
-        """Retourne le prix actuel du marché."""
+        """Retourne le prix actuel. Retourne des 0.0 sur erreur (ne crash pas)."""
+        if not self.exchange:
+            return {"last": 0.0, "bid": 0.0, "ask": 0.0}
         try:
             ticker = self.exchange.fetch_ticker(symbol)
             return {"last": ticker["last"], "bid": ticker["bid"], "ask": ticker["ask"]}
         except Exception as e:
             logger.error(f"❌ Erreur fetch_ticker : {e}")
-            raise
+            return {"last": 0.0, "bid": 0.0, "ask": 0.0}
