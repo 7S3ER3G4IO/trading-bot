@@ -22,19 +22,20 @@ app.logger.disabled = True
 
 # ─── State partagé ─────────────────────────────────────────────────────────
 _state: dict = {
-    "balance":       0.0,
-    "initial":       0.0,
-    "pnl_today":     0.0,
-    "pnl_total":     0.0,
-    "trades":        [],    # trade ouverts : [{symbol,side,entry,pnl,qty,ts}]
-    "history":       [],    # 20 derniers trades fermés
-    "n_today":       0,
-    "wr_today":      0.0,
-    "wr_overall":    0.0,
-    "n_total":       0,
-    "last_update":   "—",
-    "paused":        False,
-    "symbols":       [],
+    "balance":         0.0,
+    "futures_balance": 0.0,
+    "initial":         0.0,
+    "pnl_today":       0.0,
+    "pnl_total":       0.0,
+    "trades":          [],
+    "history":         [],
+    "n_today":         0,
+    "wr_today":        0.0,
+    "wr_overall":      0.0,
+    "n_total":         0,
+    "last_update":     "—",
+    "paused":          False,
+    "symbols":         [],
     "filters": {
         "fear_greed":   "—",
         "volatility":   "—",
@@ -42,8 +43,8 @@ _state: dict = {
         "news":         "—",
         "drift":        "—",
     },
-    "sharpe":        0.0,
-    "max_dd":        0.0,
+    "sharpe":          0.0,
+    "max_dd":          0.0,
 }
 
 _HTML = r"""<!DOCTYPE html>
@@ -167,10 +168,17 @@ _HTML = r"""<!DOCTYPE html>
 <!-- KPI Grid -->
 <div class="kpi-grid">
   <div class="kpi blue">
-    <label>💰 Balance USDT</label>
+    <label>💰 Balance Spot USDT</label>
     <div class="value neu">{{ '{:,.2f}'.format(s.balance) }}</div>
     <div class="sub">Initial : {{ '{:,.0f}'.format(s.initial) }} USDT</div>
   </div>
+  {% if s.futures_balance > 0 %}
+  <div class="kpi blue">
+    <label>🟣 Futures Demo USDT</label>
+    <div class="value neu">{{ '{:,.2f}'.format(s.futures_balance) }}</div>
+    <div class="sub">LONG + SHORT actif</div>
+  </div>
+  {% endif %}
   <div class="kpi {{ 'green' if s.pnl_total >= 0 else 'red' }}">
     <label>📈 PnL Total</label>
     <div class="value {{ 'pos' if s.pnl_total >= 0 else 'neg' }}">{{ '+' if s.pnl_total >= 0 else '' }}{{ '{:,.2f}'.format(s.pnl_total) }} $</div>

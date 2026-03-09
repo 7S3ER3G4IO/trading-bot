@@ -24,7 +24,7 @@ from market_context import MarketContext
 from database import Database
 from chart_generator import ChartGenerator
 from brokers.oanda_client import OandaClient, OANDA_INSTRUMENTS
-from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS
+from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, INSTRUMENT_NAMES
 
 # ─── Features avancées 2026 ────────────────────────────────────
 try:
@@ -461,6 +461,7 @@ class TradingBot:
             wins  = sum(1 for tr in self.reporter.trade_log if tr.get("win")) if hasattr(self.reporter,"trade_log") else 0
             total = len(self.reporter.trade_log) if hasattr(self.reporter,"trade_log") else 0
             wr    = (wins/total*100) if total > 0 else 0.0
+            fut_dash_bal = self.futures.get_balance() if (self.futures and self.futures.available) else 0.0
             dash_update(
                 balance=balance, initial=self.initial_balance,
                 pnl_total=round(balance - self.initial_balance, 2),
@@ -468,6 +469,7 @@ class TradingBot:
                 trades=open_trades, wr_overall=round(wr,1),
                 n_total=total, symbols=[s.replace("/USDT","") for s in SYMBOLS],
                 paused=self._manual_pause,
+                futures_balance=fut_dash_bal,
             )
         except Exception:
             pass
