@@ -3,6 +3,7 @@ database.py — Persistance PostgreSQL via Supabase (remplace SQLite).
 Les données survivent aux redéploiements Railway.
 """
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Optional, List
 from loguru import logger
@@ -33,6 +34,7 @@ class Database:
     def __init__(self):
         os.makedirs("logs", exist_ok=True)
         self._pg = DATABASE_URL and HAS_PG
+        self._lock = threading.Lock()  # Thread-safety pour SQLite
         if self._pg:
             self._conn = psycopg2.connect(DATABASE_URL, sslmode="require")
             self._conn.autocommit = False
@@ -48,14 +50,14 @@ class Database:
     # ─── Helpers ─────────────────────────────────────────────────────────────
 
     def _execute(self, sql: str, params=(), fetch=False):
-        """Exécute une requête compatible SQLite/PostgreSQL."""
-        # SQLite utilise ? comme placeholder, PostgreSQL utilise %s
+        """Exécute une requête compatible SQLite/PostgreSQL (thread-safe)."""
         if not self._pg:
             sql = sql.replace("%s", "?")
-        cur = self._conn.cursor()
-        cur.execute(sql, params)
-        if not self._conn.autocommit:
-            self._conn.commit()
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(sql, params)
+            if not self._conn.autocommit:
+                self._conn.commit()
         if fetch:
             return cur
         return cur
@@ -121,7 +123,28 @@ class Database:
         )
         """)
 
-        # Migration des colonnes pour les BDD SQLite existantes
+        # Table Capital.com (persistance CFD trades après redéploiement Railway)
+        self._execute(f"""
+        CREATE TABLE IF NOT EXISTS capital_trades (
+            id          {serial} PRIMARY KEY,
+            instrument  {text}   NOT NULL UNIQUE,
+            direction   {text},
+            entry       {real},
+            sl          {real},
+            tp1         {real},
+            tp2         {real},
+            tp3         {real},
+            ref1        {text},
+            ref2        {text},
+            ref3        {text},
+            tp1_hit     {int_}   DEFAULT 0,
+            tp2_hit     {int_}   DEFAULT 0,
+            opened_at   {text},
+            status      {text}   DEFAULT 'OPEN'
+        )
+        """)
+
+        # Migration colonnes SQLite
         if not self._pg:
             for col in ["sl_order_id TEXT", "tp1_order_id TEXT", "tp2_order_id TEXT"]:
                 try:
@@ -130,7 +153,7 @@ class Database:
                 except Exception:
                     pass
 
-    # ─── Trades ──────────────────────────────────────────────────────────────
+    # ─── Trades Binance ───────────────────────────────────────────────────────
 
     def save_trade_open(self, trade) -> int:
         """Sauvegarde un trade à l'ouverture. Retourne l'ID."""
@@ -246,3 +269,77 @@ class Database:
                 AND date(closed_at) >= date('now', '-{days} days')
             """)
         return cur.fetchone()[0] or 0.0
+
+    # ─── Capital.com trades ───────────────────────────────────────────
+
+    def save_capital_trade(self, instrument: str, state: dict):
+        """
+        Sauvegarde (INSERT OR REPLACE) un trade Capital.com ouvert.
+        Appelé à l'ouverture et lors des mises à jour tp1_hit / tp2_hit.
+        """
+        ph = "%s" if self._pg else "?"
+        refs = state.get("refs", [None, None, None])
+        try:
+            if self._pg:
+                sql = f"""
+                    INSERT INTO capital_trades
+                        (instrument, direction, entry, sl, tp1, tp2, tp3,
+                         ref1, ref2, ref3, tp1_hit, tp2_hit, opened_at, status)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},'OPEN')
+                    ON CONFLICT (instrument) DO UPDATE SET
+                        direction=EXCLUDED.direction, entry=EXCLUDED.entry, sl=EXCLUDED.sl,
+                        tp1=EXCLUDED.tp1, tp2=EXCLUDED.tp2, tp3=EXCLUDED.tp3,
+                        ref1=EXCLUDED.ref1, ref2=EXCLUDED.ref2, ref3=EXCLUDED.ref3,
+                        tp1_hit=EXCLUDED.tp1_hit, tp2_hit=EXCLUDED.tp2_hit, status='OPEN'
+                """
+            else:
+                sql = f"""
+                    INSERT OR REPLACE INTO capital_trades
+                        (instrument, direction, entry, sl, tp1, tp2, tp3,
+                         ref1, ref2, ref3, tp1_hit, tp2_hit, opened_at, status)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},'OPEN')
+                """
+            self._execute(sql, (
+                instrument,
+                state.get("direction", ""),
+                state.get("entry", 0.0),
+                state.get("sl", 0.0),
+                state.get("tp1", 0.0),
+                state.get("tp2", 0.0),
+                state.get("tp3", 0.0),
+                refs[0] if len(refs) > 0 else None,
+                refs[1] if len(refs) > 1 else None,
+                refs[2] if len(refs) > 2 else None,
+                int(state.get("tp1_hit", False)),
+                int(state.get("tp2_hit", False)),
+                datetime.now(timezone.utc).isoformat(),
+            ))
+        except Exception as e:
+            logger.error(f"❌ DB save_capital_trade {instrument}: {e}")
+
+    def load_open_capital_trades(self) -> List[dict]:
+        """Charge les trades Capital.com ouverts (reprise après redémarrage)."""
+        try:
+            cur = self._execute(
+                "SELECT * FROM capital_trades WHERE status='OPEN'",
+                fetch=True
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            if rows:
+                logger.info(f"🔄 {len(rows)} trades Capital.com restaurés depuis la BDD")
+            return rows
+        except Exception as e:
+            logger.error(f"❌ DB load_capital_trades: {e}")
+            return []
+
+    def close_capital_trade(self, instrument: str):
+        """Marque un trade Capital.com comme fermé."""
+        ph = "%s" if self._pg else "?"
+        try:
+            self._execute(
+                f"UPDATE capital_trades SET status='CLOSED' WHERE instrument={ph}",
+                (instrument,)
+            )
+        except Exception as e:
+            logger.error(f"❌ DB close_capital_trade {instrument}: {e}")

@@ -358,7 +358,8 @@ class TradingBot:
         self._price_history: Dict[str, list] = {s: [] for s in SYMBOLS}
 
     def _restore_from_db(self):
-        """Restaure les trades ouverts en cas de redémarrage."""
+        """Restaure les trades ouverts (Binance + Capital.com) après redémarrage."""
+        # ── Binance Spot ──
         open_trades = self.db.load_open_trades()
         for t_dict in open_trades:
             symbol = t_dict["symbol"]
@@ -381,9 +382,42 @@ class TradingBot:
                 state.tp1_order_id   = t_dict.get("tp1_order_id")
                 state.tp2_order_id   = t_dict.get("tp2_order_id")
                 self.trades[symbol]  = state
-                logger.info(f"🔄 Trade restauré : {symbol} {t_dict['side']} @ {t_dict['entry']}")
+                logger.info(f"🔄 Trade Binance restauré : {symbol} {t_dict['side']} @ {t_dict['entry']}")
             except Exception as e:
-                logger.error(f"❌ Restauration trade {symbol} : {e}")
+                logger.error(f"❌ Restauration trade Binance {symbol} : {e}")
+
+        # ── Capital.com CFD ──
+        cap_trades = self.db.load_open_capital_trades()
+        for t_dict in cap_trades:
+            instrument = t_dict["instrument"]
+            if instrument not in self.capital_trades:
+                continue
+            try:
+                self.capital_trades[instrument] = {
+                    "refs":      [t_dict.get("ref1"), t_dict.get("ref2"), t_dict.get("ref3")],
+                    "entry":     t_dict["entry"],
+                    "sl":        t_dict["sl"],
+                    "tp1":       t_dict["tp1"],
+                    "tp2":       t_dict["tp2"],
+                    "tp3":       t_dict["tp3"],
+                    "direction": t_dict["direction"],
+                    "tp1_hit":   bool(t_dict["tp1_hit"]),
+                    "tp2_hit":   bool(t_dict["tp2_hit"]),
+                }
+                # Relance la surveillance WebSocket
+                state = self.capital_trades[instrument]
+                self.capital_ws.watch(
+                    instrument=instrument,
+                    entry=state["entry"],
+                    tp1=state["tp1"],
+                    tp2=state["tp2"],
+                    tp1_ref=state["refs"][0] or "",
+                    ref2=state["refs"][1] or "",
+                    ref3=state["refs"][2] or "",
+                )
+                logger.info(f"🔄 Trade Capital.com restauré : {instrument} {t_dict['direction']} @ {t_dict['entry']}")
+            except Exception as e:
+                logger.error(f"❌ Restauration trade Capital.com {instrument} : {e}")
 
     def _correlation_ok(self, symbol: str, price: float) -> bool:
         """
@@ -429,14 +463,11 @@ class TradingBot:
                     capture_output=True, text=True, timeout=300
                 )
                 if result.returncode == 0:
-                    # Recharge les params en mémoire
-                    from strategy import _load_symbol_params
-                    _load_symbol_params()
                     self.telegram.send_message(
                         "✅ <b>Auto-Hyperopt terminé</b>\n"
                         "Nouveaux paramètres actifs pour la semaine 🎯"
                     )
-                    logger.info("✅ Auto-Hyperopt terminé — params rechargés")
+                    logger.info("✅ Auto-Hyperopt terminé")
                 else:
                     logger.error(f"❌ Auto-Hyperopt échec: {result.stderr[:200]}")
             except Exception as e:
@@ -900,7 +931,10 @@ class TradingBot:
         total_size = self.capital.position_size(
             balance=balance, risk_pct=0.01, entry=entry, sl=sl, epic=instrument
         )
-        size1 = max(0.01, round(total_size / 3, 2))
+        # Utilise la taille minimale par instrument depuis le client Capital.com
+        from brokers.capital_client import CapitalClient
+        min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
+        size1 = max(min_sz, round(total_size / 3, 2))
 
         if size1 <= 0:
             return
@@ -953,14 +987,17 @@ class TradingBot:
 
         # ─── ÉTAPE 4 : Telegram en background (ne bloque pas la boucle) ────────
         name    = CAPITAL_NAMES.get(instrument, instrument)
-        session = "London" if datetime.now(timezone.utc).hour < 12 else "NY"
+        # Session London : 08h-10h UTC | NY : 13h30-16h UTC
+        hour = datetime.now(timezone.utc).hour
+        minute = datetime.now(timezone.utc).minute
+        session = "London" if (hour < 13 or (hour == 13 and minute < 30)) else "NY"
 
         import threading
         _snap = dict(instrument=instrument, name=name, sig=sig,
                      entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
                      size=size1, score=score, session=session,
                      range_pct=sr["pct"], range_high=sr["high"], range_low=sr["low"],
-                     confirmations=list(confirmations), df=df)
+                     confirmations=list(confirmations), df=df.copy())  # .copy() évite race condition
         threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
 
     def _on_ws_be_triggered(self, instrument: str, entry_or_sl: float, event: str = "TP1"):
@@ -1040,6 +1077,12 @@ class TradingBot:
                     if ref and ref in open_refs:
                         self.capital.modify_position_stop(ref, entry)
 
+                # Persiste tp1_hit dans la BDD
+                try:
+                    self.db.save_capital_trade(instrument, state)
+                except Exception:
+                    pass
+
                 tgc.notify_tp1_be(name=name, instrument=instrument,
                                    entry=entry, pips_tp1=pips_tp1, size=0)
 
@@ -1053,9 +1096,14 @@ class TradingBot:
                     pnl_est  = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
                     self._capital_closed_today.append({
                         "instrument": instrument,
-                        "pnl": round(pnl_est * 3, 4),  # 3 positions
+                        "pnl": round(pnl_est * 3, 4),
                         "direction": state["direction"],
                     })
+                except Exception:
+                    pass
+                # Persiste la fermeture en BDD
+                try:
+                    self.db.close_capital_trade(instrument)
                 except Exception:
                     pass
                 self.capital_ws.unwatch(instrument)

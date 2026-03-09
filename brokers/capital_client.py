@@ -89,7 +89,7 @@ PIP_FACTOR = {
 class CapitalClient:
     """Client Capital.com — authentification par session + ordres CFD."""
 
-    SESSION_TTL = 600  # Renouvelle la session toutes les 10 min
+    SESSION_TTL = 9 * 60  # Renouvelle 1 min avant l'expiration réelle (10 min Capital.com)
 
     def __init__(self):
         self._cst    = None

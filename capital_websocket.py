@@ -175,15 +175,18 @@ class CapitalWebSocket:
             self._subscribe(epics)
 
     def _subscribe(self, epics: List[str]):
-        """Envoie une demande d'abonnement prix en temps réel."""
+        """Envoie une demande d'abonnement prix en temps réel avec tokens frais."""
         if not self._ws:
             return
         try:
+            # Toujours lire les tokens les plus récents depuis le client
+            cst   = self._client._cst   or ""
+            token = self._client._token or ""
             self._ws.send(json.dumps({
                 "destination":   "marketData.subscribe",
                 "correlationId": "sub",
-                "cst":           self._client._cst,
-                "securityToken": self._client._token,
+                "cst":           cst,
+                "securityToken": token,
                 "payload": {"epics": epics},
             }))
             logger.debug(f"📡 WS abonné : {epics}")
