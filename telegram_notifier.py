@@ -36,16 +36,26 @@ class TelegramNotifier:
     # ─── Helpers ──────────────────────────────────────────────────────────────
 
     def _run(self, coro):
+        """Exécute une coroutine Telegram de façon thread-safe."""
         if not self.bot:
             return
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(coro)
+            # asyncio.run() crée un loop propre et isolé pour chaque appel
+            # Évite RuntimeError('Event loop is closed') du pattern new_event_loop()
+            asyncio.run(coro)
+        except RuntimeError as e:
+            # Fallback si asyncio.run() non disponible (Python < 3.7)
+            if "cannot be called" in str(e) or "Event loop" in str(e):
+                try:
+                    loop = asyncio.new_event_loop()
+                    loop.run_until_complete(coro)
+                    loop.close()
+                except Exception as e2:
+                    logger.error(f"❌ Telegram send fallback : {e2}")
+            else:
+                logger.error(f"❌ Telegram send : {e}")
         except Exception as e:
             logger.error(f"❌ Telegram send : {e}")
-        finally:
-            loop.close()
 
     def _wallet_button(self) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([[
