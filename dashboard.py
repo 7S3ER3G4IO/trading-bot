@@ -288,6 +288,17 @@ def health():
     return jsonify({"ok": True, "bot": "AlphaTrader v2.5", "balance": _state["balance"]})
 
 
+@app.route("/ip")
+def get_ip():
+    """Retourne l'IP publique de Railway — à whitelist sur Binance API."""
+    try:
+        import requests as _req
+        ip = _req.get("https://ifconfig.me", timeout=5).text.strip()
+    except Exception:
+        ip = "Impossible de récupérer l'IP"
+    return jsonify({"railway_ip": ip, "whitelist_note": "Ajoute cette IP dans Binance API Management > Trusted IPs"})
+
+
 # ─── API pour mise à jour depuis le bot ────────────────────────────────────
 
 def update_state(**kwargs):
