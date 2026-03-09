@@ -91,6 +91,18 @@ except ImportError:
     _OBI_OK = False
 
 try:
+    from liquidation_zones import LiquidityZones
+    _LIQUIDITY_OK = True
+except ImportError:
+    _LIQUIDITY_OK = False
+
+try:
+    from hmm_regime import MarketRegimeHMM
+    _HMM_OK = True
+except ImportError:
+    _HMM_OK = False
+
+try:
     from tradingview_webhook import get_webhook_server
     # Opt-in : seulement si WEBHOOK_SECRET est défini dans Railway
     _WEBHOOK_OK = bool(os.getenv("WEBHOOK_SECRET"))
@@ -257,9 +269,11 @@ class TradingBot:
             logger.debug("ℹ️  Webhook désactivé (WEBHOOK_SECRET non défini)")
 
         # ─── Batch 4 — Features avancées ────────────────────────────────────
-        self.vol_regime = VolatilityRegime() if _VOLREG_OK else None
-        self.drift      = DriftDetector()    if _DRIFT_OK  else None
-        self.twap       = TWAPExecutor()     if _TWAP_OK   else None
+        self.vol_regime      = VolatilityRegime()  if _VOLREG_OK    else None
+        self.drift           = DriftDetector()     if _DRIFT_OK     else None
+        self.twap            = TWAPExecutor()      if _TWAP_OK      else None
+        self.liquidity_zones = LiquidityZones()    if _LIQUIDITY_OK else None
+        self.hmm_regime      = MarketRegimeHMM()   if _HMM_OK       else None
         # DCA pyramiding state : {symbol: {"entry_price", "qty", "ts"}}
         self._dca_positions: dict = {}
         # Benchmark BTC : {date: btc_price}
@@ -702,6 +716,35 @@ class TradingBot:
         df = self.strategy.compute_indicators(df)
 
         sig, score, confirmations = self.strategy.get_signal(df)
+
+        # ── HMM Régime de marché ────────────────────────────────────────────
+        if sig != SIGNAL_HOLD and _HMM_OK and hasattr(self, "hmm_regime"):
+            try:
+                regime_result = self.hmm_regime.detect_regime(df, symbol)
+                hmm_adj       = self.hmm_regime.get_signal_adjustment(regime_result, sig)
+                score        += hmm_adj
+                regime_name   = regime_result["name"]
+                if hmm_adj != 0:
+                    adj_txt = f"+1 HMM {regime_name}" if hmm_adj > 0 else f"-1 HMM {regime_name}"
+                    confirmations.append(adj_txt)
+                    logger.debug(f"🧠 HMM {symbol}: {regime_name} adj={hmm_adj:+d}")
+                dash_filter("regime", regime_name)
+            except Exception:
+                pass
+
+        # ── Liquidity Zones ────────────────────────────────────────────────
+        if sig != SIGNAL_HOLD and _LIQUIDITY_OK and hasattr(self, "liquidity_zones"):
+            try:
+                current_price = self.fetcher.get_ticker(symbol)["last"]
+                liq = self.liquidity_zones.analyze(symbol, sig, current_price)
+                if not liq["valid"]:
+                    logger.info(f"💧 Liquidity block {symbol}: {liq['message']}")
+                    return   # Trade bloqué par une muraille d'ordres
+                score += liq["score_bonus"]
+                if liq["score_bonus"] > 0:
+                    confirmations.append(f"+1 Liquidité cible")
+            except Exception:
+                pass
 
         # ═ PRE-ALERT : score = 4/6 mais pas encore signal ═
         PRE_ALERT_SCORE   = 4
