@@ -104,20 +104,7 @@ class TelegramNotifier:
     # ─── MESSAGES ─────────────────────────────────────────────────────────────
 
     def notify_start(self, balance: float, symbols: list, futures_balance: float = 0.0):
-        pairs = " • ".join([s.replace("/USDT", "") for s in symbols])
-        bal_line = (
-            f"🟣 {futures_balance:,.0f} USDT · LONG+SHORT\n"
-            if futures_balance > 0
-            else f"💰 {balance:,.0f} USDT\n"
-        )
-        self._send(
-            f"⚡ <b>ALPHATRADER — EN LIGNE</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 {pairs} · 5m\n"
-            f"{bal_line}"
-            f"🎯 Risk 0.5% → 2% · Levier ×1\n"
-            f"✅ Surveillance 24/7"
-        )
+        self._send("Bot en ligne 🟢")
 
     def notify_trade_open(
         self, side, symbol, entry, tp1, tp2, tp3, sl,
