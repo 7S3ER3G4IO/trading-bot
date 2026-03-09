@@ -105,22 +105,18 @@ class TelegramNotifier:
 
     def notify_start(self, balance: float, symbols: list, futures_balance: float = 0.0):
         pairs = " • ".join([s.replace("/USDT", "") for s in symbols])
-        futures_line = (
-            f"🟣 Futures Demo : <b>{futures_balance:,.2f} USDT</b> (LONG+SHORT actif)\n"
-            if futures_balance > 0 else ""
+        bal_line = (
+            f"🟣 {futures_balance:,.0f} USDT · LONG+SHORT\n"
+            if futures_balance > 0
+            else f"💰 {balance:,.0f} USDT\n"
         )
         self._send(
-            f"⚡ <b>ALPHATRADER — SYSTÈME ACTIF</b>\n"
-            f"\n"
-            f"🤖 Bot en ligne et opérationnel.\n"
-            f"\n"
-            f"📊 Marchés suivis : <b>{pairs}</b>\n"
-            f"⏱ Timeframe : <b>5 minutes</b>\n"
-            f"💰 Capital Spot : <b>{balance:,.2f} USDT</b>\n"
-            f"{futures_line}"
-            f"🎯 Risk/trade : <b>0.5% → 2%</b> (selon signal)\n"
-            f"\n"
-            f"Surveillance active 24/7 ✅"
+            f"⚡ <b>ALPHATRADER — EN LIGNE</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 {pairs} · 5m\n"
+            f"{bal_line}"
+            f"🎯 Risk 0.5% → 2% · Levier ×1\n"
+            f"✅ Surveillance 24/7"
         )
 
     def notify_trade_open(
@@ -345,22 +341,15 @@ class TelegramNotifier:
 
     def notify_pre_signal(self, side: str, symbol: str, price: float, score: int):
         ticker    = self._ticker(symbol)
-        direction = "LONG 📈" if side == "BUY" else "SHORT 📉"
+        direction = "📈 LONG" if side == "BUY" else "📉 SHORT"
         self._send(
-            f"⏳ <b>SETUP EN FORMATION — {ticker}</b>\n"
-            f"\n"
-            f"Direction probable : <b>{direction}</b>\n"
-            f"Prix cible ≈ <b>{price:,.4f}</b>\n"
-            f"Confiance : <b>{score}/8</b>\n"
-            f"\n"
-            f"En attente de confirmation finale... 🔍"
+            f"⏳ <b>SETUP EN FORMATION — {ticker} {direction}</b>"
         )
 
     def notify_setup_cancelled(self, symbol: str):
         ticker = self._ticker(symbol)
         self._send(
-            f"❌ Setup annulé — <b>{ticker}</b>\n"
-            f"\nSignal invalidé, on reste en cash."
+            f"❌ <b>SETUP ANNULÉ — {ticker}</b>"
         )
 
     def post_wallet_stats(
