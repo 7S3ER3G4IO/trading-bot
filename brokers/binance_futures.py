@@ -129,6 +129,42 @@ class BinanceFuturesClient:
             logger.error(f"❌ Futures balance: {e}")
             return 0.0
 
+    def get_position(self, instrument: str) -> dict:
+        """
+        Retourne la position ouverte sur un instrument.
+        positionAmt == 0 → position fermée (SL ou TP touché côté Binance).
+        """
+        if not self.available:
+            return {"positionAmt": 0.0, "unrealizedProfit": 0.0, "entryPrice": 0.0}
+        try:
+            sym  = _to_sym(instrument)
+            data = self._get("/fapi/v2/positionRisk", params={"symbol": sym}, signed=True)
+            if data:
+                p = data[0]
+                return {
+                    "positionAmt":      float(p.get("positionAmt",      0)),
+                    "unrealizedProfit": float(p.get("unRealizedProfit", 0)),
+                    "entryPrice":       float(p.get("entryPrice",       0)),
+                }
+        except Exception as e:
+            logger.warning(f"⚠️  get_position {instrument}: {e}")
+        return {"positionAmt": 0.0, "unrealizedProfit": 0.0, "entryPrice": 0.0}
+
+    def get_last_realized_pnl(self, instrument: str, limit: int = 10) -> float:
+        """Retourne la somme des PnL réalisés récents pour un instrument."""
+        if not self.available:
+            return 0.0
+        try:
+            sym  = _to_sym(instrument)
+            data = self._get("/fapi/v1/income", params={
+                "symbol": sym, "incomeType": "REALIZED_PNL", "limit": limit,
+            }, signed=True)
+            if data:
+                return sum(float(d.get("income", 0)) for d in data)
+        except Exception as e:
+            logger.warning(f"⚠️  get_last_realized_pnl {instrument}: {e}")
+        return 0.0
+
     def fetch_ohlcv(self, instrument: str, timeframe: str = "5m", count: int = 300):
         """Retourne un DataFrame OHLCV depuis Binance Futures demo."""
         if not self.available:

@@ -211,9 +211,11 @@ class TradingBot:
             logger.info("ℹ️  OANDA non configuré — uniquement crypto Binance")
 
         # Futures — activé via BINANCE_FUTURES_API_KEY (voir plus bas)
-        # futures_trades initiarisé ici, réutilisé partout
         self.futures = None
-        self.futures_trades: dict = {}
+        self.futures_trades: dict = {}   # instrument → trade_id
+        self.futures_meta:   dict = {}   # instrument → {side, entry, qty, sl, tp}
+        self.futures_log:    list = []   # trades fermés [{instrument, pnl, side, ts}]
+        self.futures_pnl_total: float = 0.0
 
         # ─── Solde + Risk + State ──────────────────────────────────────────
         bal = self.fetcher.get_balance()["free"]
@@ -464,10 +466,11 @@ class TradingBot:
             fut_dash_bal = self.futures.get_balance() if (self.futures and self.futures.available) else 0.0
             dash_update(
                 balance=balance, initial=self.initial_balance,
-                pnl_total=round(balance - self.initial_balance, 2),
-                pnl_today=round(pnl_today, 2),
+                pnl_total=round(balance - self.initial_balance + self.futures_pnl_total, 2),
+                pnl_today=round(pnl_today + self.futures_pnl_total, 2),
                 trades=open_trades, wr_overall=round(wr,1),
-                n_total=total, symbols=[s.replace("/USDT","") for s in SYMBOLS],
+                n_total=total + len(self.futures_log),
+                symbols=[s.replace("/USDT","") for s in SYMBOLS],
                 paused=self._manual_pause,
                 futures_balance=fut_dash_bal,
             )
@@ -492,6 +495,25 @@ class TradingBot:
                 date_str = datetime.now(timezone.utc).strftime("%d/%m")
                 self.telegram.notify_daily_report(report_lines, date_str)
                 self.reporter.mark_report_sent()
+            # Rapport Futures du jour
+            if self.futures_log:
+                wins  = sum(1 for t in self.futures_log if t.get("win"))
+                total_f = len(self.futures_log)
+                pnl_f = sum(t["pnl"] for t in self.futures_log)
+                wr_f  = wins / total_f * 100 if total_f > 0 else 0
+                def _fline(t):
+                    e = "✅" if t["win"] else "❌"
+                    sym = t["instrument"].replace("/USDT:USDT", "")
+                    return f"{e} {sym} {t['side']}  {t['pnl']:+.2f}$\n"
+                lines = "".join(_fline(t) for t in self.futures_log)
+                self.telegram.send_message(
+                    f"\U0001f7e3 <b>BILAN FUTURES — {date_str}</b>\n"
+                    f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+                    f"{lines}"
+                    f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+                    f"Trades : <b>{wins}/{total_f}</b>  WR : <b>{wr_f:.0f}%</b>\n"
+                    f"PnL Futures : <b>{pnl_f:+.2f} USDT</b>"
+                )
             self.last_report_hour = now.hour
 
         # Bilan hebdomadaire (dimanche 22h CET)
@@ -505,7 +527,9 @@ class TradingBot:
             self.risk.reset_daily(bal)
             self.reporter.reset_for_new_day()
             self.initial_balance      = bal
-            self._daily_start_balance = bal   # #1 Reset protection DD
+            self._daily_start_balance = bal
+            self.futures_log          = []   # reset bilan futures journalier
+            self.futures_pnl_total    = 0.0
             self._dd_paused           = False  # Reprend le trading au bout du jour
             self.last_reset_day       = cet.date()
             logger.info(f"📊 Nouveau jour — balance de début : {bal:.2f} USDT")
@@ -622,19 +646,52 @@ class TradingBot:
 
     def _process_futures_symbol(self, instrument: str, balance: float):
         """
-        Analyse un instrument Binance Futures (XAU/USDT, BTC/USDT:USDT…)
-        et passe un ordre futures si le signal est confirmé.
+        Analyse un instrument Binance Futures (LONG & SHORT).
         Endpoint : demo-fapi.binance.com (5000 USDT virtuels).
+        Session : 24h/7j (crypto — aucune restriction horaire).
         """
-        # Trade déjà ouvert sur cet instrument
+        # ── A. Position déjà ouverte ? Vérifier si toujours active côté Binance ──
         if self.futures_trades.get(instrument):
-            return
+            pos = self.futures.get_position(instrument)
+            if abs(pos["positionAmt"]) > 0.0001:
+                return  # Toujours ouverte — rien à faire
 
-        # Vérification session (London + NY open uniquement)
-        if not self.strategy.is_session_ok():
-            return
+            # Position fermée (SL ou TP touché côté Binance)
+            meta      = self.futures_meta.pop(instrument, {})
+            pnl       = self.futures.get_last_realized_pnl(instrument, limit=5)
+            close_px  = float(self.futures.fetch_ohlcv(instrument, count=1).iloc[-1]["close"]) \
+                        if meta else pos.get("entryPrice", 0)
+            entry_px  = meta.get("entry", pos.get("entryPrice", 0))
+            side      = meta.get("side", "BUY")
 
-        # Données OHLCV depuis Binance Futures Demo
+            # Mise à jour PnL cumulé
+            self.futures_pnl_total += pnl
+
+            # Log pour rapport journalier
+            from datetime import datetime, timezone as tz
+            self.futures_log.append({
+                "instrument": instrument,
+                "side":       side,
+                "pnl":        pnl,
+                "ts":         datetime.now(tz.utc).strftime("%H:%M"),
+                "win":        pnl >= 0,
+            })
+
+            # Notification Telegram
+            try:
+                self.telegram.notify_futures_closed(
+                    instrument=instrument, side=side,
+                    pnl=pnl, entry=entry_px, close_price=close_px,
+                )
+            except Exception:
+                pass
+
+            logger.info(f"📊 Futures {instrument} fermé — PnL: {pnl:+.2f} USDT")
+            del self.futures_trades[instrument]
+            return  # Réouverture possible au prochain tick
+
+        # ── B. Pas de position ouverte — chercher un signal ───────────────────
+        # Données OHLCV depuis Binance Futures Demo (5m)
         df = self.futures.fetch_ohlcv(instrument, timeframe="5m", count=300)
         if df is None or len(df) < 100:
             return
@@ -674,6 +731,9 @@ class TradingBot:
 
         if trade_id:
             self.futures_trades[instrument] = trade_id
+            self.futures_meta[instrument]   = {
+                "side": sig, "entry": entry, "qty": qty, "sl": sl, "tp": tp,
+            }
             name    = INSTRUMENT_NAMES.get(instrument, instrument.replace(":USDT", ""))
             sl_pct  = abs(sl - entry) / entry * 100
             tp_pct  = abs(tp - entry) / entry * 100

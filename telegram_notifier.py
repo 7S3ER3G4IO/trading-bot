@@ -352,6 +352,28 @@ class TelegramNotifier:
             f"❌ <b>SETUP ANNULÉ — {ticker}</b>"
         )
 
+    def notify_futures_closed(
+        self, instrument: str, side: str, pnl: float, entry: float, close_price: float
+    ):
+        """Notifie la fermeture d'un trade Futures (TP ou SL touché)."""
+        _names = {
+            "ETH/USDT:USDT": "Ethereum", "XRP/USDT:USDT": "XRP",
+            "ADA/USDT:USDT": "Cardano",  "DOGE/USDT:USDT": "Dogecoin",
+        }
+        name      = _names.get(instrument, instrument.replace(":USDT","").replace("/USDT",""))
+        direction = "LONG" if side == "BUY" else "SHORT"
+        emoji     = "✅" if pnl >= 0 else "❌"
+        pct       = abs(close_price - entry) / entry * 100 if entry > 0 else 0
+        self._send(
+            f"{emoji} <b>FUTURES {direction} FERMÉ — {name}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📍 Entrée : <code>{entry:.4f}</code>\n"
+            f"🏁 Sortie : <code>{close_price:.4f}</code>  ({pct:.1f}%)\n"
+            f"💰 PnL    : <b>{pnl:+.2f} USDT</b>\n"
+            f"🏦 <i>Binance Futures Demo</i>",
+            markup=self._wallet_button(),
+        )
+
     def post_wallet_stats(
         self, balance: float, initial_balance: float,
         open_trades: list, daily_pnl: float, total_pnl: float,
