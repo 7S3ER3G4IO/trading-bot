@@ -27,6 +27,7 @@ from brokers.capital_client import CapitalClient, CAPITAL_INSTRUMENTS, INSTRUMEN
 from brokers.binance_futures import BinanceFuturesClient, FUTURES_INSTRUMENTS, INSTRUMENT_NAMES, FUTURES_MIN_SCORE
 import telegram_capital as tgc
 from telegram_capital import SessionTracker
+from capital_websocket import CapitalWebSocket
 
 # ─── Features avancées 2026 ────────────────────────────────────
 try:
@@ -211,6 +212,14 @@ class TradingBot:
             logger.info(f"🏦 Capital.com actif — {len(CAPITAL_INSTRUMENTS)} instruments : {', '.join(CAPITAL_INSTRUMENTS)}")
         else:
             logger.info("ℹ️  Capital.com non configuré — en attente des credentials (CAPITAL_API_KEY / EMAIL / PASSWORD)")
+
+        # WebSocket Capital.com — monitoring BE temps réel (<500ms)
+        self.capital_ws = CapitalWebSocket(
+            capital_client=self.capital,
+            on_be_triggered=self._on_ws_be_triggered,
+        )
+        if self.capital.available:
+            self.capital_ws.start()
 
         # Futures — activé via BINANCE_FUTURES_API_KEY (voir plus bas)
         self.futures = None
@@ -884,6 +893,38 @@ class TradingBot:
             confirmations=confirmations, df=df,
         )
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
+
+        # WebSocket — abonne le monitoring temps réel pour cet instrument
+        self.capital_ws.watch(
+            instrument=instrument,
+            entry=entry,
+            tp1=tp1,
+            tp1_ref=ref1 or "",
+            other_refs=[r for r in [ref2, ref3] if r],
+        )
+
+    def _on_ws_be_triggered(self, instrument: str, entry: float):
+        """
+        Callback WebSocket — appelé en < 500ms quand TP1 est franchi.
+        Met à jour l'état interne et envoie la notification Telegram.
+        """
+        state = self.capital_trades.get(instrument)
+        if state is None:
+            return
+
+        # Marque TP1 comme touché dans l'état capital_trades
+        state["tp1_hit"] = True
+
+        name = CAPITAL_NAMES.get(instrument, instrument)
+        pip  = CAPITAL_PIP.get(instrument, 0.0001)
+        rng  = abs(entry - state["sl"])  # taille approximative du range
+        pips_tp1 = round(rng * 0.8 / pip)
+
+        logger.info(f"⚡ WS BE instant — {instrument} @ {entry:.5f}")
+        tgc.notify_tp1_be(
+            name=name, instrument=instrument,
+            entry=entry, pips_tp1=pips_tp1, size=0,
+        )
 
     def _monitor_capital_positions(self):
         """
