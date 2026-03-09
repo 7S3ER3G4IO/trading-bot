@@ -669,18 +669,34 @@ class TradingBot:
 
         if trade_id:
             self.futures_trades[instrument] = trade_id
-            name = instrument.replace(":USDT", "").replace("/", "")
-            self.telegram.send_message(
-                f"🥇 <b>Futures Demo Signal</b> — {name}\n"
-                f"{'🟢 LONG' if sig == 'BUY' else '🔴 SHORT'}   Score {score}/7\n"
-                f"\n"
-                f"📍 Entrée : <code>{entry:.2f}</code>\n"
-                f"🛑 SL     : <code>{sl:.2f}</code> ({sl_dist:.2f}$)\n"
-                f"🎯 TP     : <code>{tp:.2f}</code> (R:R 1:2)\n"
-                f"\n"
-                f"💼 Qté : {qty:.4f} | TradeID: {trade_id}\n"
-                f"🏦 <i>Binance Futures Demo (0 vrai argent)</i>"
-            )
+            name    = INSTRUMENT_NAMES.get(instrument, instrument.replace(":USDT", ""))
+            sl_pct  = abs(sl - entry) / entry * 100
+            tp_pct  = abs(tp - entry) / entry * 100
+            if sig == "BUY":
+                msg = (
+                    f"🟢 <b>FUTURES LONG — {name}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📍 Entrée : <code>{entry:.4f} USDT</code>\n"
+                    f"🎯 TP     : <code>{tp:.4f}</code>  (+{tp_pct:.1f}%)\n"
+                    f"🛑 SL     : <code>{sl:.4f}</code>  (-{sl_pct:.1f}%)\n"
+                    f"📐 R:R    : <b>1:2</b>  |  Score : {score}/7\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"💼 Qté : {qty:.4f}  |  ID : {trade_id}\n"
+                    f"🏦 <i>Binance Futures Demo — 0 vrai argent</i>"
+                )
+            else:
+                msg = (
+                    f"🔴 <b>FUTURES SHORT — {name}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📍 Entrée : <code>{entry:.4f} USDT</code>\n"
+                    f"🎯 TP     : <code>{tp:.4f}</code>  (-{tp_pct:.1f}%)\n"
+                    f"🛑 SL     : <code>{sl:.4f}</code>  (+{sl_pct:.1f}%)\n"
+                    f"📐 R:R    : <b>1:2</b>  |  Score : {score}/7\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"💼 Qté : {qty:.4f}  |  ID : {trade_id}\n"
+                    f"🏦 <i>Binance Futures Demo — 0 vrai argent</i>"
+                )
+            self.telegram.send_message(msg)
 
     def _process_oanda_symbol(self, instrument: str, balance: float):
         """
