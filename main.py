@@ -390,7 +390,8 @@ class TradingBot:
         cap_trades = self.db.load_open_capital_trades()
         for t_dict in cap_trades:
             instrument = t_dict["instrument"]
-            if instrument not in self.capital_trades:
+            # Filtre les instruments connus seulement
+            if instrument not in CAPITAL_INSTRUMENTS:
                 continue
             try:
                 self.capital_trades[instrument] = {
@@ -485,9 +486,13 @@ class TradingBot:
                 _err_count = 0  # Reset si tick OK
             except Exception as e:
                 _err_count += 1
+                # Essaie le solde Capital.com en priorité, sinon Binance
                 bal = 0.0
                 try:
-                    bal = self.fetcher.get_balance()["free"]
+                    if self.capital.available:
+                        bal = self.capital.get_balance()
+                    else:
+                        bal = self.fetcher.get_balance().get("free", 0.0)
                 except Exception:
                     pass
                 logger.error(f"❌ Erreur boucle #{_err_count} : {e}")
@@ -1530,7 +1535,9 @@ class TradingBot:
         epic = symbol.upper().replace("/USDT", "").replace(":USDT", "")
         state = self.capital_trades.get(epic) or self.capital_trades.get(symbol)
         if state is not None:
-            # Vérifie les positions réellement ouvertes avant de fermer
+            # Vérifie les positions réellement ouvertes (guard None refs)
+            if not self.capital.available:
+                return f"❌ Capital.com non disponible"
             open_pos  = self.capital.get_open_positions()
             open_refs = {p.get("position", {}).get("dealId") for p in open_pos if p.get("position", {}).get("dealId")}
             closed = 0
