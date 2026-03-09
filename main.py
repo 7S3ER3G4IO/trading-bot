@@ -47,10 +47,17 @@ try:
 except ImportError:
     _ONCHAIN_OK = False
 try:
-    from dashboard import start_dashboard
+    from dashboard import (start_dashboard, update_state as dash_update,
+                           update_trade_open as dash_open,
+                           update_trade_close as dash_close,
+                           update_filter as dash_filter)
     _DASHBOARD_OK = True
 except ImportError:
     _DASHBOARD_OK = False
+    def dash_update(**_): pass
+    def dash_open(*_): pass
+    def dash_close(*_): pass
+    def dash_filter(*_): pass
 
 try:
     from morning_brief import generate_morning_brief
@@ -387,6 +394,35 @@ class TradingBot:
     def _tick(self):
         now = datetime.now(timezone.utc)
         cet = now + timedelta(hours=1)
+
+        # ── Dashboard update ────────────────────────────────────────────────
+        try:
+            balance = self.fetcher.get_balance()["free"]
+            open_trades = []
+            for sym, t in self.trades.items():
+                if t:
+                    try:
+                        cur = self.fetcher.get_ticker(sym)
+                        pnl = (cur - t.entry) * t.qty * (1 if t.side == "LONG" else -1)
+                        open_trades.append({"symbol": sym.replace("/USDT",""), "side": t.side,
+                                            "entry": t.entry, "qty": t.qty, "pnl": round(pnl,2)})
+                    except Exception:
+                        open_trades.append({"symbol": sym.replace("/USDT",""), "side": t.side,
+                                            "entry": t.entry, "qty": t.qty, "pnl": 0.0})
+            pnl_today = sum(t["pnl"] for t in open_trades)
+            wins  = sum(1 for tr in self.reporter.trade_log if tr.get("win")) if hasattr(self.reporter,"trade_log") else 0
+            total = len(self.reporter.trade_log) if hasattr(self.reporter,"trade_log") else 0
+            wr    = (wins/total*100) if total > 0 else 0.0
+            dash_update(
+                balance=balance, initial=self.initial_balance,
+                pnl_total=round(balance - self.initial_balance, 2),
+                pnl_today=round(pnl_today, 2),
+                trades=open_trades, wr_overall=round(wr,1),
+                n_total=total, symbols=[s.replace("/USDT","") for s in SYMBOLS],
+                paused=self._manual_pause,
+            )
+        except Exception:
+            pass
 
         # Morning Brief
         if self.context.should_send_brief():
