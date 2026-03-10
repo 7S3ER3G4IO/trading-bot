@@ -108,44 +108,56 @@ class CapitalClient:
 
     def _authenticate(self) -> bool:
         """
-        Auth Capital.com. Essaie dans l'ordre :
-        1. URL DEMO/LIVE selon CAPITAL_DEMO
-        2. URL fallback opposée (LIVE si DEMO, DEMO si LIVE)
-        3. URL officielle open-api.capital.com (toujours résoluble via Cloudflare)
+        Auth Capital.com avec back-off exponentiel.
+        Pour DEMO : réessaie l'URL DEMO 3× avant de tenter le fallback.
+        Le fallback LIVE pour un compte DEMO retourne 0€ → éviter autant que possible.
         """
-        urls_to_try: list = [BASE_URL]
-        fallback = LIVE_URL if CAPITAL_DEMO else DEMO_URL
-        if fallback not in urls_to_try:
-            urls_to_try.append(fallback)
-        if OPEN_URL not in urls_to_try:
-            urls_to_try.append(OPEN_URL)  # Toujours résoluble (Cloudflare CDN)
+        env   = "DEMO" if CAPITAL_DEMO else "LIVE"
+        # Ordre de priorité : URL principale (3 tentatives) → URL opposée → open-api
+        primary  = DEMO_URL if CAPITAL_DEMO else LIVE_URL
+        opposite = LIVE_URL if CAPITAL_DEMO else DEMO_URL
 
-        for url in urls_to_try:
-            try:
-                r = self._session.post(
-                    f"{url}/session",
-                    headers={"X-CAP-API-KEY": CAPITAL_API_KEY},
-                    json={"identifier": CAPITAL_EMAIL, "password": CAPITAL_PASSWORD,
-                          "encryptedPassword": False},
-                    timeout=15,
-                )
-                r.raise_for_status()
-                self._cst   = r.headers.get("CST")
-                self._token = r.headers.get("X-SECURITY-TOKEN")
-                self._auth_ts  = time.time()
-                self._base_url = url
-                env = "DEMO" if CAPITAL_DEMO else "LIVE"
-                tag = " (open-api fallback)" if url == OPEN_URL else (
-                      " (fallback opposé)" if url != BASE_URL else ""
-                )
-                logger.info(f"🏦 Capital.com connecté ({env}){tag} ✅ — {url}")
-                return bool(self._cst and self._token)
-            except Exception as e:
-                logger.warning(f"⚠️  Capital.com auth échoué sur {url}: {type(e).__name__}: {e}")
-                continue
+        urls_with_tries = [
+            (primary,  3),   # 3 essais avec back-off sur l'URL correcte
+            (opposite, 1),   # 1 essai sur l'URL opposée (dernier recours)
+            (OPEN_URL, 1),   # 1 essai open-api (CDN Cloudflare toujours dispo)
+        ]
+
+        for url, max_tries in urls_with_tries:
+            for attempt in range(1, max_tries + 1):
+                try:
+                    r = self._session.post(
+                        f"{url}/session",
+                        headers={"X-CAP-API-KEY": CAPITAL_API_KEY},
+                        json={"identifier": CAPITAL_EMAIL, "password": CAPITAL_PASSWORD,
+                              "encryptedPassword": False},
+                        timeout=15,
+                    )
+                    r.raise_for_status()
+                    self._cst      = r.headers.get("CST")
+                    self._token    = r.headers.get("X-SECURITY-TOKEN")
+                    self._auth_ts  = time.time()
+                    self._base_url = url
+                    tag = "" if url == primary else (
+                          " (fallback opposé)" if url == opposite else " (open-api fallback)"
+                    )
+                    logger.info(f"🏦 Capital.com connecté ({env}){tag} ✅ — {url}")
+                    return bool(self._cst and self._token)
+                except Exception as e:
+                    if "429" in str(e):
+                        backoff = attempt * 3  # 3s, 6s, 9s
+                        logger.warning(
+                            f"⚠️  Capital.com 429 sur {url} (tentative {attempt}/{max_tries})"
+                            f" — nouveau essai dans {backoff}s"
+                        )
+                        time.sleep(backoff)
+                    else:
+                        logger.warning(f"⚠️  Capital.com auth échoué sur {url}: {type(e).__name__}: {e}")
+                        break  # Erreur non-429 → passer à l'URL suivante directement
 
         logger.error("❌ Capital.com : toutes les URLs ont échoué (DEMO + LIVE + open-api)")
         return False
+
 
     def _headers(self) -> dict:
         """Retourne les headers d'authentification, renouvelle si nécessaire."""
