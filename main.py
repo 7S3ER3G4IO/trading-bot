@@ -171,6 +171,11 @@ class TradingBot:
         self._london_tracker = SessionTracker()
         self._ny_tracker     = SessionTracker()
         self._last_dashboard_day: Optional[date] = None
+        # Retest Entry : breakouts en attente de re-test du niveau cassé
+        # Format : { instrument: { sig, retest_level, atr, score, confirmations,
+        #                          detected_at (datetime), ticks_waited } }
+        self._pending_retest: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
+
 
         # ─── État général ─────────────────────────────────────────────────
         self.last_report_hour      = -1  # réservé
@@ -604,9 +609,79 @@ class TradingBot:
             return
 
         df  = self.strategy.compute_indicators(df)
-        sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
-        if sig == "HOLD":
-            return
+
+        # ── UPGRADE : Retest Entry (Anti-Fakeout) ────────────────────────────
+        # Vérifier d'abord s'il y a un retest en attente pour cet instrument.
+        pending = self._pending_retest.get(instrument)
+        if pending:
+            try:
+                px_now = self.capital.get_current_price(instrument)
+                if px_now:
+                    mid       = px_now["mid"]
+                    p_sig     = pending["sig"]
+                    p_level   = pending["retest_level"]  # niveau cassé
+                    p_atr     = pending["atr"]
+                    tolerance = p_atr * 0.5              # zone de retest = ATR × 0.5
+                    ticks     = pending.get("ticks_waited", 0) + 1
+                    pending["ticks_waited"] = ticks
+
+                    # Condition retest : prix revenu près du niveau cassé
+                    in_retest_zone = abs(mid - p_level) <= tolerance
+
+                    # Annulation : trop longtemps sans retest (>8 ticks = 4 min)
+                    if ticks > 8:
+                        logger.debug(f"⏳ Retest {instrument} expiré ({ticks} ticks) — annulé")
+                        self._pending_retest[instrument] = None
+                        return
+
+                    if in_retest_zone:
+                        # ✅ Prix a retesté → on entre !
+                        logger.info(
+                            f"🔄 RETEST CONFIRMÉ {instrument} {p_sig} "
+                            f"| prix={mid:.5f} ≈ niveau={p_level:.5f} (±{tolerance:.5f})"
+                        )
+                        self._pending_retest[instrument] = None
+                        # Synthétiser le signal pendentif comme signal courant
+                        sig          = p_sig
+                        score        = pending["score"]
+                        confirmations = pending["confirmations"] + ["Retest✓"]
+                    else:
+                        # Pas encore retesté → attendre
+                        logger.debug(
+                            f"⏳ Retest {instrument} {p_sig} | prix={mid:.5f} "
+                            f"| niveau={p_level:.5f} | ticks={ticks}/8"
+                        )
+                        return
+            except Exception as _re:
+                logger.debug(f"Retest check {instrument}: {_re}")
+                self._pending_retest[instrument] = None
+                return
+        else:
+            # Pas de retest en attente → analyser le signal
+            sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument)
+            if sig == "HOLD":
+                return
+
+            # Stocker le breakout en attente de retest (sauf si momentum extrême)
+            sr_now  = self.strategy.compute_session_range(df)
+            atr_now = self.strategy.get_atr(df)
+            if atr_now > 0:
+                retest_level = sr_now["high"] if sig == "BUY" else sr_now["low"]
+                self._pending_retest[instrument] = {
+                    "sig":           sig,
+                    "retest_level":  retest_level,
+                    "atr":           atr_now,
+                    "score":         score,
+                    "confirmations": confirmations,
+                    "ticks_waited":  0,
+                }
+                logger.info(
+                    f"🔔 Breakout {instrument} {sig} | niveau={retest_level:.5f} "
+                    f"| En attente retest (ATR={atr_now:.5f})…"
+                )
+                return  # ← attendre le retest la prochaine fois
+            # atr=0 : pas de données suffisantes → entrée directe
+
 
         # BUG FIX #5 : Vérification RiskManager avant d'ouvrir
         balance_for_risk = self.capital.get_balance() or balance
