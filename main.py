@@ -308,6 +308,14 @@ class TradingBot:
                 self._post_wallet_stats(balance_w)
             self._last_wallet_post = now
 
+        # ── Rapport journalier (20h UTC) + hebdo (21h UTC) ───────────────
+        if self.reporter.should_send_report():
+            self.telegram.send_message(self.reporter.build_report())
+            self.reporter.mark_report_sent()
+        if self.reporter.should_send_weekly():
+            self.telegram.send_message(self.reporter.build_weekly_report())
+            self.reporter.mark_weekly_sent()
+
         # ─── Moteur de trading Capital.com ───────────────────────────────────
 
         # Pause manuelle ou drawdown

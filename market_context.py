@@ -71,6 +71,7 @@ class MarketContext:
             return "😏"  # Greed
         return "🤑"  # Extreme Greed
 
+
     def update_daily_trend(self, current_price: float, ema_daily: float):
         """Met à jour la tendance Daily selon EMA."""
         if current_price > ema_daily * 1.01:
@@ -108,7 +109,7 @@ class MarketContext:
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{fg_line}\n"
             f"📊 Tendance Daily : `{self._daily_trend}`\n"
-            f"💰 Capital : `{balance:,.2f} USDT`\n"
+            f"💰 Capital : `{balance:,.2f} €`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{news_line}\n"
             f"🟢 *Bot actif — Bonne journée !*"
