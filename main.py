@@ -169,7 +169,7 @@ class TradingBot:
         self.drift      = DriftDetector()
         self.protection = ProtectionModel()  # Blacklist auto après 3 SL consécutifs
         self.mtf        = MTFFilter(capital_client=self.capital)  # Filtre 1h/4h
-        self.equity     = EquityCurve(initial_balance=balance or 10_000.0)
+        self.equity     = EquityCurve(initial_balance=self.initial_balance or 10_000.0)
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
