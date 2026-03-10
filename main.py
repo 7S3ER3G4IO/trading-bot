@@ -283,6 +283,41 @@ class TradingBot:
                 self._post_wallet_stats(balance_w)
             self._last_wallet_post = now
 
+        # ─── Moteur de trading Capital.com ───────────────────────────────────
+
+        # Pause manuelle ou drawdown
+        if self._manual_pause or self._dd_paused:
+            return
+
+        # Capital.com non disponible → rien à faire
+        if not self.capital.available:
+            return
+
+        # ── Surveillance des positions ouvertes ──────────────────────────
+        self._monitor_capital_positions()
+
+        # ── Vérification session London/NY (08h-10h30 / 13h30-16h UTC) ──
+        if not self.strategy.is_session_ok():
+            return
+
+        # ── Pause calendrier économique ───────────────────────────────────
+        should_pause, reason = self.calendar.should_pause_trading()
+        if should_pause:
+            logger.debug(f"📅 Trading suspendu : {reason}")
+            return
+
+        # ── Scan des instruments Capital.com ─────────────────────────────
+        balance = self.capital.get_balance()
+        if balance <= 0:
+            return
+
+        per_instrument = balance / len(CAPITAL_INSTRUMENTS)
+
+        for instrument in CAPITAL_INSTRUMENTS:
+            try:
+                self._process_capital_symbol(instrument, per_instrument)
+            except Exception as e:
+                logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
 
     def _run_auto_hyperopt(self):
         """
