@@ -36,11 +36,10 @@ CAPITAL_EMAIL    = os.getenv("CAPITAL_EMAIL",    "")
 CAPITAL_PASSWORD = os.getenv("CAPITAL_PASSWORD", "")
 CAPITAL_DEMO     = os.getenv("CAPITAL_DEMO", "true").lower() == "true"
 
-BASE_URL = (
-    "https://demo-api-capital.backend.capital.com/api/v1"
-    if CAPITAL_DEMO else
-    "https://api-capital.backend.capital.com/api/v1"
-)
+# Double URL : demo + live — Railway peut ne pas résoudre le hostname demo
+DEMO_URL = "https://demo-api-capital.backend.capital.com/api/v1"
+LIVE_URL = "https://api-capital.backend.capital.com/api/v1"
+BASE_URL  = DEMO_URL if CAPITAL_DEMO else LIVE_URL
 
 # Résolution timeframe → format Capital.com
 TF_MAP = {
@@ -92,10 +91,11 @@ class CapitalClient:
     SESSION_TTL = 9 * 60  # Renouvelle 1 min avant l'expiration réelle (10 min Capital.com)
 
     def __init__(self):
-        self._cst    = None
-        self._token  = None
-        self._auth_ts = 0
-        self._session = requests.Session()
+        self._cst      = None
+        self._token    = None
+        self._auth_ts  = 0
+        self._session  = requests.Session()
+        self._base_url = BASE_URL  # mis à jour dans _authenticate si fallback utilisé
 
         if not CAPITAL_API_KEY or not CAPITAL_EMAIL or not CAPITAL_PASSWORD:
             logger.debug("ℹ️  CAPITAL_API_KEY / EMAIL / PASSWORD manquants — broker désactivé")
@@ -105,24 +105,38 @@ class CapitalClient:
         self._ok = self._authenticate()
 
     def _authenticate(self) -> bool:
-        """Crée une session Capital.com et récupère les tokens CST + X-SECURITY-TOKEN."""
-        try:
-            r = self._session.post(
-                f"{BASE_URL}/session",
-                headers={"X-CAP-API-KEY": CAPITAL_API_KEY},
-                json={"identifier": CAPITAL_EMAIL, "password": CAPITAL_PASSWORD},
-                timeout=10,
-            )
-            r.raise_for_status()
-            self._cst   = r.headers.get("CST")
-            self._token = r.headers.get("X-SECURITY-TOKEN")
-            self._auth_ts = time.time()
-            env = "DEMO" if CAPITAL_DEMO else "LIVE"
-            logger.info(f"🏦 Capital.com connecté ({env}) ✅")
-            return bool(self._cst and self._token)
-        except Exception as e:
-            logger.error(f"❌ Capital.com authentification : {e}")
-            return False
+        """
+        Crée une session Capital.com et récupère les tokens CST + X-SECURITY-TOKEN.
+        Si le DNS du compte DEMO échoue (Railway), bascule automatiquement sur l'URL LIVE.
+        """
+        urls_to_try = [BASE_URL]
+        # Si mode DEMO, tente aussi le LIVE comme fallback (même compte peut fonctionner)
+        if CAPITAL_DEMO and LIVE_URL not in urls_to_try:
+            urls_to_try.append(LIVE_URL)
+
+        for url in urls_to_try:
+            try:
+                r = self._session.post(
+                    f"{url}/session",
+                    headers={"X-CAP-API-KEY": CAPITAL_API_KEY},
+                    json={"identifier": CAPITAL_EMAIL, "password": CAPITAL_PASSWORD},
+                    timeout=15,
+                )
+                r.raise_for_status()
+                self._cst   = r.headers.get("CST")
+                self._token = r.headers.get("X-SECURITY-TOKEN")
+                self._auth_ts = time.time()
+                self._base_url = url  # mémorise l'URL qui fonctionne
+                env = "DEMO" if CAPITAL_DEMO else "LIVE"
+                fallback = " (fallback LIVE)" if url == LIVE_URL and CAPITAL_DEMO else ""
+                logger.info(f"🏦 Capital.com connecté ({env}){fallback} ✅")
+                return bool(self._cst and self._token)
+            except Exception as e:
+                logger.warning(f"⚠️  Capital.com auth échoué sur {url}: {type(e).__name__}: {e}")
+                continue
+
+        logger.error("❌ Capital.com : toutes les URLs ont échoué (DEMO + LIVE)")
+        return False
 
     def _headers(self) -> dict:
         """Retourne les headers d'authentification, renouvelle si nécessaire."""
@@ -150,7 +164,7 @@ class CapitalClient:
         try:
             gran = TF_MAP.get(timeframe, "MINUTE_5")
             r = self._session.get(
-                f"{BASE_URL}/prices/{epic}",
+                f"{self._base_url}/prices/{epic}",
                 headers=self._headers(),
                 params={"resolution": gran, "max": count, "pageSize": count},
                 timeout=15,
@@ -189,7 +203,7 @@ class CapitalClient:
         if not self.available:
             return 0.0
         try:
-            r = self._session.get(f"{BASE_URL}/accounts", headers=self._headers(), timeout=10)
+            r = self._session.get(f"{self._base_url}/accounts", headers=self._headers(), timeout=10)
             r.raise_for_status()
             accounts = r.json().get("accounts", [])
             for acc in accounts:
@@ -208,7 +222,7 @@ class CapitalClient:
             return None
         try:
             r = self._session.get(
-                f"{BASE_URL}/markets/{epic}",
+                f"{self._base_url}/markets/{epic}",
                 headers=self._headers(),
                 timeout=10,
             )
@@ -237,7 +251,7 @@ class CapitalClient:
         for attempt in range(retries):
             try:
                 r = self._session.get(
-                    f"{BASE_URL}/confirms/{deal_ref}",
+                    f"{self._base_url}/confirms/{deal_ref}",
                     headers=self._headers(),
                     timeout=10,
                 )
@@ -287,7 +301,7 @@ class CapitalClient:
                 "forceOpen":      True,
             }
             r = self._session.post(
-                f"{BASE_URL}/positions",
+                f"{self._base_url}/positions",
                 headers=self._headers(),
                 json=data,
                 timeout=15,
@@ -314,7 +328,7 @@ class CapitalClient:
         if not self.available:
             return []
         try:
-            r = self._session.get(f"{BASE_URL}/positions", headers=self._headers(), timeout=10)
+            r = self._session.get(f"{self._base_url}/positions", headers=self._headers(), timeout=10)
             r.raise_for_status()
             return r.json().get("positions", [])
         except Exception as e:
@@ -327,7 +341,7 @@ class CapitalClient:
             return False
         try:
             r = self._session.delete(
-                f"{BASE_URL}/positions/{deal_id}",
+                f"{self._base_url}/positions/{deal_id}",
                 headers=self._headers(),
                 timeout=15,
             )
@@ -350,7 +364,7 @@ class CapitalClient:
             return False
         try:
             r = self._session.put(
-                f"{BASE_URL}/positions/{deal_id}",
+                f"{self._base_url}/positions/{deal_id}",
                 headers=self._headers(),
                 json={
                     "stopLevel":      round(new_stop, 5),
