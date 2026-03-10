@@ -15,13 +15,12 @@ Output : score 0.0-1.0
   > 0.65 → signal VALIDÉ (entrée autorisée)
   ≤ 0.65 → signal BLOQUÉ (timing pas optimal)
 """
-import numpy as np
 import pickle
 import os
 from typing import Optional
 from loguru import logger
-
 import pandas as pd
+# numpy importé de manière lazy dans chaque fonction (arrête numpy._globals error Railway)
 
 # Seuil de confiance minimal pour autoriser une entrée
 LSTM_THRESHOLD = 0.65
@@ -31,9 +30,10 @@ SEQ_LEN = 10
 MODEL_PATH = os.path.join(os.path.dirname(__file__), ".lstm_model.pkl")
 
 
-def _build_features(df: pd.DataFrame) -> Optional[np.ndarray]:
+def _build_features(df: pd.DataFrame):
     """Construit la matrice de features depuis un DataFrame OHLCV enrichi."""
     try:
+        import numpy as np  # lazy
         feats = []
         df = df.copy()
         close = df["close"].astype(float)
@@ -74,8 +74,9 @@ def _build_features(df: pd.DataFrame) -> Optional[np.ndarray]:
         return None
 
 
-def _make_sequences(X: np.ndarray, y: np.ndarray, seq_len: int):
+def _make_sequences(X, y, seq_len: int):
     """Construit les séquences temporelles pour l'entraînement."""
+    import numpy as np  # lazy
     Xs, ys = [], []
     for i in range(seq_len, len(X)):
         Xs.append(X[i - seq_len:i].flatten())
@@ -83,11 +84,12 @@ def _make_sequences(X: np.ndarray, y: np.ndarray, seq_len: int):
     return np.array(Xs), np.array(ys)
 
 
-def _label_breakouts(df: pd.DataFrame, lookahead: int = 3) -> np.ndarray:
+def _label_breakouts(df: pd.DataFrame, lookahead: int = 3):
     """
     Label = 1 si le prix monte (BUY) d'au moins ATR×0.8 dans les N prochaines bougies.
     Approximation : cherche la cassure haussière ou baissière.
     """
+    import numpy as np  # lazy
     close = df["close"].astype(float).values
     atr   = df.get("atr", pd.Series(
         pd.Series(close).rolling(14, min_periods=1).std().values, index=df.index

@@ -851,7 +851,9 @@ class TradingBot:
         # Données 5m
         df = self.capital.fetch_ohlcv(instrument, timeframe="5m", count=300)
         if df is None or len(df) < 50:
+            logger.warning(f"⚠️  {instrument}: OHLCV None ou insuffisant ({len(df) if df is not None else 'None'} bougies) — skip")
             return
+
 
         df  = self.strategy.compute_indicators(df)
 
