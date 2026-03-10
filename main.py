@@ -76,6 +76,17 @@ except ImportError:
         def validate_signal(self, symbol, signal): return True
 
 try:
+    from hmm_regime import MarketRegimeHMM
+    _HMM_OK = True
+except ImportError:
+    _HMM_OK = False
+    class MarketRegimeHMM:  # stub silencieux
+        def detect_regime(self, df, symbol=""): return {"name": "RANGING", "regime": 0, "confidence": 0.5}
+        def get_signal_adjustment(self, r, sig): return 0
+        @property
+        def last_regime_name(self): return "—"
+
+try:
     from equity_curve import EquityCurve
 except ImportError:
     class EquityCurve:  # stub silencieux
@@ -173,10 +184,11 @@ class TradingBot:
         self._last_session_push    = ""    # "London" ou "NY" pour éviter double envoi
         self._last_heartbeat_push  = datetime.now(timezone.utc)  # heartbeat toutes les 30min
 
-        # ─── Drift Detector (BUG FIX #I) ─────────────────────────────────
+        # ── Drift Detector + Protection + MTF + Equity + HMM Regime ────────────
         self.drift      = DriftDetector()
         self.protection = ProtectionModel()  # Blacklist auto après 3 SL consécutifs
         self.mtf        = MTFFilter(capital_client=self.capital)  # Filtre 1h/4h
+        self.hmm        = MarketRegimeHMM()  # Détecteur de régime HMM (TREND/RANGING)
         try:
             self.equity = EquityCurve(initial_balance=self.initial_balance or 10_000.0)
         except Exception as _e:
@@ -683,6 +695,32 @@ class TradingBot:
                 tp2 = entry - rng * rr_tp2
                 tp3 = entry - rng * rr_tp3
 
+        # ── UPGRADE : HMM Regime Switching ───────────────────────────────
+        # Détecte le régime de marché : TREND_UP / TREND_DOWN / RANGING
+        # En RANGING : réduit la taille de 50% (marché sans direction)
+        # En TREND_UP : bloque SELL. En TREND_DOWN : bloque BUY.
+        regime_result = {"name": "RANGING", "regime": 0, "confidence": 0.5}
+        try:
+            regime_result = self.hmm.detect_regime(df, symbol=instrument)
+            regime_name   = regime_result["name"]
+            regime_conf   = regime_result["confidence"]
+            logger.debug(f"🧠 HMM Regime {instrument} : {regime_name} (conf={regime_conf:.0%})")
+
+            if regime_result["regime"] == 0 and regime_conf >= 0.6:
+                # RANGING + confiance élevée → réduit la taille
+                size1 = max(min_sz, round(size1 * 0.5, 2))
+                logger.info(f"🔶 HMM RANGING ({regime_conf:.0%}) — taille réduite à {size1}")
+            elif regime_result["regime"] == 1 and sig == "SELL" and regime_conf >= 0.65:
+                # TREND_UP mais signal SELL → contre-tendance, skip
+                logger.info(f"⛔ HMM TREND_UP ({regime_conf:.0%}) bloque SELL sur {instrument}")
+                return
+            elif regime_result["regime"] == 2 and sig == "BUY" and regime_conf >= 0.65:
+                # TREND_DOWN mais signal BUY → contre-tendance, skip
+                logger.info(f"⛔ HMM TREND_DOWN ({regime_conf:.0%}) bloque BUY sur {instrument}")
+                return
+        except Exception as _hmm_e:
+            logger.debug(f"HMM {instrument}: {_hmm_e}")
+
         if size1 <= 0:
             return
 
@@ -723,6 +761,13 @@ class TradingBot:
             "direction": direction,
             "tp1_hit":   False,
             "tp2_hit":   False,
+            # ─ Trade Journal (analyse post-trade) ─────────────────────
+            "score":      score,
+            "confirmations": confirmations,
+            "regime":    regime_result.get("name", "RANGING"),
+            "fear_greed": self.context._fg_value,
+            "in_overlap": in_overlap,
+            "adx_at_entry": adx_now,
         }
         # BUG FIX #3 : calcule name/session une seule fois (suppression doublon)
         name    = CAPITAL_NAMES.get(instrument, instrument)
