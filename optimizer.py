@@ -25,7 +25,6 @@ from datetime import datetime, timezone, timedelta
 
 import numpy as np
 import pandas as pd
-import ccxt
 import ta
 import optuna
 from loguru import logger
@@ -43,37 +42,33 @@ from config import (
 
 PARAMS_FILE      = "symbol_params.json"
 INITIAL_BALANCE  = 10_000.0
-FEE_RATE         = 0.001
+FEE_RATE         = 0.0   # Capital.com CFD : pas de commission (spread intégré)
 EMA_TREND_PERIOD = 200
 SLOPE_WINDOW     = 5
 SESSION_HOURS    = set(range(7, 11)) | set(range(13, 17))  # London + NY
 
 
-# ─── Connexion Binance ────────────────────────────────────────────────────────
+# ─── Connexion Capital.com ────────────────────────────────────────────────────
 
-def get_exchange():
-    return ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+def get_capital_client():
+    """Crée un CapitalClient authentifié depuis les variables d'environnement."""
+    from brokers.capital_client import CapitalClient
+    return CapitalClient()
 
 
-# ─── Téléchargement données ───────────────────────────────────────────────────
+# ─── Téléchargement données Capital.com ──────────────────────────────────────
 
-def download(exchange, symbol: str, timeframe: str, days: int) -> pd.DataFrame:
-    since = exchange.parse8601(
-        (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
-    )
-    bars = []
-    while True:
-        batch = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=1000)
-        if not batch:
-            break
-        bars.extend(batch)
-        since = batch[-1][0] + 1
-        if len(batch) < 1000:
-            break
-    df = pd.DataFrame(bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-    df.set_index("timestamp", inplace=True)
-    print(f"   {len(df)} bougies chargées ({df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')})")
+def download(client, symbol: str, timeframe: str, days: int) -> pd.DataFrame:
+    """
+    Télécharge des bougies OHLCV depuis Capital.com.
+    Capital.com limite à ~1000 bougies par appel.
+    5m : 288 bougies/jour → 1000 bougies ≈ 3.5 jours.
+    """
+    count = min(days * 288, 1000)
+    df = client.fetch_ohlcv(symbol, timeframe=timeframe, count=count)
+    if df is None or len(df) == 0:
+        raise ValueError(f"Aucune donnée Capital.com pour {symbol}")
+    print(f"   {len(df)} bougies Capital.com ({symbol} | {timeframe})")
     return df
 
 
@@ -279,9 +274,9 @@ def make_objective(df: pd.DataFrame):
 def hyperopt_symbol(symbol: str, days: int, tf: str, n_trials: int = 100, df_pre=None) -> dict:
     """Optimise les paramètres d'un symbole via Optuna (Bayesian TPE)."""
     if df_pre is None:
-        print(f"\n  📥 {symbol} — téléchargement {days}j ({tf})...")
-        exc = get_exchange()
-        df_raw = download(exc, symbol, tf, days)
+        print(f"\n  📥 {symbol} — téléchargement Capital.com ({days}j | {tf})...")
+        client = get_capital_client()
+        df_raw = download(client, symbol, tf, days)
         df_pre = precompute(df_raw)
 
     if df_pre is None:
@@ -376,8 +371,8 @@ if __name__ == "__main__":
     parser.add_argument("--trials", type=int, default=100, help="Trials Optuna par symbole (défaut: 100)")
     args = parser.parse_args()
 
-    from config import SYMBOLS as ALL_SYMBOLS
-    symbols = [args.symbol] if args.symbol else ALL_SYMBOLS
+    from config import CAPITAL_INSTRUMENTS
+    symbols = [args.symbol] if args.symbol else CAPITAL_INSTRUMENTS
 
     print(f"\n🚀 Nemesis Hyperopt — Optuna TPE Bayesian Optimization")
     print(f"   {len(symbols)} symbole(s) × {args.trials} trials | {args.days}j | {args.tf}")

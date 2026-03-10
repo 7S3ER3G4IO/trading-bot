@@ -1,13 +1,13 @@
 """
-backtester_oanda.py — Backtest London/NY Open Breakout sur données Binance (proxy OANDA).
+backtester_oanda.py — Backtest London/NY Open Breakout sur données Capital.com.
 
-Télécharge les données via ccxt Binance (disponibles 24h, puis simule
-uniquement les fenêtres de session London/NY), puis applique la stratégie
-breakout et mesure WR, PnL, Drawdown sur 6 mois.
+Télécharge les données directement via CapitalClient (instruments réels :
+GOLD, EURUSD, GBPUSD, USDJPY, US500, US100, DE40, OIL_BRENT),
+puis simule la stratégie breakout sur les sessions London/NY.
 
 Usage :
     python3 backtester_oanda.py
-    python3 backtester_oanda.py --days 180 --rr 2.0
+    python3 backtester_oanda.py --days 30 --rr 2.0 --symbol GOLD
 """
 import argparse
 import sys
@@ -17,39 +17,20 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv; load_dotenv()
 
-import ccxt
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from loguru import logger
 logger.remove()
 
 from strategy import Strategy, SIGNAL_HOLD
+from brokers.capital_client import CapitalClient, CAPITAL_INSTRUMENTS
 
-# ── Mapping instrument OANDA → Binance (pour récupérer les données) ────────────
-INSTRUMENT_MAP = {
-    "XAU_USD":    ("XAU/USDT",  "Or/Gold",    5),   # (binance_sym, nom, pip_factor×10000)
-    "EUR_USD":    ("ETH/USDT",  "EUR/USD",    4),   # Proxy (pas dispo Binance Spot)
-    "GBP_USD":    ("BTC/USDT",  "GBP/USD",    4),   # Proxy
-    "USD_JPY":    ("BNB/USDT",  "USD/JPY",    2),   # Proxy
-    "SPX500_USD": ("ETH/USDT",  "S&P 500",    0),
-    "NAS100_USD": ("BTC/USDT",  "NASDAQ 100", 0),
-    "DE30_EUR":   ("ETH/USDT",  "DAX 40",     0),
-    "BCO_USD":    ("XRP/USDT",  "Brent Oil",  2),
-}
-
-# Instruments réels disponibles sur Binance
-REAL_INSTRUMENTS = {
-    "XAU/USDT":  "Or/Gold (XAUUSDT)",
-    "EUR/USDT":  "EUR/USD proxy",
-    "SOL/USDT":  "SOL proxy",
-}
-
-DEFAULT_DAYS = 180
+DEFAULT_DAYS = 30     # Capital.com : ~1000 bougies 5m max ≈ 3.5j
 DEFAULT_RR   = 1.8
 INITIAL      = 10_000.0
 RISK_PCT     = 0.01
 TF           = "5m"
-WINDOW       = 60   # bougies pour les indicateurs
+WINDOW       = 60
 
 # Heures London + NY en UTC
 SESSIONS = [
@@ -63,20 +44,15 @@ def in_session(ts: pd.Timestamp) -> bool:
     return any(start <= t <= end for start, end in SESSIONS)
 
 def fetch(symbol: str, days: int, tf: str = TF) -> pd.DataFrame:
-    ex = ccxt.binance({"enableRateLimit": True})
-    since = ex.parse8601(
-        (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
-    )
-    bars = []
-    while True:
-        chunk = ex.fetch_ohlcv(symbol, tf, since=since, limit=1000)
-        if not chunk: break
-        bars.extend(chunk)
-        since = chunk[-1][0] + 1
-        if len(chunk) < 1000: break
-    df = pd.DataFrame(bars, columns=["timestamp","open","high","low","close","volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-    return df.set_index("timestamp")
+    """Télécharge les bougies depuis Capital.com (instrument réel)."""
+    client = CapitalClient()
+    if not client.available:
+        raise RuntimeError("Capital.com non disponible — vérifiez les variables d'env")
+    count = min(days * 288, 1000)
+    df = client.fetch_ohlcv(symbol, timeframe=tf, count=count)
+    if df is None or df.empty:
+        raise ValueError(f"Aucune donnée Capital.com pour {symbol}")
+    return df
 
 def backtest_instrument(sym: str, name: str, days: int, rr: float) -> dict:
     """Backteste la stratégie breakout sur un instrument."""

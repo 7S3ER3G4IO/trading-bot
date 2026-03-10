@@ -81,7 +81,7 @@ class Strategy:
 
         df["vol_ma"]       = volume.rolling(20).mean()
         df["ema200"]       = ta.trend.EMAIndicator(close, window=200).ema_indicator()
-        df["ema200_slope"] = df["ema200"].pct_change(periods=5)
+        df["ema200_slope"] = df["ema200"].pct_change(periods=5, fill_method=None)
         df["ema9"]         = ta.trend.EMAIndicator(close, window=9).ema_indicator()
         df["ema21"]        = ta.trend.EMAIndicator(close, window=21).ema_indicator()
         df["rsi"]          = ta.momentum.RSIIndicator(close, window=14).rsi()

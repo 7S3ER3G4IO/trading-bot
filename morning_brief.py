@@ -29,10 +29,10 @@ from datetime import datetime, timezone, timedelta
 from loguru import logger
 
 try:
-    from backtester import fetch_historical, get_exchange
+    from brokers.capital_client import CapitalClient
     from optimizer import precompute
 except ImportError:
-    logger.error("morning_brief: backtester/optimizer introuvable")
+    logger.error("morning_brief: capital_client/optimizer introuvable")
 
 
 # ─── Graphique chandelier ─────────────────────────────────────────────────────
@@ -284,11 +284,15 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
     """
     Génère et envoie la matinale complète.
     Pour chaque actif : 1 photo + analyse détaillée.
+    Données fetchées depuis Capital.com (instruments réellement tradés).
     """
     try:
-        exc = get_exchange()
+        client = CapitalClient()
+        if not client.available:
+            logger.error("🌅 Matinale — Capital.com non disponible")
+            return
     except Exception as e:
-        logger.error(f"🌅 Matinale — erreur exchange: {e}")
+        logger.error(f"🌅 Matinale — erreur client: {e}")
         return
 
     d = datetime.now(timezone.utc)
@@ -315,7 +319,11 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
     analyses = []
     for symbol in symbols:
         try:
-            df = fetch_historical(exc, symbol, "5m", 3)  # 3 jours = ~864 bougies
+            # 5m, 96 bougies = 8h d'historique pour l'analyse visuelle
+            df = client.fetch_ohlcv(symbol, timeframe="5m", count=300)
+            if df is None or df.empty:
+                logger.warning(f"🌅 Matinale — {symbol} : pas de données")
+                continue
             df = precompute(df)
             a  = analyze_asset(symbol, df)
             analyses.append((symbol, df, a))
@@ -378,6 +386,6 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
 # ─── Test standalone ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    from config import SYMBOLS
-    print("\n🌅 Test Matinale Nemesis\n")
-    generate_morning_brief(SYMBOLS, telegram_notifier=None)
+    from brokers.capital_client import CAPITAL_INSTRUMENTS
+    print("\n🌅 Test Matinale Nemesis (Capital.com)\n")
+    generate_morning_brief(CAPITAL_INSTRUMENTS, telegram_notifier=None)
