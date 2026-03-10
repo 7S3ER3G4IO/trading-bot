@@ -141,10 +141,16 @@ class TradingBot:
             self.capital_ws.start()
 
         # ─── Solde initial ────────────────────────────────────────────────
+        # Sleep 3s : laisse le fallback Capital.com s'établir après 429
+        time.sleep(3)
         bal = self.capital.get_balance() if self.capital.available else 0.0
-        self.risk               = RiskManager(max(bal, 1.0))
-        self.initial_balance    = bal
-        self._daily_start_balance = bal
+        if bal == 0.0 and self.capital.available:
+            time.sleep(2)  # 2e tentative si session encore en cours d'auth
+            bal = self.capital.get_balance() or 0.0
+        # Si solde DEMO = 0 (compte non initialisé) → fallback 10 000€
+        self.risk                 = RiskManager(max(bal, 10_000.0))
+        self.initial_balance      = bal or 10_000.0
+        self._daily_start_balance = self.initial_balance
         self._dd_paused           = False
         self.DAILY_DD_LIMIT       = float(os.getenv("DAILY_DD_LIMIT", "3.0"))
 
