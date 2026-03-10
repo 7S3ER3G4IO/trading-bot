@@ -36,11 +36,10 @@ CAPITAL_EMAIL    = os.getenv("CAPITAL_EMAIL",    "")
 CAPITAL_PASSWORD = os.getenv("CAPITAL_PASSWORD", "")
 CAPITAL_DEMO     = os.getenv("CAPITAL_DEMO", "true").lower() == "true"
 
-# URLs officielles Capital.com (vérifiées DNS — Cloudflare CDN)
-# LIVE et DEMO utilisent le même endpoint REST, le compte détermine le type
-DEMO_URL = "https://demo-api-capital.backend.capital.com/api/v1"  # fallback
-LIVE_URL = "https://api-capital.backend.capital.com/api/v1"       # fallback
-# URL officielle documentation Capital.com Open API
+# URLs officielles Capital.com (vérifiées DNS — domaine backend-capital.com avec tiret)
+DEMO_URL = "https://demo-api-capital.backend-capital.com/api/v1"  # résout : 52.210.147.137 ✅
+LIVE_URL = "https://api-capital.backend-capital.com/api/v1"       # résout : 45.60.76.121 ✅
+# URL documentation (fallback Cloudflare CDN si les deux échouent)
 OPEN_URL  = "https://open-api.capital.com/api/v1"
 BASE_URL  = DEMO_URL if CAPITAL_DEMO else LIVE_URL
 
