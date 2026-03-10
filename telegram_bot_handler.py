@@ -56,7 +56,8 @@ class TelegramBotHandler:
     def register_callbacks(self, get_status, get_trades, close_trade,
                            force_be, pause, resume,
                            get_performance=None, get_count=None, get_equity=None,
-                           send_brief=None, send_backtest=None):
+                           send_brief=None, send_backtest=None,
+                           get_best_pair=None, get_risk=None, get_regime=None):
         self._get_status      = get_status
         self._get_trades      = get_trades
         self._close_trade     = close_trade
@@ -66,8 +67,12 @@ class TelegramBotHandler:
         self._get_performance = get_performance
         self._get_count       = get_count
         self._get_equity      = get_equity
-        self._send_brief      = send_brief      # /brief — Morning Brief immédiat
-        self._send_backtest   = send_backtest   # /backtest [sym] [jours]
+        self._send_brief      = send_brief
+        self._send_backtest   = send_backtest
+        # Sprint 3 — nouvelles commandes premium
+        self._get_best_pair   = get_best_pair   # /best_pair
+        self._get_risk        = get_risk         # /risk
+        self._get_regime      = get_regime       # /regime
 
     def is_paused(self) -> bool:
         return self._paused
@@ -128,15 +133,16 @@ class TelegramBotHandler:
                 "📊 /status — Solde &amp; état\n"
                 "📋 /trades — Positions actives\n"
                 "📈 /performance — Sharpe, Sortino, WR\n"
-                "🔢 /count — Nombre de trades ouverts\n"
-                "💹 /equity — Courbe de performance\n"
+                "🏆 /best_pair — Instrument le plus profitable\n"
+                "🛡️ /risk — Exposition &amp; DD actuel\n"
+                "🧠 /regime — Régime HMM par instrument\n"
+                "📉 /equity — Courbe de performance\n"
                 "☕ /brief — Morning Brief maintenant\n"
-                "🧪 /backtest ETH 30 — Backtest 30 jours\n"
                 "⏸️ /pause — Pauser le bot\n"
                 "▶️ /resume — Reprendre\n"
-                "🔴 /close XRP — Fermer un trade\n"
-                "⚙️  /hyperopt — Relancer l'optimisation\n"
-                "🌐 /pairlist — Meilleurs actifs du moment"
+                "🔴 /close GOLD — Fermer un trade\n"
+                "🔧 /force_close EURUSD — Force-close immédiat\n"
+                "⚙️ /hyperopt — Relancer l'optimisation"
             )
         elif cmd == "/help":
             self._reply(
@@ -247,6 +253,48 @@ class TelegramBotHandler:
                 ).start()
             else:
                 self._reply("<code>Module backtester non disponible.</code>")
+
+        # ─── Sprint 3 — Commandes premium ───────────────────────────────────
+        elif cmd == "/best_pair":
+            if self._get_best_pair:
+                self._reply(self._get_best_pair())
+            else:
+                self._reply(
+                    "🏆 <b>Meilleur Instrument</b>\n"
+                    "<code>Données disponibles après 5+ trades.\n"
+                    "En attente du premier cycle...</code>"
+                )
+
+        elif cmd == "/risk":
+            if self._get_risk:
+                self._reply(self._get_risk())
+            else:
+                self._reply(
+                    "🛡️ <b>Exposition &amp; Risk Summary</b>\n"
+                    "<code>Données non disponibles.\n"
+                    "Réessaie après ouverture d'au moins 1 trade.</code>"
+                )
+
+        elif cmd == "/regime":
+            if self._get_regime:
+                self._reply(self._get_regime())
+            else:
+                self._reply(
+                    "🧠 <b>Régime HMM (Hidden Markov Model)</b>\n"
+                    "<code>Module HMM non disponible.\n"
+                    "Vérifie que hmm_regime.py est chargé.</code>"
+                )
+
+        elif cmd in ("/force_close", "/fc"):
+            if len(parts) < 2:
+                self._reply("Usage : <code>/force_close GOLD</code> — ferme toutes les positions sur GOLD")
+                return
+            symbol = parts[1].upper()
+            if self._close_trade:
+                result = self._close_trade(symbol)
+                self._reply(f"🔧 <b>Force-Close {symbol}</b>\n{result}")
+            else:
+                self._reply("<code>Callback close_trade non enregistré.</code>")
 
     def _handle_callback(self, cq: dict):
         cq_id  = cq["id"]

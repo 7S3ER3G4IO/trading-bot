@@ -276,7 +276,41 @@ class Strategy:
             elif wick_pct < 0.20:
                 confirmations.append(f"Wick✓ ({wick_pct:.0%})")
 
+        # \u2500\u2500 UPGRADE : Orderflow Imbalance (OFI) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Mesure la pression acheteur/vendeur sur les 3 dernières bougies.
+        # BUY favori si les 3 bougies sont bullish (close > open)
+        # SELL favori si les 3 bougies sont bearish (close < open)
+        try:
+            last3 = df.tail(3)
+            if len(last3) >= 3:
+                bull_bars = (last3["close"] > last3["open"]).sum()
+                bear_bars = (last3["close"] < last3["open"]).sum()
+                ofi_ok = (sig == SIGNAL_BUY  and bull_bars >= 2) or \
+                         (sig == SIGNAL_SELL and bear_bars >= 2)
+                if ofi_ok:
+                    ofi_label = f"{'↑'*bull_bars if sig == SIGNAL_BUY else '↓'*bear_bars}"
+                    confirmations.append(f"OFI✓ {ofi_label}")
+        except Exception:
+            pass
+
+        # \u2500\u2500 UPGRADE : London Squeeze Filter \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Range asiatique (0h-7h UTC) très compressée = London Squeeze probable
+        # Les vrais breakouts sont plus puissants après un squeeze asiatique.
+        # Confirmation +1 si range_asiatique < 35% de la moyenne 20j.
+        try:
+            if hasattr(df.index, "hour"):
+                asian_bars = df[df.index.map(lambda ts: 0 <= ts.hour < 7)]
+                if len(asian_bars) >= 4:
+                    asian_range = float(asian_bars["high"].max() - asian_bars["low"].min())
+                    avg_range_20 = float((df["high"] - df["low"]).tail(20 * 12).mean())  # 12 bougies/h
+                    if avg_range_20 > 0 and asian_range < avg_range_20 * 0.35:
+                        confirmations.append(f"Squeeze✓ ({asian_range:.5f})")
+                        logger.debug(f"🔵 London Squeeze détecté — range asiat. {asian_range:.5f} < 35% avg")
+        except Exception:
+            pass
+
         score = len(confirmations)
+
 
         if score < req_score:
             return SIGNAL_HOLD, score, confirmations

@@ -238,7 +238,12 @@ class TradingBot:
             resume       = self._do_resume,
             send_brief   = self._do_brief,
             send_backtest= self._do_backtest,
+            # Sprint 3 — commandes premium
+            get_best_pair= self._cmd_best_pair,
+            get_risk     = self._cmd_risk,
+            get_regime   = self._cmd_regime,
         )
+
         self.handler.start_polling()
 
         # ─── Restauration BDD ─────────────────────────────────────────────
@@ -1313,7 +1318,80 @@ class TradingBot:
         except Exception as e:
             return f"❌ Backtest : {e}"
 
+    # ── Sprint 3 : Commandes premium Telegram ─────────────────────────────────
+
+    def _cmd_best_pair(self) -> str:
+        """Retourne l'instrument le plus profitable sur la session courante."""
+        pnl_by_inst: dict = {}
+        for t in self._capital_closed_today:
+            sym = t.get("symbol", "?")
+            pnl_by_inst[sym] = pnl_by_inst.get(sym, 0) + t.get("pnl", 0)
+        if not pnl_by_inst:
+            return (
+                "🏆 <b>Meilleur Instrument</b>\n"
+                "<code>Aucun trade fermé aujourd'hui.</code>"
+            )
+        ranked = sorted(pnl_by_inst.items(), key=lambda x: x[1], reverse=True)
+        lines = "\n".join(
+            f"  {'🥇' if i==0 else '🥈' if i==1 else '🥉' if i==2 else '  '}"
+            f" {sym}: <b>{pnl:+.2f}€</b>"
+            for i, (sym, pnl) in enumerate(ranked)
+        )
+        winner = ranked[0]
+        return (
+            f"🏆 <b>Meilleur Instrument — {winner[0]}</b>\n"
+            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{lines}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+        )
+
+    def _cmd_risk(self) -> str:
+        """Résumé de l'exposition et du drawdown actuel."""
+        balance = self.capital.get_balance() if self.capital.available else 0.0
+        open_count = sum(1 for s in self.capital_trades.values() if s is not None)
+        daily_dd = 0.0
+        if self._daily_start_balance > 0 and balance > 0:
+            daily_dd = (self._daily_start_balance - balance) / self._daily_start_balance * 100
+        monthly_dd = 0.0
+        if self._monthly_start_balance > 0 and balance > 0:
+            monthly_dd = (self._monthly_start_balance - balance) / self._monthly_start_balance * 100
+        paused_str = "⏸️ PAUSED" if self._dd_paused or self._manual_pause else "🟢 ACTIF"
+        return (
+            f"🛡️ <b>Risk Summary</b>\n"
+            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"  Statut       : {paused_str}\n"
+            f"  Balance      : {balance:,.2f}€\n"
+            f"  Positions    : {open_count}/{MAX_OPEN_TRADES}\n"
+            f"  DD Journalier: {daily_dd:+.2f}% (limite {self.DAILY_DD_LIMIT:.0f}%)\n"
+            f"  DD Mensuel   : {monthly_dd:+.2f}% (10%=48h | 15%=stop)\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+        )
+
+    def _cmd_regime(self) -> str:
+        """Retourne le régime HMM pour chaque instrument actif."""
+        REGIME_EMOJI = {0: "⬛ RANGING", 1: "🟢 TREND_UP", 2: "🔴 TREND_DOWN"}
+        lines = []
+        for inst in CAPITAL_INSTRUMENTS:
+            try:
+                df = self.capital.fetch_ohlcv(inst, timeframe="5m", count=50)
+                if df is None or len(df) < 20:
+                    lines.append(f"  {inst}: <i>données insuffisantes</i>")
+                    continue
+                df = self.strategy.compute_indicators(df)
+                res = self.hmm.detect_regime(df, symbol=inst)
+                regime_name = REGIME_EMOJI.get(res["regime"], res["name"])
+                conf = res["confidence"]
+                lines.append(f"  {inst}: {regime_name} ({conf:.0%})")
+            except Exception as e:
+                lines.append(f"  {inst}: ⚠️ {str(e)[:30]}")
+        body = "\n".join(lines)
+        return (
+            f"🧠 <b>Régimes HMM</b>\n"
+            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{body}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+        )
+
     # ──────────────────────────────────────────────────────────────────────────
+
 
     def _status_text(self) -> str:
         balance = self.capital.get_balance() if self.capital.available else 0.0
