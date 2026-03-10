@@ -2,26 +2,14 @@
 signal_card.py — Feature K : Signal Cards visuels via Telegram
 Génère un chart mplfinance 5m (2 dernières heures) annoté avec
 Entry / SL / TP1 / TP2 / TP3 et les méta-données du trade.
+
+Tous les imports lourds (mplfinance, matplotlib) sont LAZY (à l'intérieur
+de la fonction) pour éviter le numpy._globals error au démarrage Railway.
 """
 import io
 from typing import Optional
 import pandas as pd
-import numpy as np
 from loguru import logger
-
-try:
-    import mplfinance as mpf
-    import matplotlib
-    try:
-        matplotlib.use("Agg")  # backend non-interactif (Railway / headless)
-    except Exception:
-        pass
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
-    HAS_MPF = True
-except (ImportError, AttributeError):
-    # numpy._globals issue sur certaines versions — désactiver silencieusement
-    HAS_MPF = False
 
 
 def generate_signal_card(
@@ -42,24 +30,23 @@ def generate_signal_card(
     """
     Génère une image PNG Signal Card professionnelle.
 
-    Parameters
-    ----------
-    df           : DataFrame OHLCV avec index DatetimeIndex (bougies 5m)
-    instrument   : épique Capital.com (ex: 'GOLD')
-    direction    : 'BUY' | 'SELL'
-    entry/sl/tp* : niveaux de prix
-    score        : score de confirmation (0-7)
-    confirmations: liste de strings (ex: ['ADX 22', 'VWAP✓', 'OFI✓ ↑↑'])
-    regime       : 'RANGING' | 'TREND_UP' | 'TREND_DOWN'
-    fear_greed   : valeur 0-100 ou None
-    session      : 'London' | 'NY' | ''
-
     Returns
     -------
     bytes PNG ou None en cas d'erreur
     """
-    if not HAS_MPF:
-        logger.warning("mplfinance non disponible — signal card skipped")
+    # Import lazy : évite le numpy._globals error au startup Railway
+    try:
+        import mplfinance as mpf
+        import matplotlib
+        try:
+            matplotlib.use("Agg")
+        except Exception:
+            pass
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+        import numpy as np
+    except (ImportError, AttributeError, Exception) as _imp_e:
+        logger.debug(f"signal_card: mplfinance non disponible ({_imp_e}) — skip")
         return None
 
     try:
