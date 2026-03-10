@@ -113,15 +113,23 @@ class CapitalClient:
         Le fallback LIVE pour un compte DEMO retourne 0€ → éviter autant que possible.
         """
         env   = "DEMO" if CAPITAL_DEMO else "LIVE"
-        # Ordre de priorité : URL principale (3 tentatives) → URL opposée → open-api
+        # DEMO ISOLATION : en mode DEMO, on ne tente JAMAIS l'URL LIVE
+        # Le fallback LIVE retourne 0€ de balance et pourrait en théorie
+        # ouvrir des positions sur de l'argent réel.
         primary  = DEMO_URL if CAPITAL_DEMO else LIVE_URL
-        opposite = LIVE_URL if CAPITAL_DEMO else DEMO_URL
 
-        urls_with_tries = [
-            (primary,  3),   # 3 essais avec back-off sur l'URL correcte
-            (opposite, 1),   # 1 essai sur l'URL opposée (dernier recours)
-            (OPEN_URL, 1),   # 1 essai open-api (CDN Cloudflare toujours dispo)
-        ]
+        if CAPITAL_DEMO:
+            # DEMO only : 3 tentatives DEMO avec back-off, puis open-api (CDN neutre)
+            urls_with_tries = [
+                (primary,  3),   # 3 essais DEMO avec back-off 3s/6s/9s
+                (OPEN_URL, 1),   # open-api CDN Cloudflare — compte DEMO y est accessible
+            ]
+        else:
+            # LIVE only : 3 tentatives LIVE + fallback open-api
+            urls_with_tries = [
+                (primary,  3),
+                (OPEN_URL, 1),
+            ]
 
         for url, max_tries in urls_with_tries:
             for attempt in range(1, max_tries + 1):
@@ -310,6 +318,16 @@ class CapitalClient:
         """
         if not self.available:
             return None
+
+        # ⛔ GARDE-FOU DEMO ABSOLU : refuse d'exécuter si connecté sur l'URL LIVE en mode DEMO.
+        # Dernier filet de sécurité — aucun argent réel ne peut être touché.
+        if CAPITAL_DEMO and self._base_url == LIVE_URL:
+            logger.error(
+                "⛔ BLOCAGE SÉCURITÉ : tentative d'ordre sur URL LIVE en mode DEMO ! "
+                f"({self._base_url}) — ordre annulé. Vérifier CAPITAL_DEMO=true."
+            )
+            return None
+
         try:
             data = {
                 "epic":           epic,
