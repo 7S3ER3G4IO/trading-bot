@@ -801,6 +801,42 @@ class TradingBot:
                 tgc.notify_tp1_be(name=name, instrument=instrument,
                                    entry=entry, pips_tp1=pips_tp1, size=0)
 
+            # ── ATR Trailing Stop (après TP1 / BE activé) ───────────────────
+            # Déplace le SL à ATR × 1.5 derrière le prix actuel pour capturer
+            # plus de gains sur les trades gagnants.
+            if state.get("tp1_hit"):
+                try:
+                    df_trail = self.capital.get_ohlcv(instrument, "MINUTE_5", count=20)
+                    if df_trail is not None and len(df_trail) >= 14:
+                        df_trail = self.strategy.compute_indicators(df_trail)
+                        atr = self.strategy.get_atr(df_trail)
+                        if atr > 0:
+                            px = self.capital.get_current_price(instrument)
+                            if px:
+                                mid = px["mid"]
+                                direction = state.get("direction", "BUY")
+                                # Nouveau SL : ATR 1.5× derrière le prix
+                                if direction == "BUY":
+                                    new_trail_sl = round(mid - atr * 1.5, 5)
+                                    # Ne descend jamais sous l'entrée (déjà BE)
+                                    new_trail_sl = max(new_trail_sl, entry)
+                                else:
+                                    new_trail_sl = round(mid + atr * 1.5, 5)
+                                    new_trail_sl = min(new_trail_sl, entry)
+
+                                # Appliquer le trailing stop aux positions ouvertes 2 et 3
+                                for ref in [refs[1], refs[2]]:
+                                    if ref and ref in open_refs:
+                                        self.capital.modify_position_stop(ref, new_trail_sl)
+                                state["trailing_sl"] = new_trail_sl
+                                logger.debug(
+                                    f"🔄 Trailing Stop {instrument} {direction} "
+                                    f"| prix={mid:.5f} | SL→{new_trail_sl:.5f} (ATR={atr:.5f})"
+                                )
+                except Exception as _te:
+                    logger.debug(f"Trailing stop {instrument}: {_te}")
+
+
             # Toutes les positions fermées → reset + unwatch WS
             if not ref1_open and not ref2_open and not ref3_open:
                 logger.info(f"✅ Capital.com {instrument} — toutes positions fermées")

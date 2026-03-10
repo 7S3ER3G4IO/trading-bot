@@ -38,11 +38,17 @@ PRE_SESSIONS_UTC = [
     (12 * 60,      13 * 60 + 15), # Pré-NY     : 12h00 → 13h15
 ]
 
-MIN_RANGE_PCT    = 0.08   # Range min = 0.08% du prix
+MIN_RANGE_PCT    = 0.08   # Range min = 0.08% du prix (filtre marché calme)
+MAX_RANGE_PCT    = 2.0    # Range max = 2.0% du prix (filtre spread excessif)
 MIN_SCORE        = 2      # Score minimum sur 3
 ADX_MIN          = 18
 ATR_PERIOD       = 14
 REQUIRED_SCORE   = MIN_SCORE  # Alias pour compatibilité
+
+# Jours de trading autorisés (Lundi=0 ... Dimanche=6)
+# Lundi (0) : voléatilité erratique post-weekend
+# Vendredi (4) : fermeture de positions institutionnelles avant weekend
+ALLOWED_WEEKDAYS = {1, 2, 3}  # Mardi, Mercredi, Jeudi uniquement
 
 
 def _bar_session_idx(h: int, m: int) -> int:
@@ -89,8 +95,14 @@ class Strategy:
         return df.dropna()
 
     def is_session_ok(self) -> bool:
-        """Retourne True uniquement pendant les fenêtres de breakout."""
+        """Retourne True uniquement pendant les fenêtres de breakout ET les bons jours."""
         now = datetime.now(timezone.utc)
+        # Filtre Lundi/Vendredi : ces jours ont trop de bruit et de faux signaux
+        if now.weekday() not in ALLOWED_WEEKDAYS:
+            logger.debug(
+                f"🗓️  Jour filtré : {now.strftime('%A')} (Lundi & Vendredi exclus)"
+            )
+            return False
         return _bar_session_idx(now.hour, now.minute) >= 0
 
     def compute_session_range(self, df: pd.DataFrame) -> dict:
@@ -158,7 +170,11 @@ class Strategy:
         range_pct  = sr["pct"]
 
         if range_pct < MIN_RANGE_PCT:
-            logger.debug(f"😴 Range trop petit ({range_pct:.3f}%) — marché calme")
+            logger.debug(f"😴 Range trop petit ({range_pct:.3f}%) — marché calme, skip")
+            return SIGNAL_HOLD, 0, []
+
+        if range_pct > MAX_RANGE_PCT:
+            logger.debug(f"⚠️  Range trop grand ({range_pct:.3f}%) — spread excessif / news, skip")
             return SIGNAL_HOLD, 0, []
 
         last_close = float(curr["close"])
@@ -190,10 +206,14 @@ class Strategy:
         if vol > vol_ma:
             confirmations.append("Volume✓")
 
-        # C3 — Momentum : corps de bougie > 30% du range
+        # C3 — Momentum Candle : corps > 60% de l'ATR (bougie conviction forte)
+        # Standard institutionnel : la bougie de breakout doit être grande
+        atr_val     = float(curr.get("atr", range_size or 1))
         candle_body = abs(float(curr["close"]) - float(curr["open"]))
-        if range_size > 0 and (candle_body / range_size) >= 0.3:
-            confirmations.append(f"Momentum {candle_body/range_size:.0%}")
+        momentum_ok = (atr_val > 0 and candle_body >= 0.6 * atr_val) or \
+                      (range_size > 0 and (candle_body / range_size) >= 0.3)
+        if momentum_ok:
+            confirmations.append(f"Momentum {candle_body:.5f} (ATR {atr_val:.5f})")
 
         score = len(confirmations)
 
@@ -208,8 +228,10 @@ class Strategy:
 
         return sig, score, [rng_info] + confirmations
 
-    def get_sl_tp(self, sig: str, entry: float, range_info: dict, rr: float = 1.8) -> dict:
-        """SL = autre extrémité du range. TP = entrée ± rr × taille."""
+    def get_sl_tp(self, sig: str, entry: float, range_info: dict, rr: float = 2.0) -> dict:
+        """SL = autre extrémité du range. TP = entrée ± rr × taille.
+        R:R par défaut porté à 2.0 (contre 1.8 avant) pour capturer plus de gains.
+        """
         if sig == SIGNAL_BUY:
             sl = range_info["low"] - range_info["size"] * 0.1   # Buffer 10%
             tp = entry + range_info["size"] * rr
