@@ -244,6 +244,7 @@ class TradingBot:
         self._last_morning_day     = None
         self._last_session_push    = ""    # "London" ou "NY" pour éviter double envoi
         self._last_heartbeat_push  = datetime.now(timezone.utc)  # heartbeat toutes les 30min
+        self._last_no_signal_alert = datetime.now(timezone.utc)  # alerte "aucun signal" / 10min
         # ── Sprint 4 — Auto-optimisation & Backup ──────────────────────
         self._last_backup_time    = datetime.now(timezone.utc)   # backup Supabase
         self._drift_size_reduced  = False   # flag réduction taille post-drift
@@ -792,14 +793,40 @@ class TradingBot:
             f"{now.hour}h{now.minute:02d} UTC"
         )
 
+        signals_found = 0
         for instrument in CAPITAL_INSTRUMENTS:
             # Ne pas ouvrir si limite atteinte entre deux itérations
             if sum(1 for s in self.capital_trades.values() if s is not None) >= 2:
                 break
             try:
+                _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
                 self._process_capital_symbol(instrument, per_instrument)
+                _open_after  = sum(1 for s in self.capital_trades.values() if s is not None)
+                if _open_after > _open_before:
+                    signals_found += 1
             except Exception as e:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
+
+        # ── Alerte Telegram "scan sans signal" toutes les 10 minutes ──────────
+        # Garde l'utilisateur informé que le bot tourne et surveille le marché
+        if signals_found == 0:
+            elapsed_ns = (now - self._last_no_signal_alert).total_seconds()
+            if elapsed_ns >= 600:  # 10 minutes
+                self._last_no_signal_alert = now
+                session_str = "London" if now.hour < 13 else "NY"
+                open_pos = [CAPITAL_NAMES.get(i, i) for i, s in self.capital_trades.items() if s is not None]
+                pos_str = ", ".join(open_pos) if open_pos else "Aucune"
+                fg = getattr(self.context, "_fg_value", None)
+                fg_str = f" | F&G : {fg}/100" if fg is not None else ""
+                try:
+                    self.telegram.send_message(
+                        f"🔍 <b>Nemesis surveille</b> — {session_str} session{fg_str}\n"
+                        f"⏰ {now.strftime('%H:%M')} UTC | Balance : <b>{balance:,.0f}€</b>\n"
+                        f"📊 Positions ouvertes : {pos_str}\n"
+                        f"Aucun breakout détecté sur {len(CAPITAL_INSTRUMENTS)} instruments \u2014 surveillance continue…"
+                    )
+                except Exception:
+                    pass
 
 
     def _run_auto_hyperopt(self):

@@ -23,8 +23,9 @@ flask==3.0.2
 
 # Charts
 matplotlib==3.8.3
-mplfinance==0.12.9b7
+mplfinance  # sans épinglage : utilise la dernière version stable (≥ 0.12.10)
 Pillow==10.2.0
+
 
 # Scheduling & utils
 schedule==1.2.1
