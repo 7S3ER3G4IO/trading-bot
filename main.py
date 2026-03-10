@@ -202,6 +202,10 @@ class TradingBot:
         self._drift_size_reduced  = False   # flag réduction taille post-drift
         self._drift_reduced_until: Optional[datetime] = None
 
+        # ── Sprint 5 — Heatmap & Rapport journalier ─────────────────────
+        # Heatmap : {instrument: {hour_utc: [pnl1, pnl2, ...]}}
+        self._heatmap_data: dict = {inst: {} for inst in CAPITAL_INSTRUMENTS}
+        self._last_daily_report_day: Optional[date] = None
 
         # ── Drift Detector + Protection + MTF + Equity + HMM Regime ────────────
         self.drift      = DriftDetector()
@@ -653,6 +657,16 @@ class TradingBot:
         if self.reporter.should_send_weekly():
             self.telegram.send_message(self.reporter.build_weekly_report())
             self.reporter.mark_weekly_sent()
+
+        # \u2500\u2500 Sprint 5 : Rapport visuel PNG journalier (20h UTC) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        if h_utc == 20 and today != self._last_daily_report_day:
+            self._last_daily_report_day = today
+            try:
+                import threading
+                threading.Thread(target=self._send_daily_report, daemon=True).start()
+            except Exception as _rp_e:
+                logger.debug(f"Daily report: {_rp_e}")
+
 
         # ─── Moteur de trading Capital.com ───────────────────────────────────
 
@@ -1236,7 +1250,19 @@ class TradingBot:
                         "instrument": instrument,
                         "pnl": round(pnl_est * 3, 4),
                         "direction": state["direction"],
+                        "symbol": name_close,
                     })
+                    # \u2500\u2500 Sprint 5 : Heatmap \u2014 enregistrement PnL par heure \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                    try:
+                        h_heat = datetime.now(timezone.utc).hour
+                        if instrument not in self._heatmap_data:
+                            self._heatmap_data[instrument] = {}
+                        self._heatmap_data[instrument].setdefault(h_heat, []).append(
+                            round(pnl_est * 3, 4)
+                        )
+                    except Exception:
+                        pass
+
                     # Session tracker — résumé London/NY
                     h_close = datetime.now(timezone.utc).hour
                     m_close = datetime.now(timezone.utc).minute
@@ -1361,7 +1387,110 @@ class TradingBot:
         name = CAPITAL_NAMES.get(instrument, instrument)
         return f"✅ BE activé sur {name} ({ok_count} positions)" if ok_count else f"❌ BE échec {name}"
 
+    def _send_daily_report(self) -> None:
+        """
+        Sprint 5 — Rapport visuel journalier.
+        Génère un PNG 2 panneaux via matplotlib :
+          1. Barres PnL par instrument (session du jour)
+          2. Heatmap instrument × heure UTC
+        Envoyé via Telegram sendPhoto à 20h UTC.
+        """
+        import io
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+        import numpy as np
+
+        try:
+            balance = self.capital.get_balance() if self.capital.available else 0.0
+            pnl_total = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
+            wins  = sum(1 for t in self._capital_closed_today if t.get("pnl", 0) > 0)
+            total = len(self._capital_closed_today)
+            wr    = round(wins / total * 100, 1) if total else 0.0
+
+            # ─ 1. PnL par instrument ─────────────────────────────────────────
+            pnl_by_inst: dict = {}
+            for t in self._capital_closed_today:
+                sym = t.get("instrument", t.get("symbol", "?"))
+                pnl_by_inst[sym] = pnl_by_inst.get(sym, 0) + t.get("pnl", 0)
+
+            # ─ 2. Heatmap data (instrument × heure) ─────────────────────────
+            instruments = list(CAPITAL_INSTRUMENTS)
+            hours = list(range(7, 21))  # 7h-20h UTC (sessions actives)
+            heat_matrix = np.zeros((len(instruments), len(hours)))
+            for i, inst in enumerate(instruments):
+                for j, h in enumerate(hours):
+                    pnls = self._heatmap_data.get(inst, {}).get(h, [])
+                    heat_matrix[i, j] = sum(pnls) if pnls else 0.0
+
+            # ─ Figure ────────────────────────────────────────────────────────
+            fig = plt.figure(figsize=(14, 8), facecolor="#060911")
+
+            # Panneau 1 : barres PnL
+            ax1 = fig.add_subplot(2, 1, 1)
+            ax1.set_facecolor("#0d1220")
+            if pnl_by_inst:
+                labels = list(pnl_by_inst.keys())
+                values = list(pnl_by_inst.values())
+                colors = ["#22d3a0" if v >= 0 else "#ff4f6e" for v in values]
+                bars = ax1.bar(labels, values, color=colors, edgecolor="#1e2a45", linewidth=0.8)
+                ax1.axhline(0, color="#5a6a8a", linewidth=0.8, linestyle="--")
+                for bar, val in zip(bars, values):
+                    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                             f"{val:+.2f}€", ha="center", va="bottom" if val >= 0 else "top",
+                             color="#c8d6f0", fontsize=8)
+            ax1.set_title(
+                f"📊 NEMESIS — Rapport Journalier {datetime.now(timezone.utc).strftime('%d/%m/%Y')} | "
+                f"PnL: {pnl_total:+.2f}€ | WR: {wr:.0f}% | {total} trades",
+                color="#c8d6f0", fontsize=10, pad=8
+            )
+            ax1.set_ylabel("PnL (€)", color="#5a6a8a", fontsize=9)
+            ax1.tick_params(colors="#5a6a8a", labelsize=8)
+            for spine in ax1.spines.values():
+                spine.set_color("#1e2a45")
+
+            # Panneau 2 : Heatmap
+            ax2 = fig.add_subplot(2, 1, 2)
+            ax2.set_facecolor("#0d1220")
+            cmap = mcolors.LinearSegmentedColormap.from_list(
+                "nemesis", ["#ff4f6e", "#141a2e", "#22d3a0"]
+            )
+            abs_max = max(abs(heat_matrix).max(), 0.01)
+            im = ax2.imshow(heat_matrix, cmap=cmap, aspect="auto",
+                            vmin=-abs_max, vmax=abs_max)
+            ax2.set_xticks(range(len(hours)))
+            ax2.set_xticklabels([f"{h}h" for h in hours], color="#5a6a8a", fontsize=7)
+            ax2.set_yticks(range(len(instruments)))
+            ax2.set_yticklabels(instruments, color="#c8d6f0", fontsize=8)
+            ax2.set_title("🔥 Heatmap Performance (Instrument × Heure UTC)", color="#c8d6f0", fontsize=9)
+            for i in range(len(instruments)):
+                for j in range(len(hours)):
+                    val = heat_matrix[i, j]
+                    if val != 0:
+                        ax2.text(j, i, f"{val:+.1f}", ha="center", va="center",
+                                 color="white", fontsize=6, fontweight="bold")
+
+            plt.tight_layout(pad=1.5)
+
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
+            plt.close(fig)
+            buf.seek(0)
+
+            caption = (
+                f"📊 <b>Rapport Journalier Nemesis</b>\n"
+                f"💰 PnL total : <b>{pnl_total:+.2f}€</b>\n"
+                f"🎯 Win Rate  : <b>{wr:.0f}%</b> ({wins}/{total} trades)\n"
+                f"📅 {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC"
+            )
+            self.telegram.send_photo(buf.read(), caption=caption)
+            logger.info("📊 Rapport journalier PNG envoyé via Telegram")
+        except Exception as _rp_e:
+            logger.error(f"❌ Daily report: {_rp_e}")
+
     def _do_pause(self) -> str:
+
         """Met le bot en pause manuelle."""
         self._manual_pause = True
         return "⏸️ Bot mis en pause."
