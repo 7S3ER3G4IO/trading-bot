@@ -125,7 +125,8 @@ class CapitalClient:
                 r = self._session.post(
                     f"{url}/session",
                     headers={"X-CAP-API-KEY": CAPITAL_API_KEY},
-                    json={"identifier": CAPITAL_EMAIL, "password": CAPITAL_PASSWORD},
+                    json={"identifier": CAPITAL_EMAIL, "password": CAPITAL_PASSWORD,
+                          "encryptedPassword": False},
                     timeout=15,
                 )
                 r.raise_for_status()
