@@ -250,7 +250,7 @@ class TradingBot:
                     open_trades.append({"symbol": name, "side": state.get("direction", ""),
                                         "entry": state.get("entry", 0.0), "qty": 1, "pnl": 0.0})
             pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
-            wins  = sum(1 for t in self._capital_closed_today if t.get("win"))
+            wins  = sum(1 for t in self._capital_closed_today if t.get("pnl", 0) > 0)
             total = len(self._capital_closed_today)
             wr    = (wins / total * 100) if total > 0 else 0.0
             dash_update(
@@ -263,6 +263,15 @@ class TradingBot:
             )
         except Exception:
             pass
+
+        # ── Reset quotidien (minuit UTC) ─────────────────────────────────────
+        if not hasattr(self, '_last_reset_day'):
+            self._last_reset_day = today
+        if today != self._last_reset_day:
+            self._last_reset_day = today
+            self._capital_closed_today.clear()
+            self._dd_paused = False
+            logger.info("🔄 Reset quotidien — stats journalières effacées")
 
         # ── Morning Brief (07h00 UTC) ─────────────────────────────────────────
         if self.context.should_send_brief():
@@ -306,7 +315,12 @@ class TradingBot:
             logger.debug(f"📅 Trading suspendu : {reason}")
             return
 
-        # ── Scan des instruments Capital.com ─────────────────────────────
+        # ── Limite corrélation (max 2 CFD simultanées) ───────────────────────
+        active_count = sum(1 for s in self.capital_trades.values() if s is not None)
+        if active_count >= 2:
+            return  # Plafond atteint — on surveille mais on n'ouvre rien
+
+        # ── Scan des instruments Capital.com ─────────────────────────────────
         balance = self.capital.get_balance()
         if balance <= 0:
             return
@@ -314,6 +328,9 @@ class TradingBot:
         per_instrument = balance / len(CAPITAL_INSTRUMENTS)
 
         for instrument in CAPITAL_INSTRUMENTS:
+            # Ne pas ouvrir si limite atteinte entre deux itérations
+            if sum(1 for s in self.capital_trades.values() if s is not None) >= 2:
+                break
             try:
                 self._process_capital_symbol(instrument, per_instrument)
             except Exception as e:
