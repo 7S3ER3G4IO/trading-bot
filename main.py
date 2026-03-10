@@ -610,6 +610,25 @@ class TradingBot:
         if not self.mtf.validate_signal(instrument, sig):
             return
 
+        # ── UPGRADE : Filtre Corrélation (évite surexposition USD) ────────────
+        # Si 2 paires USD (EUR/USD, GBP/USD, USD/JPY) sont déjà ouvertes dans
+        # la même direction → exposition trop corrélée, on bloque.
+        USD_PAIRS = {"EURUSD", "GBPUSD", "USDJPY"}
+        if instrument in USD_PAIRS:
+            same_dir_usd = sum(
+                1 for ep, st in self.capital_trades.items()
+                if st is not None
+                and ep in USD_PAIRS
+                and ep != instrument
+                and st.get("direction") == ("BUY" if sig == "BUY" else "SELL")
+            )
+            if same_dir_usd >= 2:
+                logger.info(
+                    f"⛔ Corrélation USD bloquée {instrument} — "
+                    f"{same_dir_usd} paires USD déjà ouvertes même direction"
+                )
+                return
+
         entry    = float(df.iloc[-1]["close"])
         sr       = self.strategy.compute_session_range(df)
         direction = "BUY" if sig == "BUY" else "SELL"
@@ -637,10 +656,37 @@ class TradingBot:
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
         size1 = max(min_sz, round(total_size / 3, 2))
 
+        # ── UPGRADE : Session Overlap Boost (13h-17h UTC = volume max) ─────────
+        # Le London-NY Overlap est la fenêtre de liquidité maximale de la journée.
+        # On augmente la taille à 1.5× pendant cet overlap.
+        h_utc_now = datetime.now(timezone.utc).hour
+        in_overlap = 13 <= h_utc_now < 17
+        if in_overlap:
+            size1_boosted = max(min_sz, round(size1 * 1.5, 2))
+            logger.info(
+                f"⚡ Session Overlap (London∕NY) — taille boostée : "
+                f"{size1:.2f} → {size1_boosted:.2f}"
+            )
+            size1 = size1_boosted
+
+        # ── UPGRADE : R:R Adaptatif (ADX > 30 = tendance forte) ─────────────
+        # En tendance forte, on laisse courir plus loin.
+        adx_now = float(df.iloc[-1].get("adx", 0)) if "adx" in df.columns else 0
+        if adx_now > 30:
+            rr_tp2 = 2.5 if sig == "BUY" else 2.5
+            rr_tp3 = 4.0 if sig == "BUY" else 4.0
+            logger.info(f"📈 ADX={adx_now:.0f} > 30 — R:R étendu : TP2=×2.5R, TP3=×4.0R")
+            if sig == "BUY":
+                tp2 = entry + rng * rr_tp2
+                tp3 = entry + rng * rr_tp3
+            else:
+                tp2 = entry - rng * rr_tp2
+                tp3 = entry - rng * rr_tp3
+
         if size1 <= 0:
             return
 
-        # ─── ÉTAPE 1 : Ordres en parallèle (toutes les 3 positions simultanément) ───
+        # ─── ORDRES EN PARALLÈLE ────────────────────────
         def _place(tp):
             return self.capital.place_market_order(instrument, direction, size1, sl, tp)
 
