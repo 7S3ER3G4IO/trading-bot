@@ -120,8 +120,8 @@ class TradingBot:
         self._last_dashboard_day: Optional[date] = None
 
         # ─── État général ─────────────────────────────────────────────────
-        self.last_reset_day        = datetime.now(timezone.utc).date()
-        self.last_report_hour      = -1
+        self.last_report_hour      = -1  # réservé
+        self._last_reset_day       = datetime.now(timezone.utc).date()
         self._manual_pause         = False
         self._news_paused          = False
         self._news_pause_notified  = False
@@ -265,8 +265,6 @@ class TradingBot:
             pass
 
         # ── Reset quotidien (minuit UTC) ─────────────────────────────────────
-        if not hasattr(self, '_last_reset_day'):
-            self._last_reset_day = today
         if today != self._last_reset_day:
             self._last_reset_day = today
             self._capital_closed_today.clear()
