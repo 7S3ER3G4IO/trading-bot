@@ -169,7 +169,11 @@ class TradingBot:
         self.drift      = DriftDetector()
         self.protection = ProtectionModel()  # Blacklist auto après 3 SL consécutifs
         self.mtf        = MTFFilter(capital_client=self.capital)  # Filtre 1h/4h
-        self.equity     = EquityCurve(initial_balance=self.initial_balance or 10_000.0)
+        try:
+            self.equity = EquityCurve(initial_balance=self.initial_balance or 10_000.0)
+        except Exception as _e:
+            logger.warning(f"⚠️ EquityCurve init échoué ({_e}) — réinitialisation propre.")
+            self.equity = EquityCurve(initial_balance=self.initial_balance or 10_000.0, history_file=None)
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
@@ -313,6 +317,15 @@ class TradingBot:
             if self.equity.is_below_ma(ma_period=20) and not self._dd_paused:
                 logger.warning("⏸️  EquityCurve sous MA20 — circuit breaker déclenché")
                 self._dd_paused = True
+                pnl_pct = self.equity.total_pnl_pct()
+                try:
+                    self.notifier.notify_circuit_breaker(
+                        reason="Equity sous MA20 (20 derniers points)",
+                        balance=balance,
+                        pnl_pct=pnl_pct,
+                    )
+                except Exception:
+                    pass
 
         # ── Reset quotidien (minuit UTC) ─────────────────────────────────────
         if today != self._last_reset_day:
@@ -920,4 +933,16 @@ class TradingBot:
 
 if __name__ == "__main__":
     bot = TradingBot()
+
+    # TASK-017 : SIGTERM handler Railway — sauvegarde l'équity curve avant shutdown
+    def _sigterm_handler(signum, frame):
+        logger.info("🛑 SIGTERM reçu — sauvegarde en cours...")
+        try:
+            bot.equity._save()
+            logger.info("✅ equity_history.json sauvegardé.")
+        except Exception as _ex:
+            logger.warning(f"⚠️ Sauvegarde equity échouée : {_ex}")
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
     bot.run()

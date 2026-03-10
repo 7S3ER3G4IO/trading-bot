@@ -352,6 +352,20 @@ class TelegramNotifier:
             f"💼 Capital protégé : <b>{balance:,.2f} €</b>"
         )
 
+    def notify_circuit_breaker(self, reason: str, balance: float, pnl_pct: float):
+        """TASK-043/050: Alerte Telegram quand l'EquityCurve déclenche le circuit breaker."""
+        self._send(
+            f"⚡ <b>CIRCUIT BREAKER DÉCLENCHÉ</b>\n"
+            f"{SEP}\n"
+            f"🔴 Raison : <b>{reason}</b>\n"
+            f"{SEP}\n"
+            f"💼 Balance : <b>{balance:,.2f} €</b>\n"
+            f"📉 PnL : <b>{pnl_pct:+.1f}%</b>\n"
+            f"{SEP}\n"
+            f"🛑 Trading suspendu — equity sous MA20\n"
+            f"⏰ Reprise : prochaine session"
+        )
+
     def notify_error(self, error: str, balance: float = 0.0, count: int = 1):
         now      = self._utc()
         severity = "🟠" if count < 3 else "🔴"

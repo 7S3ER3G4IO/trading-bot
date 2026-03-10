@@ -42,6 +42,11 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
     Génère un graphique chandelier professionnel.
     Retourne les bytes PNG de l'image.
     """
+    # TASK-065 : guard contre DataFrame vide (Capital.com peut retourner None/vide)
+    if df is None or df.empty or len(df) < 5:
+        logger.warning(f"⚠️ generate_chart({symbol}) : DataFrame vide ou insuffisant, chart ignoré.")
+        return b""
+
     ticker = symbol  # Capital.com : GOLD, EURUSD, etc. (pas de /USDT)
 
     # Garde les 96 dernières bougies de 5min = 8h

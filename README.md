@@ -1,140 +1,93 @@
-# 🤖 Bot de Trading Automatique — BTC/USDT
+# ⚡ Nemesis v2.0 — Capital.com CFD Trading Bot
 
-Bot de trading automatique sur **Binance Testnet** (démo gratuite).  
-Stratégie : **Triple Confluence** (EMA + RSI + MACD) avec gestion du risque intégrée.
+> **Mode : 100% DEMO — Aucun argent réel.**  
+> Capital.com démo · Railway · PostgreSQL (Supabase) · Telegram
 
----
+## Instruments tradés (8 actifs CFD)
 
-## 🗂️ Structure
+| Epic | Actif |
+|------|-------|
+| GOLD | Or / Gold |
+| EURUSD | EUR/USD |
+| GBPUSD | GBP/USD |
+| USDJPY | USD/JPY |
+| US500 | S&P 500 |
+| US100 | NASDAQ 100 |
+| DE40 | DAX 40 |
+| OIL_BRENT | Brent Oil |
+
+## Stratégie
+
+- **Timeframe** : 5 minutes (scalping)
+- **Sessions** : London 7h-10h UTC + NY 13h-16h UTC
+- **Signal** : EMA9/21, RSI, MACD, ADX, Volume, Session Range
+- **Score minimum** : 2/3 confirmations
+- **Risk/trade** : 1% du capital
+- **Max trades simultanés** : 2 (max 1 par instrument)
+
+## Modules actifs
+
+- `strategy.py` — Signal generation (score 0-3)
+- `risk_manager.py` — Position sizing, drawdown limit, per-instrument guard
+- `protection_model.py` — Blacklist après 3 SL consécutifs
+- `equity_curve.py` — Circuit breaker + graphique hebdomadaire
+- `mtf_filter.py` — Filtre multi-timeframe (1h/4h)
+- `drift_detector.py` — Détection de dérive statistique
+- `economic_calendar.py` — Pause avant/après news HIGH impact
+- `daily_reporter.py` — Bilan journalier + hebdomadaire Telegram
+- `morning_brief.py` — Morning brief avec chart technique 8h
+- `dashboard.py` — Dashboard web Railway (auth token)
+- `capital_websocket.py` — Connexion WebSocket temps réel
+- `brokers/capital_client.py` — REST API Capital.com
+
+## Déploiement (Railway)
+
+### Variables d'environnement requises
 
 ```
-trading-bot/
-├── main.py               ← Point d'entrée — lancer le bot ici
-├── config.py             ← Tous les paramètres (modifier ici)
-├── data_fetcher.py       ← Données OHLCV Binance Testnet
-├── strategy.py           ← Signaux EMA/RSI/MACD
-├── risk_manager.py       ← Taille position, SL/TP, drawdown
-├── order_executor.py     ← Exécution des ordres
-├── telegram_notifier.py  ← Alertes Telegram
-├── logger.py             ← Logs console + fichier
-├── .env.example          ← Template credentials
-├── requirements.txt
-└── logs/                 ← Créé automatiquement
+CAPITAL_API_KEY=...
+CAPITAL_IDENTIFIER=...
+CAPITAL_PASSWORD=...
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+DATABASE_URL=postgresql://...
+DASHBOARD_TOKEN=votre_token_secret   # auth dashboard
 ```
 
----
-
-## 🚀 Installation (macOS)
-
-### 1. Cloner / ouvrir le dossier
-```bash
-cd trading-bot
-```
-
-### 2. Créer et activer un environnement virtuel Python
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Installer les dépendances
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configurer les credentials
-```bash
-cp .env.example .env
-```
-Editer `.env` avec tes clés :
-
----
-
-## 🔑 Obtenir les credentials (gratuit)
-
-### Binance Testnet (démo crypto)
-1. Aller sur **https://testnet.binance.vision/**
-2. Se connecter avec GitHub
-3. Cliquer **"Generate HMAC_SHA256 Key"**
-4. Copier `API Key` et `Secret Key` dans `.env`
-5. ⚠️ Le testnet te donne automatiquement **des fonds fictifs** (BTC, USDT, ETH...)
-
-### Telegram Bot
-1. Ouvrir **Telegram** → chercher `@BotFather`
-2. Envoyer `/newbot` → donner un nom → récupérer le **Token**
-3. Chercher `@userinfobot` → envoyer `/start` → récupérer ton **Chat ID**
-4. Copier dans `.env` :
-   ```
-   TELEGRAM_BOT_TOKEN=123456:ABC-xxx
-   TELEGRAM_CHAT_ID=987654321
-   ```
-
----
-
-## ▶️ Lancer le bot
+### Lancement
 
 ```bash
-# Activer l'env virtuel si pas déjà fait
-source venv/bin/activate
-
-# Lancer
-python main.py
+python3 main.py
 ```
 
-Pour arrêter : **CTRL + C** (arrêt propre)
+## Tests
 
----
+```bash
+python3 -m pytest tests/ -q
+# 66+ tests attendus
+```
 
-## ⚙️ Configurer la stratégie
+## Architecture
 
-Modifier `config.py` :
+```
+main.py                 # Bot principal (London/NY breakout)
+├── strategy.py         # Signaux (EMA, RSI, MACD, ADX)
+├── risk_manager.py     # Risk (DD, MAX_TRADES, per-instrument)
+├── mtf_filter.py       # Multi-timeframe 1h/4h confirmation
+├── equity_curve.py     # Circuit breaker + métriques
+├── protection_model.py # Blacklist instruments
+├── drift_detector.py   # Dérive statistique
+├── daily_reporter.py   # Bilans Telegram
+├── morning_brief.py    # Matinale + charts
+├── dashboard.py        # Web UI (Flask)
+├── brokers/
+│   └── capital_client.py  # Capital.com REST API
+├── legacy/             # Anciens backtester Binance (archivés)
+└── tests/              # 66+ tests pytest
+```
 
-| Paramètre | Défaut | Signification |
-|-----------|--------|---------------|
-| `SYMBOL` | `BTC/USDT` | Paire tradée |
-| `TIMEFRAME` | `15m` | Durée des bougies |
-| `EMA_FAST` | `9` | EMA rapide |
-| `EMA_SLOW` | `21` | EMA lente |
-| `RSI_PERIOD` | `14` | Période RSI |
-| `RISK_PER_TRADE` | `0.01` (1%) | Risque par trade |
-| `RR_RATIO` | `2.0` | Ratio Risk:Reward |
-| `MAX_OPEN_TRADES` | `3` | Trades simultanés max |
-| `DAILY_DRAWDOWN_LIMIT` | `-0.05` (-5%) | Pause automatique |
-| `LOOP_INTERVAL_SECONDS` | `60` | Fréquence de vérification |
+## Notes
 
----
-
-## 📊 Stratégie
-
-Le bot génère un signal d'achat ou de vente lorsque **au moins 2 conditions sur 3** sont remplies :
-
-| Condition | Achat (BUY) | Vente (SELL) |
-|-----------|-------------|--------------|
-| **EMA** | EMA9 croise EMA21 vers le **haut** | EMA9 croise EMA21 vers le **bas** |
-| **RSI** | RSI entre 30 et 65 | RSI entre 35 et 70 |
-| **MACD** | MACD line passe **au-dessus** du signal | MACD line passe **en-dessous** du signal |
-
-Stop-Loss dynamique basé sur l'**ATR × 1.5**  
-Take-Profit = Stop-Loss × **2.0** (ratio 1:2)
-
----
-
-## 🛡️ Protections intégrées
-
-- ✅ Maximum **3 trades simultanés**
-- ✅ Pause automatique si **perte journalière > 5%**
-- ✅ SL/TP surveillés à chaque tick
-- ✅ Arrêt propre sur CTRL+C
-- ✅ Logs rotatifs (10 MB max, 7 jours)
-
----
-
-## 📱 Alertes Telegram
-
-Le bot t'envoie un message pour :
-- 🚀 Démarrage du bot
-- 🟢 Ordre d'achat exécuté (avec SL/TP)
-- 🔴 Ordre de vente exécuté
-- 🔒 Clôture de trade (avec PnL)
-- ⛔ Alerte drawdown
-- ⚠️ Erreurs critiques
+- **Pas de passage en LIVE prévu** — bot d'observation et de recherche en démo
+- Données : Capital.com API (`fetch_ohlcv`) — plus de dépendance Binance/ccxt
+- Dashboard protégé par `DASHBOARD_TOKEN` (Railway env var)

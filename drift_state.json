@@ -1,0 +1,20 @@
+{
+  "reference_sharpe": null,
+  "reference_wr": null,
+  "trade_results": [
+    {
+      "ts": 1773144169.447082,
+      "pnl": 100.0,
+      "win": true,
+      "symbol": "GOLD"
+    },
+    {
+      "ts": 1773144169.44744,
+      "pnl": -30.0,
+      "win": false,
+      "symbol": "USDJPY"
+    }
+  ],
+  "drift_alerts": [],
+  "last_check": 0
+}

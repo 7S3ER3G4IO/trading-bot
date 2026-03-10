@@ -26,15 +26,16 @@ EQUITY_FILE = "equity_history.json"
 
 class EquityCurve:
 
-    def __init__(self, initial_balance: float):
-        self.initial_balance = initial_balance
-        self._history: list  = []   # [{"ts": float, "balance": float}]
+    def __init__(self, initial_balance: float, history_file=EQUITY_FILE):
+        self.initial_balance  = initial_balance
+        self._history_file    = history_file
+        self._history: list   = []   # [{"ts": float, "balance": float}]
         self._load()
 
     def _load(self):
-        if os.path.exists(EQUITY_FILE):
+        if self._history_file and os.path.exists(self._history_file):
             try:
-                with open(EQUITY_FILE) as f:
+                with open(self._history_file) as f:
                     data = json.load(f)
                 self._history = data.get("history", [])
                 logger.info(f"📈 Equity curve chargée : {len(self._history)} points")
@@ -42,8 +43,10 @@ class EquityCurve:
                 self._history = []
 
     def _save(self):
+        if not self._history_file:
+            return
         try:
-            with open(EQUITY_FILE, "w") as f:
+            with open(self._history_file, "w") as f:
                 json.dump({"history": self._history[-2000:]}, f)
         except Exception as e:
             logger.debug(f"Equity save: {e}")

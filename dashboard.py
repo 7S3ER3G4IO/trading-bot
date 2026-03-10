@@ -11,14 +11,29 @@ sys.path.insert(0, ".")
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 try:
-    from flask import Flask, jsonify, render_template_string, Response
+    from flask import Flask, jsonify, render_template_string, Response, request, abort
 except ImportError:
     import subprocess
     subprocess.run([sys.executable, "-m", "pip", "install", "flask", "-q"])
-    from flask import Flask, jsonify, render_template_string, Response
+    from flask import Flask, jsonify, render_template_string, Response, request, abort
 
 app   = Flask("nemesis_dashboard")
 app.logger.disabled = True
+
+# ─── Auth token (TASK-076/100) ────────────────────────────────────────────────
+_DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
+
+@app.before_request
+def _auth():
+    """Vérifie le token sur toutes les routes sauf /health."""
+    if request.path == "/health":
+        return  # health check libre (Railway probes)
+    if not _DASHBOARD_TOKEN:
+        return  # pas de token configuré = pas d'auth (dev local)
+    token = request.args.get("token") or request.headers.get("X-Dashboard-Token", "")
+    if token != _DASHBOARD_TOKEN:
+        abort(401)
+
 
 # ─── State partagé ────────────────────────────────────────────────
 # BUG FIX #V : Lock pour protéger _state contre les race conditions
