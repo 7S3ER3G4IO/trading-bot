@@ -48,7 +48,7 @@ SESSION_HOURS = LONDON_HOURS + NY_HOURS  # Fenêtres actives pour le scalping
 RISK_PER_TRADE       = 0.01    # 1% du capital par trade par symbole
 ATR_SL_MULTIPLIER    = 1.0     # SL = 1.0 ATR (tighter = meilleur R:R)
 MIN_SCORE_LEGACY     = 5       # Legacy OANDA (non utilisé — strategy.py définit son propre MIN_SCORE=2/3)
-MAX_OPEN_TRADES      = 14              # 5 crypto + 9 OANDA instruments
+MAX_OPEN_TRADES      = 2               # Capital.com CFD : max 2 positions simultanées
 DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
 
 # ─── CALENDRIER ÉCONOMIQUE ───────────────────────────────────────────────────

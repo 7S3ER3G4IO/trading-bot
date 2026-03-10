@@ -60,6 +60,15 @@ except ImportError:
         def format_status(self): return ""
 
 try:
+    from protection_model import ProtectionModel
+except ImportError:
+    class ProtectionModel:  # stub silencieux si module absent
+        def is_blocked(self, symbol): return False
+        def on_trade_closed(self, symbol, pnl): pass
+        def on_rapid_loss(self, symbol, pct): pass
+        def format_status(self): return ""
+
+try:
     from tradingview_webhook import get_webhook_server
     _WEBHOOK_OK = bool(os.getenv("WEBHOOK_SECRET"))
 except ImportError:
@@ -140,7 +149,8 @@ class TradingBot:
         self._last_morning_day     = None
 
         # ─── Drift Detector (BUG FIX #I) ─────────────────────────────────
-        self.drift = DriftDetector()
+        self.drift      = DriftDetector()
+        self.protection = ProtectionModel()  # Blacklist auto après 3 SL consécutifs
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
@@ -438,6 +448,10 @@ class TradingBot:
             logger.info(f"⛔ {instrument} bloqué par RiskManager (DD ou MAX_TRADES)")
             return
 
+        # Protection Model : blacklist après 3 SL consécutifs
+        if self.protection.is_blocked(instrument):
+            return
+
         entry    = float(df.iloc[-1]["close"])
         sr       = self.strategy.compute_session_range(df)
         direction = "BUY" if sig == "BUY" else "SELL"
@@ -679,10 +693,12 @@ class TradingBot:
                     pass
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
-                # BUG FIX #5 + #I : Notifie RiskManager et DriftDetector de la fermeture
+                # BUG FIX #5 + #I : Notifie RiskManager, DriftDetector et ProtectionModel
                 self.risk.on_trade_closed()
+                pnl_final = round(pnl_est * 3, 2)
+                self.protection.on_trade_closed(instrument, pnl_final)
                 self.drift.record_trade(
-                    pnl=round(pnl_est * 3, 2),
+                    pnl=pnl_final,
                     win=(result == "WIN"),
                     symbol=name_close,
                 )
