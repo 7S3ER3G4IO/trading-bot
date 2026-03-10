@@ -293,29 +293,52 @@ class TradingBot:
         cet  = now + timedelta(hours=1)
         today = now.date()
 
-        # ── Dashboard update ─────────────────────────────────────────────────
         try:
             balance = self.capital.get_balance() if self.capital.available else 0.0
             open_trades = []
             for instr, state in self.capital_trades.items():
-                if state is not None:
-                    name = CAPITAL_NAMES.get(instr, instr)
-                    open_trades.append({"symbol": name, "side": state.get("direction", ""),
-                                        "entry": state.get("entry", 0.0), "qty": 1, "pnl": 0.0})
+                if state is None:
+                    continue
+                name  = CAPITAL_NAMES.get(instr, instr)
+                entry = state.get("entry", 0.0)
+                # PnL non-réalisé en temps réel (prix actuel vs entrée)
+                unrealized_pnl = 0.0
+                try:
+                    px = self.capital.get_current_price(instr)
+                    if px:
+                        mid = px["mid"]
+                        direction = state.get("direction", "BUY")
+                        unrealized_pnl = round((mid - entry) * (1 if direction == "BUY" else -1) * 3, 2)
+                except Exception:
+                    pass
+                open_trades.append({
+                    "symbol": name,
+                    "side":   state.get("direction", ""),
+                    "entry":  entry,
+                    "qty":    1,
+                    "pnl":    unrealized_pnl,  # PnL live, mis à jour chaque tick
+                })
             pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
             wins  = sum(1 for t in self._capital_closed_today if t.get("pnl", 0) > 0)
             total = len(self._capital_closed_today)
             wr    = (wins / total * 100) if total > 0 else 0.0
+            pnl_total_real = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
             dash_update(
                 balance=balance, initial=self.initial_balance,
-                pnl_total=round(balance - self.initial_balance, 2),
+                pnl_total=pnl_total_real,
                 pnl_today=round(pnl_today, 2),
                 trades=open_trades, wr_overall=round(wr, 1),
                 n_total=total, symbols=list(CAPITAL_INSTRUMENTS),
                 paused=self._manual_pause, futures_balance=0.0,
             )
+            if balance > 0:
+                logger.debug(
+                    f"💰 Balance : {balance:,.2f}€ | PnL total : {pnl_total_real:+.2f}€"
+                    f" | Positions ouvertes : {len(open_trades)}"
+                )
         except Exception:
             pass
+
 
         # ── EquityCurve : enregistrement + circuit breaker ────────────────────
         if balance > 0:
@@ -751,6 +774,17 @@ class TradingBot:
                     win=(result == "WIN"),
                     symbol=name_close,
                 )
+                # Solde fresh après fermeture pour log/Telegram (réel, pas estimé)
+                try:
+                    fresh_bal = self.capital.get_balance() or balance
+                    pnl_real  = round(fresh_bal - self.initial_balance, 2)
+                    icon = "🟢" if pnl_final >= 0 else "🔴"
+                    logger.info(
+                        f"{icon} {name_close} {result} | PnL trade : {pnl_final:+.2f}€ "
+                        f"| Balance : {fresh_bal:,.2f}€ | PnL total : {pnl_real:+.2f}€"
+                    )
+                except Exception:
+                    pass
     # ─── Wallet stats ────────────────────────────────────────────────────────
 
     def _post_wallet_stats(self, balance: float):
@@ -871,28 +905,57 @@ class TradingBot:
 
     def _status_text(self) -> str:
         balance = self.capital.get_balance() if self.capital.available else 0.0
-        bal_str = f"{balance:,.2f}€  (Capital.com)"
+        pnl_total = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
+        pnl_pct   = (pnl_total / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
+        bal_str   = f"{balance:,.2f}€"
 
         paused = "⏸️ PAUSED" if (self._manual_pause or self.handler.is_paused()) else "🟢 ACTIF"
 
-        # Positions Capital.com
+        # Positions Capital.com avec PnL temps réel
         cap_lines = ""
         cap_open  = 0
+        total_unrealized = 0.0
         for epic, state in self.capital_trades.items():
             if state is None:
                 continue
             cap_open += 1
-            name = CAPITAL_NAMES.get(epic, epic)
-            tp1_icon = "✅" if state.get("tp1_hit") else "○"
-            cap_lines += f"  • <b>{name}</b> {state.get('direction','?')}  TP1{tp1_icon}\n"
+            name  = CAPITAL_NAMES.get(epic, epic)
+            entry = state.get("entry", 0.0)
+            direction = state.get("direction", "?")
+            tp1_icon  = "✅" if state.get("tp1_hit") else "○"
+            # PnL non-réalisé live
+            unrealized = 0.0
+            try:
+                px = self.capital.get_current_price(epic)
+                if px:
+                    mid = px["mid"]
+                    unrealized = round((mid - entry) * (1 if direction == "BUY" else -1) * 3, 2)
+                    total_unrealized += unrealized
+            except Exception:
+                pass
+            pnl_icon = "🟢" if unrealized >= 0 else "🔴"
+            cap_lines += (
+                f"  • <b>{name}</b> {direction} | éntrée: <code>{entry:.5f}</code> "
+                f"| PnL: {pnl_icon} <b>{unrealized:+.2f}€</b> TP1{tp1_icon}\n"
+            )
+
+        # Equity curve stats
+        equity_pct = self.equity.total_pnl_pct()
+        max_dd     = self.equity.max_drawdown()
+        cb_status  = "🔴 Sous MA20" if self.equity.is_below_ma() else "🟢 OK"
 
         ctx = self.context.get_context_line() if hasattr(self.context, 'get_context_line') else ""
         return (
             f"⚡ <b>NEMESIS — Statut</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Capital : <b>{bal_str}</b>\n"
-            f"📊 Positions Capital.com : <b>{cap_open}/{len(CAPITAL_INSTRUMENTS)}</b>\n"
+            f"💰 Balance : <b>{bal_str}</b>\n"
+            f"  PnL total  : <b>{pnl_total:+.2f}€ ({pnl_pct:+.1f}%)</b>\n"
+            f"  Non-réalisé : <b>{total_unrealized:+.2f}€</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 Positions ouvertes : <b>{cap_open}/{len(CAPITAL_INSTRUMENTS)}</b>\n"
             f"{cap_lines}"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 Equity : PnL={equity_pct:+.1f}%  MaxDD={max_dd:.1f}%  CB={cb_status}\n"
             f"🤖 État : {paused}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ctx}"
