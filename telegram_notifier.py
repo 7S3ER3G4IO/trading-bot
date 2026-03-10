@@ -416,10 +416,12 @@ class TelegramNotifier:
         self, instrument: str, side: str, pnl: float, entry: float, close_price: float
     ):
         _names = {
-            "ETH/USDT:USDT": "Ethereum", "XRP/USDT:USDT": "XRP",
-            "ADA/USDT:USDT": "Cardano",  "DOGE/USDT:USDT": "Dogecoin",
+            "GOLD":      "Or / Gold",    "EURUSD":  "EUR/USD",
+            "GBPUSD":   "GBP/USD",      "USDJPY":  "USD/JPY",
+            "US500":    "S&P 500",       "US100":   "NASDAQ 100",
+            "DE40":     "DAX 40",        "OIL_BRENT": "Brent Oil",
         }
-        name      = _names.get(instrument, instrument.replace(":USDT", "").replace("/USDT", ""))
+        name = _names.get(instrument, instrument)
         direction = "LONG" if side == "BUY" else "SHORT"
         emoji     = "✅" if pnl >= 0 else "❌"
         pct       = abs(close_price - entry) / entry * 100 if entry > 0 else 0

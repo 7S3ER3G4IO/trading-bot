@@ -42,7 +42,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
     Génère un graphique chandelier professionnel.
     Retourne les bytes PNG de l'image.
     """
-    ticker = symbol.replace("/USDT", "")
+    ticker = symbol  # Capital.com : GOLD, EURUSD, etc. (pas de /USDT)
 
     # Garde les 96 dernières bougies de 5min = 8h
     df_plot = df.tail(96).copy()
@@ -89,7 +89,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
         df_plot,
         type="candle",
         style=style,
-        title=f"\n  ⚡ Nemesis — {ticker}/USDT | Biais : {bias}",
+        title=f"\n  ⚡ Nemesis — {symbol} | Biais : {bias}",
         volume=True,
         addplot=add_plots if add_plots else None,
         datetime_format="%H:%M",
@@ -99,7 +99,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
     )
 
     axes[0].set_title(
-        f"⚡ Nemesis — {ticker}/USDT | Biais : {bias}",
+        f"\u26a1 Nemesis — {symbol} | Biais : {bias}",
         color=title_color,
         fontsize=13,
         fontweight="bold",
@@ -128,7 +128,7 @@ def analyze_asset(symbol: str, df: pd.DataFrame) -> dict:
     """
     Retourne un dictionnaire d'analyse technique pour un actif.
     """
-    ticker = symbol.replace("/USDT", "").replace(":USDT", "")
+    ticker = symbol  # Capital.com : instrument epic (GOLD, EURUSD, etc.)
     last   = df.iloc[-1]
     prev   = df.iloc[-2] if len(df) > 1 else last
 
@@ -254,9 +254,9 @@ def format_analysis(a: dict) -> str:
         fvg_str = "  • " + " | ".join([f"{z:,.4f}" for z in a["fvg_zones"]])
 
     return (
-        f"📌 <b>{t}/USDT</b>\n"
+        f"📌 <b>{t}</b>\n"
         f"\n"
-        f"💵 Prix actuel : <b>{p:,.4f} USDT</b>\n"
+        f"💵 Prix actuel : <b>{p:,.4f}</b>\n"
         f"📈 Tendance 1h : <b>{a['trend_1h']}</b>  |  4h : <b>{a['trend_4h']}</b>\n"
         f"\n"
         f"📊 <b>Indicateurs</b>\n"

@@ -233,8 +233,8 @@ class TelegramBotHandler:
         elif cmd == "/backtest":
             symbol_raw = parts[1].upper() if len(parts) > 1 else "ETH"
             days       = int(parts[2]) if len(parts) > 2 else 30
-            if not symbol_raw.endswith("USDT"):
-                symbol_raw = f"{symbol_raw}/USDT"
+            # Capital.com : epics comme GOLD, EURUSD — pas de normalisation /USDT
+            symbol_raw = symbol_raw.upper()"
             self._reply(
                 f"🧪 <b>Backtest {symbol_raw} {days}j lancé...</b>\n"
                 f"<code>Résultats dans ~60 secondes.</code>"

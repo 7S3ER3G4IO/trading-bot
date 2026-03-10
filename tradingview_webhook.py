@@ -9,7 +9,7 @@ Configuration TradingView (Alert → Webhook URL) :
   Body JSON :
     {
       "secret": "{{strategy.order.alert_message}}",
-      "symbol": "ETHUSDT",
+      "symbol": "GOLD",
       "action": "buy"        // ou "sell", "close"
     }
 
@@ -66,7 +66,7 @@ class WebhookServer:
                 if not symbol or action not in ("buy", "sell", "close"):
                     return jsonify({"error": "invalid payload"}), 400
 
-                # Normalise le symbole → ex: "ETHUSDT" → "ETH/USDT"
+                # Normalise le symbole → ex: "GOLD" → "ETH/USDT"
                 if "/" not in symbol:
                     symbol = symbol.replace("USDT", "/USDT")
 
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     print(f"   Secret   : {WEBHOOK_SECRET[:6]}***")
     print(f"\n   Config TradingView Alert:")
     print(f"   URL     : http://VOTRE_URL/webhook/tradingview")
-    print(f"""   Payload : {{"secret": "{WEBHOOK_SECRET}", "symbol": "ETHUSDT", "action": "buy"}}""")
+    print(f"""   Payload : {{"secret": "{WEBHOOK_SECRET}", "symbol": "GOLD", "action": "buy"}}""")
     print()
     ws = get_webhook_server()
     ws.start()

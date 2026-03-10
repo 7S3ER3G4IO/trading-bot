@@ -7,7 +7,7 @@ Réplique l'approche de Station X :
   ✅ Fair Value Gaps (FVG) — déséquilibres de liquidité
   ✅ Liquidity Sweeps (SSL/BSL) — chasse aux stops
   ✅ Scalping 5m avec SL tight et BE rapide
-  ✅ Marchés : BTC/USDT + XAU/USDT (Gold)
+  ✅ Marchés : GOLD, EURUSD, USDJPY (Capital.com CFD)
 """
 
 import pandas as pd

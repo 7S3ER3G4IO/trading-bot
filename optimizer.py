@@ -365,7 +365,7 @@ def print_report(all_params: dict):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Nemesis Hyperopt — Optuna Bayesian Optimization")
-    parser.add_argument("--symbol", default=None,   help="Symbole unique (ex: BTC/USDT)")
+    parser.add_argument("--symbol", default=None,   help="Symbole unique (ex: GOLD ou EURUSD)")
     parser.add_argument("--days",   type=int, default=14, help="Jours d'historique (défaut: 14)")
     parser.add_argument("--tf",     default="5m",   help="Timeframe (défaut: 5m)")
     parser.add_argument("--trials", type=int, default=100, help="Trials Optuna par symbole (défaut: 100)")

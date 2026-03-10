@@ -48,7 +48,7 @@ def run():
         print(f"\n  📈 SEMAINE (7j) ")
         print(f"     Trades  : {total}")
         print(f"     Win rate: {fmt_pct(wins, total)}")
-        print(f"     PnL net : {net_pnl:+.2f} USDT")
+        print(f"     PnL net : {net_pnl:+.2f} €")
         conn.close()
 
     # ─── Journal journalier ────────────────────────────────────

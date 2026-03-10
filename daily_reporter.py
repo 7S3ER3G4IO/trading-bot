@@ -115,9 +115,9 @@ class DailyReporter:
         rpt += (
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🏆 BILAN TRADES : *{score}* | *{pct}*\n"
-            f"💵 PnL brut : `{total_gross:+.2f} USDT`\n"
-            f"💸 Frais Binance : `-{total_fees:.2f} USDT`\n"
-            f"✅ *PnL net : `{total_net:+.2f} USDT`*"
+            f"💵 PnL brut : `{total_gross:+.2f} €`\n"
+            f"💸 Frais CFD : `-{total_fees:.2f} €`\n"
+            f"✅ *PnL net : `{total_net:+.2f} €`*"
         )
         return rpt
 
@@ -126,7 +126,7 @@ class DailyReporter:
         Format minimaliste pour le bilan Telegram.
         Retourne [(date_str, action, ticker, result_str, pnl_net), ...]
         result_str = "+680 pips" | "-310 pips" | "BE"
-        pnl_net    = float en USDT
+        pnl_net    = float en €
         """
         lines = []
         for t in self._trades:
@@ -175,11 +175,11 @@ class DailyReporter:
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🏆 Trades : *{score}* | Win rate : *{pct}*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 PnL net : `{total_net:+.2f} USDT`\n"
-            f"💸 Frais cumulés : `-{total_fees:.2f} USDT`\n"
+            f"💰 PnL net : `{total_net:+.2f} €`\n"
+            f"💸 Frais cumulés : `-{total_fees:.2f} €`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌟 Meilleur trade : `{best.symbol}` `{best.pnl_net:+.2f} USDT`\n"
-            f"📉 Pire trade : `{worst.symbol}` `{worst.pnl_net:+.2f} USDT`"
+            f"🌟 Meilleur trade : `{best.symbol}` `{best.pnl_net:+.2f} €`\n"
+            f"📉 Pire trade : `{worst.symbol}` `{worst.pnl_net:+.2f} €`"
         )
 
     def mark_weekly_sent(self):

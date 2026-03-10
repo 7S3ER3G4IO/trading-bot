@@ -201,10 +201,10 @@ if __name__ == "__main__":
     for i in range(15):
         win = random.random() < 0.55
         pnl = random.uniform(5, 50) if win else random.uniform(-40, -5)
-        dd.record_trade(pnl, win, "ETH/USDT")
+        dd.record_trade(pnl, win, "GOLD")
     # Ajout trades perdants
     for i in range(10):
-        dd.record_trade(random.uniform(-80, -10), False, "ETH/USDT")
+        dd.record_trade(random.uniform(-80, -10), False, "GOLD")
 
     result = dd.check_drift()
     print(f"  Drift   : {'🔴 OUI' if result['drift'] else '🟢 NON'}")

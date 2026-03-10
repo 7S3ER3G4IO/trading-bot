@@ -29,7 +29,7 @@ class FundingRateFilter:
     def get_funding_rate(self, symbol: str) -> float:
         """
         Retourne le funding rate actuel pour un symbole.
-        symbol : 'ETH/USDT' → traduit en 'ETHUSDT'
+        symbol : 'GOLD' → traduit en 'GOLD' (no-op ici)
         """
         now     = time.time()
         fsymbol = symbol.replace("/", "").replace(":USDT", "")

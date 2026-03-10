@@ -379,14 +379,14 @@ if __name__ == "__main__":
     update_state(balance=11035.82, initial=10000.0, pnl_total=1035.82,
                  pnl_today=42.50, wr_overall=58.3, wr_today=66.7,
                  n_today=3, n_total=47, sharpe=0.42, max_dd=4.2,
-                 symbols=["ETH/USDT","XRP/USDT","ADA/USDT","DOGE/USDT"])
+                 symbols=["GOLD","EURUSD","GBPUSD","USDJPY","US500","US100","DE40","OIL_BRENT"])
     update_filter("fear_greed", "Neutre 52")
     update_filter("volatility", "NORMAL")
     update_filter("funding", "OK")
     update_filter("news", "Neutre")
     update_filter("drift", "Stable")
-    update_trade_open("ETH/USDT", "LONG", 3241.50, 0.12)
-    update_trade_close("XRP/USDT", 18.30, "TP2", "LONG")
-    update_trade_close("ADA/USDT", -12.10, "SL", "LONG")
+    update_trade_open("GOLD", "LONG", 2315.50, 1.0)
+    update_trade_close("EURUSD", 18.30, "TP2", "LONG")
+    update_trade_close("DE40", -12.10, "SL", "LONG")
     while True:
         time.sleep(60)

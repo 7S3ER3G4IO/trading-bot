@@ -124,7 +124,7 @@ class RiskManager:
         size = capital_at_risk / sl_distance
         logger.info(
             f"📦 Position : {size:.6f} | Score {signal_score}/{max_score} "
-            f"→ Risk {dynamic_risk:.1%} | Capital risqué : {capital_at_risk:.2f} USDT"
+            f"→ Risk {dynamic_risk:.1%} | Capital risqué : {capital_at_risk:.2f} €"
         )
         return size
 
@@ -167,7 +167,7 @@ class RiskManager:
 
         logger.info(
             f"🧮 Kelly : f*={kelly_f:.2%} → Half={half_kelly:.2%} "
-            f"→ Ajusté={adjusted:.2%} | Capital risqué={capital_at_risk:.2f} USDT"
+            f"→ Ajusté={adjusted:.2%} | Capital risqué={capital_at_risk:.2f} €"
         )
         return size
 
@@ -181,7 +181,7 @@ class RiskManager:
 
     def reset_daily(self, current_balance: float):
         self.daily_start_balance = current_balance
-        logger.info(f"🔄 Balance journalière reset : {current_balance:.2f} USDT")
+        logger.info(f"🔄 Balance journalière reset : {current_balance:.2f} €")
 
     @property
     def open_trades_count(self) -> int:
