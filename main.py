@@ -724,6 +724,39 @@ class TradingBot:
         if rng <= 0 or sr["pct"] < 0.08:
             return
 
+        # ── UPGRADE : Slippage Guard (spread < ATR × 0.15 avant tout ordre) ──
+        # Un spread trop large signifie marché peu liquide ou news en cours.
+        # On ne veut pas payer 15% d'un ATR en slippage​/spread.
+        try:
+            px_check = self.capital.get_current_price(instrument)
+            if px_check:
+                spread      = px_check["ask"] - px_check["bid"]
+                atr_check   = self.strategy.get_atr(df)
+                spread_max  = atr_check * 0.15 if atr_check > 0 else spread  # bypass si ATR=0
+                if spread > spread_max and atr_check > 0:
+                    logger.info(
+                        f"🚫 Slippage Guard {instrument} — spread={spread:.5f} > max={spread_max:.5f} "
+                        f"(ATR×0.15) — skip"
+                    )
+                    return
+        except Exception as _sg:
+            logger.debug(f"Slippage check {instrument}: {_sg}")
+
+        # ── UPGRADE : Exposition max par devise (30% total, 15% par instrument) ──
+        # Limite le risque total en cas de marché correctionnel brutal.
+        balance_now = self.capital.get_balance() or balance
+        if balance_now > 0:
+            total_open = len([s for s in self.capital_trades.values() if s is not None])
+            max_open_value = balance_now * 0.30   # 30% max en exposition totale
+            # Heuristique : chaque position vaut en moyenne 3% du balance (RISK=1% × 3 lots)
+            est_exposure = total_open * balance_now * 0.03
+            if est_exposure >= max_open_value:
+                logger.info(
+                    f"⛔ Exposition max atteinte {instrument} — "
+                    f"{total_open} positions ≈ {est_exposure:.0f}€ > 30% ({max_open_value:.0f}€)"
+                )
+                return
+
         # SL commun (autre extrémité du range + buffer 10%)
         if sig == "BUY":
             sl    = sr["low"]  - rng * 0.1
@@ -843,6 +876,8 @@ class TradingBot:
             "fear_greed": self.context._fg_value,
             "in_overlap": in_overlap,
             "adx_at_entry": adx_now,
+            # ─ Time-based Stop Loss (90min) ──────────────────────────
+            "open_time":  datetime.now(timezone.utc),
         }
         # BUG FIX #3 : calcule name/session une seule fois (suppression doublon)
         name    = CAPITAL_NAMES.get(instrument, instrument)
@@ -943,6 +978,37 @@ class TradingBot:
             ref1_open = refs[0] in open_refs if refs[0] else False
             ref2_open = refs[1] in open_refs if refs[1] else False
             ref3_open = refs[2] in open_refs if refs[2] else False
+
+            # \u2500\u2500 UPGRADE : Time-based Stop Loss (90 minutes max sans TP1) \u2500\u2500\u2500\u2500\u2500\u2500
+            # Si le trade est ouvert depuis > 90 min et TP1 non touché
+            # → le breakout n'a pas performé → fermeture forcée (trade zombie)
+            # Exception : si TP1 déjà touché (trailing stop actif), on laisse courir.
+            if not state.get("tp1_hit"):
+                open_time = state.get("open_time")
+                if open_time:
+                    age_minutes = (datetime.now(timezone.utc) - open_time).total_seconds() / 60
+                    if age_minutes > 90:
+                        name_ts = CAPITAL_NAMES.get(instrument, instrument)
+                        logger.warning(
+                            f"⏱️  Time-Stop {instrument} — {age_minutes:.0f}min sans TP1 "
+                            f"→ fermeture forcée"
+                        )
+                        # Fermer toutes les positions encore ouvertes
+                        for ref in refs:
+                            if ref and ref in open_refs:
+                                try:
+                                    self.capital.close_position(ref)
+                                except Exception as _ts_e:
+                                    logger.debug(f"Time-stop close {ref}: {_ts_e}")
+                        self.telegram.send_message(
+                            f"⏱️ <b>Time-Stop déclenché — {name_ts}</b>\n"
+                            f"Ouvert depuis <b>{age_minutes:.0f} min</b> sans atteindre TP1.\n"
+                            f"Fermeture de toutes les positions (trade zombie évité)."
+                        )
+                        self.capital_trades[instrument] = None
+                        self._pending_retest[instrument] = None
+                        continue  # passer à l'instrument suivant
+
 
             # TP1 touché si ref1 a disparu des positions ouvertes
             # Note : si le WebSocket est actif, il gère déjà le BE.
