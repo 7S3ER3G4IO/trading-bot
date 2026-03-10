@@ -12,11 +12,15 @@ from loguru import logger
 try:
     import mplfinance as mpf
     import matplotlib
-    matplotlib.use("Agg")
+    try:
+        matplotlib.use("Agg")  # backend non-interactif (Railway / headless)
+    except Exception:
+        pass
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
+    import matplotlib.colors as mcolors
     HAS_MPF = True
-except ImportError:
+except (ImportError, AttributeError):
+    # numpy._globals issue sur certaines versions — désactiver silencieusement
     HAS_MPF = False
 
 

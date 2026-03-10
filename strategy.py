@@ -39,7 +39,8 @@ PRE_SESSIONS_UTC = [
 ]
 
 MIN_RANGE_PCT    = 0.05   # Range min = 0.05% du prix (assoupli de 0.08%)
-MAX_RANGE_PCT    = 2.0    # Range max = 2.0% du prix (filtre spread excessif)
+MAX_RANGE_PCT    = 6.0    # Range max = 6.0% du prix
+                          # (GOLD ~2-5%, forex ~0.5-1.5%, indices ~1-3%)
 MIN_SCORE        = 1      # Score minimum sur 7 (assoupli : 1 confirmation suffit)
 ADX_MIN          = 15     # ADX assoupli de 18 à 15 (capte plus de tendances)
 ATR_PERIOD       = 14
