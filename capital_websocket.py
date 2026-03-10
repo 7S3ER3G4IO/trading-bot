@@ -59,12 +59,31 @@ class CapitalWebSocket:
         self._thread    = None
         self._running   = False
         self._heartbeat_thread = None  # thread ping JSON applicatif
+        # Feature R : callback temps réel pour les ticks de prix bruts
+        # Signature : on_price_tick(epic: str, mid: float) -> None
+        self._on_price_tick: Optional[Callable] = None
+        # Throttle : ne pas appeler plus d'1x/s par epic
+        self._last_tick_call: dict = {}
 
         # Positions surveillées : {epic: {entry, tp1, refs, tp1_hit}}
         self._watched: Dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    # ─── Interface publique ───────────────────────────────────────────────────
+    def register_signal_callback(self, on_price_tick: Callable):
+        """
+        Feature R — Enregistre un callback temps réel pour les ticks de prix.
+
+        Le callback est appelé à chaque tick de prix reçu via WebSocket,
+        avec un throttle de 1 appel/seconde par epic pour ne pas saturer le CPU.
+
+        Signature du callback :
+            on_price_tick(epic: str, mid: float) -> None
+
+        Utilisation typique dans main.py :
+            self.capital_ws.register_signal_callback(self._on_ws_price_tick)
+        """
+        self._on_price_tick = on_price_tick
+        logger.info("📡 WS Signal callback enregistré (Feature R — real-time trigger)")
 
     def watch(self, instrument: str, entry: float,
               tp1: float, tp2: float,
@@ -238,6 +257,17 @@ class CapitalWebSocket:
             if bid is None or offer is None:
                 return
             mid = (float(bid) + float(offer)) / 2
+
+            # Feature R : Callback temps réel pour detection de signal hors positions
+            if self._on_price_tick:
+                now_ts = time.monotonic()
+                last   = self._last_tick_call.get(epic, 0)
+                if now_ts - last >= 1.0:  # throttle 1 appel/s par epic
+                    self._last_tick_call[epic] = now_ts
+                    try:
+                        self._on_price_tick(epic, mid)
+                    except Exception as _cb_e:
+                        logger.debug(f"WS price_tick cb {epic}: {_cb_e}")
 
             with self._lock:
                 state = self._watched.get(epic)

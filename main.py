@@ -96,6 +96,50 @@ except ImportError:
         def format_report(self): return ""
         def generate_chart(self, *a): return b""
 
+# ─── Sprint Final — Nouveaux modules ────────────────────────────────────────
+try:
+    from signal_card import generate_signal_card
+    _SIGNAL_CARD_OK = True
+except ImportError:
+    _SIGNAL_CARD_OK = False
+    def generate_signal_card(*a, **kw): return None  # type: ignore
+
+try:
+    from lstm_predictor import LSTMPredictor
+    _LSTM_OK = True
+except ImportError:
+    _LSTM_OK = False
+    class LSTMPredictor:  # stub : laisse passer tout
+        def train(self, df): return False
+        def should_enter(self, df): return True, 1.0
+        def predict(self, df): return 1.0
+        def notify_trade_result(self, won): pass
+        @property
+        def is_ready(self): return False
+
+try:
+    from drl_sizer import DRLPositionSizer
+    _DRL_OK = True
+except ImportError:
+    _DRL_OK = False
+    class DRLPositionSizer:  # stub : multiplicateur fixe 1.0
+        def get_multiplier(self): return 1.0
+        def record_trade(self, *a, **kw): pass
+        def summary(self): return "DRL non disponible"
+
+try:
+    from ab_tester import ABTester
+    _AB_OK = True
+except ImportError:
+    _AB_OK = False
+    class ABTester:  # stub neutre
+        def get_variant(self, inst): return "A"
+        def get_params(self, v): return {}
+        def record_result(self, *a, **kw): pass
+        def weekly_report(self): return "AB Tester non disponible"
+        def global_winner(self): return "A"
+
+
 try:
     from tradingview_webhook import get_webhook_server
     _WEBHOOK_OK = bool(os.getenv("WEBHOOK_SECRET"))
@@ -150,6 +194,9 @@ class TradingBot:
         )
         if self.capital.available:
             self.capital_ws.start()
+            # Feature R : Enregistre le callback de prix temps réel (<1s trigger)
+            self.capital_ws.register_signal_callback(self._on_ws_price_tick)
+
 
         # ─── Solde initial ────────────────────────────────────────────────
         # Sleep 3s : laisse le fallback Capital.com s'établir après 429
@@ -217,6 +264,12 @@ class TradingBot:
         except Exception as _e:
             logger.warning(f"⚠️ EquityCurve init échoué ({_e}) — réinitialisation propre.")
             self.equity = EquityCurve(initial_balance=self.initial_balance or 10_000.0, history_file=None)
+
+        # ── Sprint Final — Modules IA/ML/AB ──────────────────────────────────────
+        self.lstm    = LSTMPredictor()       # Feature P : Timing prédictif
+        self.drl     = DRLPositionSizer()    # Feature T : Sizing adaptatif
+        self.ab      = ABTester()            # Feature U : A/B Testing stratégie
+
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
@@ -549,7 +602,31 @@ class TradingBot:
                         logger.warning("⏱️ Optimizer timeout (>10min)")
                     except Exception as _opt_e:
                         logger.error(f"❌ Optimizer: {_opt_e}")
+
+                    # Feature P : Entraîner le LSTM sur chaque instrument
+                    try:
+                        for _inst in CAPITAL_INSTRUMENTS:
+                            df_train = self.capital.fetch_ohlcv(_inst, timeframe="5m", count=400)
+                            if df_train is not None and len(df_train) >= 100:
+                                df_train = self.strategy.compute_indicators(df_train)
+                                ok = self.lstm.train(df_train)
+                                if ok:
+                                    logger.info(f"🧠 LSTM Predictor entraîné sur {_inst}")
+                    except Exception as _lstm_e:
+                        logger.warning(f"LSTM training: {_lstm_e}")
+
+                    # Feature U : Rapport A/B hebdomadaire
+                    try:
+                        report = self.ab.weekly_report()
+                        winner = self.ab.global_winner()
+                        self.telegram.send_message(
+                            f"{report}\n🏆 Variante globale : <b>{winner}</b>"
+                        )
+                    except Exception as _ab_e:
+                        logger.debug(f"AB weekly: {_ab_e}")
+
                 threading.Thread(target=_run_optimizer, daemon=True).start()
+
 
         # ── Auto-push Telegram : ouverture de session ─────────────────────────
 
@@ -912,6 +989,22 @@ class TradingBot:
                 )
                 return
 
+        # \u2500\u2500 SPRINT FINAL P : LSTM Timing Prediction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Si le score LSTM < 0.65 → timing pas optimal → wait
+        try:
+            lstm_allow, lstm_score = self.lstm.should_enter(df)
+            if not lstm_allow:
+                logger.debug(
+                    f"🧠 LSTM block {instrument} {sig} — score={lstm_score:.2f} < 0.65"
+                )
+                return
+        except Exception:
+            lstm_score = 1.0
+
+        # \u2500\u2500 SPRINT FINAL U : A/B Testing — lire les paramètres actifs \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # L'ABTester alterne les instruments entre variante A (stable) et B (explorateur)
+        ab_variant = self.ab.get_variant(instrument)
+
         # SL commun (autre extrémité du range + buffer 10%)
         if sig == "BUY":
             sl    = sr["low"]  - rng * 0.1
@@ -930,6 +1023,14 @@ class TradingBot:
         )
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
         size1 = max(min_sz, round(total_size / 3, 2))
+
+        # \u2500\u2500 SPRINT FINAL T : DRL Size Multiplier \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Agent Kelly adaptatif : multiplie la taille en fonction de la performance récente
+        drl_mult = self.drl.get_multiplier()
+        if drl_mult != 1.0:
+            size1 = max(min_sz, round(size1 * drl_mult, 2))
+            logger.debug(f"🎯 DRL size mult={drl_mult:.2f}× → size1={size1}")
+
 
         # Sprint 4 : Drift size reduction (50% si drift actif)
         if self._drift_size_reduced and self._drift_reduced_until and datetime.now(timezone.utc) < self._drift_reduced_until:
@@ -1070,6 +1171,38 @@ class TradingBot:
                      confirmations=list(confirmations), df=df.copy())  # .copy() évite race condition
         threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
 
+        # \u2500\u2500 SPRINT FINAL K : Signal Card visuel \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Génère image mplfinance chart 5m (2h) avec niveaux annotés
+        # Envoyée via Telegram.sendPhoto en background (pas de blocage loop)
+        try:
+            _regime_name = regime_result.get("name", "RANGING") if regime_result else "RANGING"
+            _fg_val = getattr(self.context, "_fg_value", None)
+            _card_df = df.copy()
+            _card_args = dict(
+                df=_card_df, instrument=instrument, direction=direction,
+                entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
+                score=score, confirmations=list(confirmations),
+                regime=_regime_name, fear_greed=_fg_val, session=session,
+            )
+            def _do_send_card():
+                img = generate_signal_card(**_card_args)
+                if img:
+                    caption = (
+                        f"📸 <b>{'🟢 BUY' if direction == 'BUY' else '🔴 SELL'} "
+                        f"{name}</b>  |  Score {score}/7\n"
+                        f"💰 Entry: {entry:.5f}  |  SL: {sl:.5f}\n"
+                        f"🎯 TP1: {tp1:.5f}  TP2: {tp2:.5f}  TP3: {tp3:.5f}"
+                    )
+                    self.telegram.send_photo(img, caption=caption)
+            threading.Thread(target=_do_send_card, daemon=True).start()
+        except Exception as _kex:
+            logger.debug(f"Signal card: {_kex}")
+
+        # Stocker la variante A/B dans l'état pour feedback à la fermeture
+        if self.capital_trades[instrument]:
+            self.capital_trades[instrument]["ab_variant"] = ab_variant
+
+
         # ── Dashboard : enregistre l'ouverture ─────────────────────────────
         try:
             dash_open(symbol=CAPITAL_NAMES.get(instrument, instrument),
@@ -1077,7 +1210,46 @@ class TradingBot:
         except Exception:
             pass
 
+    def _on_ws_price_tick(self, epic: str, mid: float) -> None:
+        """
+        Feature R — Callback appelé par le WebSocket à chaque tick de prix.
+        Throttle : 1 appel/s par epic (géré dans capital_websocket.py).
+
+        Si un instrument n'a pas encore de position ET qu'un retest est en attente
+        (prix proche du niveau cassé ± ATR), on évalue immédiatement le signal
+        sans attendre le prochain polling 30s.
+
+        Latence cible : < 2 secondes après le tick de prix.
+        """
+        try:
+            # Vérifier si une position est déjà ouverte (ne pas doubler)
+            if self.capital_trades.get(epic) is not None:
+                return
+
+            # Vérifier si un retest est en attente pour cet epic
+            retest = self._pending_retest.get(epic)
+            if retest is None:
+                return
+
+            retest_level = retest.get("retest_level", 0)
+            atr_now = retest.get("atr", 0)
+            if atr_now <= 0:
+                return
+
+            # Si le prix est dans la zone de retest (±0.5 ATR du niveau) → trigger
+            if abs(mid - retest_level) <= atr_now * 0.5:
+                logger.debug(
+                    f"⚡ WS real-time trigger {epic} — prix {mid:.5f} ≈ retest {retest_level:.5f}"
+                )
+                # Récupérer balance courante (cache)
+                bal = self.capital.get_balance() if self.capital.available else 0.0
+                if bal > 0:
+                    self._process_capital_symbol(epic, bal)
+        except Exception as _ws_e:
+            logger.debug(f"WS price_tick {epic}: {_ws_e}")
+
     def _on_ws_be_triggered(self, instrument: str, entry_or_sl: float, event: str = "TP1"):
+
         """
         Callback WebSocket — appelé en < 500ms quand TP1 ou TP2 est franchi.
         event="TP1" : SL pos2+pos3 → entrée (BE)
@@ -1268,6 +1440,25 @@ class TradingBot:
                     m_close = datetime.now(timezone.utc).minute
                     tracker_close = self._london_tracker if (h_close < 13 or (h_close == 13 and m_close < 30)) else self._ny_tracker
                     tracker_close.record_close(name=name_close, pnl=pnl_est * 3, result=result)
+
+                    # \u2500\u2500 Sprint Final : Feedback DRL + AB + LSTM sur résultat \u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                    pnl_trade = round(pnl_est * 3, 4)
+                    won_trade = pnl_trade > 0
+                    rr_trade  = abs(pnl_trade) / max(abs(pnl_est), 0.0001)
+                    try:
+                        self.drl.record_trade(pnl_trade, rr_trade, state["direction"])
+                    except Exception:
+                        pass
+                    try:
+                        ab_v = state.get("ab_variant", "A")
+                        self.ab.record_result(instrument, ab_v, pnl_trade, won_trade)
+                    except Exception:
+                        pass
+                    try:
+                        self.lstm.notify_trade_result(won_trade)
+                    except Exception:
+                        pass
+
                 except Exception:
                     pass
                 # Persiste la fermeture en BDD
