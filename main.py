@@ -170,6 +170,8 @@ class TradingBot:
         self._last_wallet_post     = datetime.now(timezone.utc)
         self._last_hyperopt_week   = None
         self._last_morning_day     = None
+        self._last_session_push    = ""    # "London" ou "NY" pour éviter double envoi
+        self._last_heartbeat_push  = datetime.now(timezone.utc)  # heartbeat toutes les 30min
 
         # ─── Drift Detector (BUG FIX #I) ─────────────────────────────────
         self.drift      = DriftDetector()
@@ -366,6 +368,70 @@ class TradingBot:
             if self.capital.available:
                 self._daily_start_balance = self.capital.get_balance() or self._daily_start_balance
             logger.info("🔄 Reset quotidien — stats journalières effacées")
+            self._last_session_push = ""    # reset push session pour le nouveau jour
+
+        # ── Auto-push Telegram : ouverture de session ─────────────────────────
+        h_utc = now.hour
+        # Détecte début de session London (8h UTC) et NY (13h UTC)
+        current_session = ""
+        if h_utc == 8:   current_session = "London"
+        elif h_utc == 13: current_session = "NY"
+
+        if current_session and current_session != self._last_session_push:
+            self._last_session_push = current_session
+            try:
+                bal_push = self.capital.get_balance() if self.capital.available else 0.0
+                pnl_push = round(bal_push - self.initial_balance, 2) if bal_push > 0 else 0.0
+                pnl_pct_push = (pnl_push / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
+                session_icon = "🇬🇧" if current_session == "London" else "🇺🇸"
+                self.telegram.send_message(
+                    f"{session_icon} <b>Session {current_session} ouverte</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"💰 Balance : <b>{bal_push:,.2f}€</b>\n"
+                    f"📊 PnL total : <b>{pnl_push:+.2f}€ ({pnl_pct_push:+.1f}%)</b>\n"
+                    f"🤖 Bot : 🟢 ACTIF — scanning {len(CAPITAL_INSTRUMENTS)} instruments\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━"
+                )
+                logger.info(f"{session_icon} Session {current_session} ouverte — alerte Telegram envoyée")
+            except Exception as _e:
+                logger.debug(f"Auto-push session : {_e}")
+
+        # ── Auto-push Telegram : heartbeat toutes les 30min en session active ──
+        in_session = h_utc in SESSION_HOURS
+        since_last = (now - self._last_heartbeat_push).total_seconds()
+        if in_session and since_last >= 1800:  # 30 minutes
+            self._last_heartbeat_push = now
+            try:
+                bal_hb    = self.capital.get_balance() if self.capital.available else 0.0
+                pnl_hb    = round(bal_hb - self.initial_balance, 2) if bal_hb > 0 else 0.0
+                pnl_pct   = (pnl_hb / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
+                open_pos  = [instr for instr, s in self.capital_trades.items() if s is not None]
+                pos_lines = ""
+                for epic in open_pos:
+                    state = self.capital_trades[epic]
+                    name  = CAPITAL_NAMES.get(epic, epic)
+                    entry = state.get("entry", 0.0)
+                    direction = state.get("direction", "?")
+                    unreal = 0.0
+                    try:
+                        px = self.capital.get_current_price(epic)
+                        if px:
+                            unreal = round((px["mid"] - entry) * (1 if direction == "BUY" else -1) * 3, 2)
+                    except Exception:
+                        pass
+                    icon = "🟢" if unreal >= 0 else "🔴"
+                    pos_lines += f"  • <b>{name}</b> {direction} | {icon} {unreal:+.2f}€\n"
+                pnl_today_hb = sum(t.get("pnl", 0) for t in self._capital_closed_today)
+                self.telegram.send_message(
+                    f"📡 <b>Heartbeat Nemesis</b> — {cet.strftime('%H:%M')} CET\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"💰 Balance : <b>{bal_hb:,.2f}€</b>  ({pnl_pct:+.1f}%)\n"
+                    f"📈 PnL aujourd'hui : <b>{pnl_today_hb:+.2f}€</b>\n"
+                    + (f"📊 Positions ouvertes :\n{pos_lines}" if pos_lines else "📊 Aucune position ouverte\n")
+                    + f"━━━━━━━━━━━━━━━━━━━━━━━"
+                )
+            except Exception as _e:
+                logger.debug(f"Auto-push heartbeat : {_e}")
 
         # ── Vérification drawdown journalier ─────────────────────────────
         if not self._dd_paused and self.capital.available:
