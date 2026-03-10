@@ -38,12 +38,18 @@ class RiskManager:
         self.initial_balance      = initial_balance
         self.daily_start_balance  = initial_balance
         self._open_trades_count   = 0
+        self._open_instruments: set = set()  # TASK-038 : 1 trade max par instrument
 
     # ─── CONTRÔLE D'ACCÈS ────────────────────────────────────────────────────
 
-    def can_open_trade(self, current_balance: float) -> bool:
+    def can_open_trade(self, current_balance: float, instrument: str = "") -> bool:
         if self._open_trades_count >= MAX_OPEN_TRADES:
             logger.warning(f"⛔ Max {MAX_OPEN_TRADES} trades simultanés atteint.")
+            return False
+
+        # TASK-038 : max 1 trade par instrument (pas de double GOLD, double EURUSD…)
+        if instrument and instrument in self._open_instruments:
+            logger.warning(f"⛔ {instrument} : trade déjà ouvert sur cet instrument.")
             return False
 
         drawdown = (current_balance - self.daily_start_balance) / self.daily_start_balance
@@ -173,11 +179,14 @@ class RiskManager:
 
     # ─── COMPTEURS ───────────────────────────────────────────────────────────
 
-    def on_trade_opened(self):
+    def on_trade_opened(self, instrument: str = ""):
         self._open_trades_count += 1
+        if instrument:
+            self._open_instruments.add(instrument)
 
-    def on_trade_closed(self):
+    def on_trade_closed(self, instrument: str = ""):
         self._open_trades_count = max(0, self._open_trades_count - 1)
+        self._open_instruments.discard(instrument)
 
     def reset_daily(self, current_balance: float):
         self.daily_start_balance = current_balance

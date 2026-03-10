@@ -470,8 +470,8 @@ class TradingBot:
 
         # BUG FIX #5 : Vérification RiskManager avant d'ouvrir
         balance_for_risk = self.capital.get_balance() or balance
-        if not self.risk.can_open_trade(balance_for_risk):
-            logger.info(f"⛔ {instrument} bloqué par RiskManager (DD ou MAX_TRADES)")
+        if not self.risk.can_open_trade(balance_for_risk, instrument=instrument):
+            logger.info(f"⛔ {instrument} bloqué par RiskManager (DD, MAX_TRADES ou déjà ouvert)")
             return
 
         # Protection Model : blacklist après 3 SL consécutifs
@@ -560,7 +560,7 @@ class TradingBot:
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
 
         # BUG FIX #5 : Notifie le RiskManager de l'ouverture
-        self.risk.on_trade_opened()
+        self.risk.on_trade_opened(instrument=instrument)
 
         # Persiste immédiatement en BDD (survit aux redémarrages Railway mid-trade)
         try:
@@ -724,7 +724,7 @@ class TradingBot:
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
                 # BUG FIX #5 + #I : Notifie RiskManager, DriftDetector et ProtectionModel
-                self.risk.on_trade_closed()
+                self.risk.on_trade_closed(instrument=instrument)
                 pnl_final = round(pnl_est * 3, 2)
                 self.protection.on_trade_closed(instrument, pnl_final)
                 self.drift.record_trade(

@@ -1,21 +1,17 @@
 """
 config.py — Paramètres globaux du bot de trading.
 """
+from brokers.capital_client import CAPITAL_INSTRUMENTS
 
-# ─── MULTI-ASSET ──────────────────────────────────────────────────────────────
-# Top 5 cryptos uniquement — qualité > quantité
-# Les 12 paires corrélées entre elles = moins bon que 5 paires premium
-SYMBOLS = [
-    "ETH/USDT",    # ✅ WR 61%  DD 11.7% — référence crypto
-    "XRP/USDT",    # ✅ WR 69%  DD  8.1% — MEILLEUR WR de tous
-    "ADA/USDT",    # ✅ WR 41%  DD  5.2% — DD le plus faible
-    "DOGE/USDT",   # ✅ WR 36%  DD 19.5% — 5.4 trades/jour (volume)
-]
+# ─── INSTRUMENTS CAPITAL.COM CFD (DEMO) ───────────────────────────────────────
+# 8 actifs tradés : Forex, Indices, Matières premières
+# Source des données : Capital.com API (fetch_ohlcv)
+SYMBOLS = CAPITAL_INSTRUMENTS   # alias legacy — utiliser CAPITAL_INSTRUMENTS directement
+SYMBOL  = CAPITAL_INSTRUMENTS[0]  # Symbole principal (GOLD)
 
-SYMBOL    = SYMBOLS[0]   # Symbole principal (legacy)
 TIMEFRAME = "5m"         # Bougies 5 minutes — Session scalping (London + NY open)
 HTF       = "1h"         # Higher TimeFrame (confirmation de tendance)
-LIMIT     = 300          # Nombre de bougies à charger (plus avec 5m)
+LIMIT     = 300          # Nombre de bougies à charger par instrument
 
 
 # ─── STRATÉGIE — 6 FILTRES ───────────────────────────────────────────────────
