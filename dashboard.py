@@ -177,15 +177,15 @@ _HTML = r"""<!DOCTYPE html>
   </div>
   {% if s.futures_balance > 0 %}
   <div class="kpi blue">
-    <label>🟣 Futures Demo USDT</label>
+    <label>🟣 Capital.com Demo</label>
     <div class="value neu">{{ '{:,.2f}'.format(s.futures_balance) }}</div>
-    <div class="sub">LONG + SHORT actif</div>
+    <div class="sub">Solde compte démo</div>
   </div>
   {% endif %}
   <div class="kpi {{ 'green' if s.pnl_total >= 0 else 'red' }}">
     <label>📈 PnL Total</label>
-    <div class="value {{ 'pos' if s.pnl_total >= 0 else 'neg' }}">{{ '+' if s.pnl_total >= 0 else '' }}{{ '{:,.2f}'.format(s.pnl_total) }} $</div>
-    <div class="sub">Aujourd'hui : {{ '+' if s.pnl_today >= 0 else '' }}{{ '{:.2f}'.format(s.pnl_today) }} $</div>
+    <div class="value {{ 'pos' if s.pnl_total >= 0 else 'neg' }}">{{ '+' if s.pnl_total >= 0 else '' }}{{ '{:,.2f}'.format(s.pnl_total) }} €</div>
+    <div class="sub">Aujourd'hui : {{ '+' if s.pnl_today >= 0 else '' }}{{ '{:.2f}'.format(s.pnl_today) }} €</div>
   </div>
   <div class="kpi gold">
     <label>🎯 Win Rate</label>
@@ -304,13 +304,13 @@ def health():
 
 @app.route("/ip")
 def get_ip():
-    """Retourne l'IP publique de Railway — à whitelist sur Binance API."""
+    """Retourne l'IP publique de Railway."""
     try:
         import requests as _req
         ip = _req.get("https://ifconfig.me", timeout=5).text.strip()
     except Exception:
         ip = "Impossible de récupérer l'IP"
-    return jsonify({"railway_ip": ip, "whitelist_note": "Ajoute cette IP dans Binance API Management > Trusted IPs"})
+    return jsonify({"railway_ip": ip, "note": "IP du serveur Railway"})
 
 
 # ─── API pour mise à jour depuis le bot ────────────────────────────────────

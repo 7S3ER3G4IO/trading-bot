@@ -100,10 +100,9 @@ class RiskManager:
         """
         #4 Position Sizing Dynamique.
         Taille de la position modulée par la confiance du signal :
-          score 5/8 → 0.5% du capital (entrée prudente)
-          score 6/8 → 1.0% du capital (standard)
-          score 7/8 → 1.5% du capital (confiant)
-          score 8/8 → 2.0% du capital (très confiant)
+          score 1/3 → 0.5% du capital (entrée prudente)
+          score 2/3 → 1.0% du capital (standard)
+          score 3/3 → 1.5% du capital (confiant)
         """
         # Calcul du risk dynamique selon le score
         if signal_score >= max_score:

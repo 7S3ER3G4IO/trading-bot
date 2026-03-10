@@ -142,17 +142,17 @@ def backtest_instrument(sym: str, name: str, days: int, rr: float) -> dict:
     print(f"T={n:3d} | WR={wr:5.1f}% | PnL={pnl_t:+8.0f}$ | Rend={rend:+6.1f}% | DD={maxdd:4.1f}%  {icon} {verdict}")
     return {"name": name, "sym": sym, "n": n, "wr": wr, "pnl": pnl_t, "rend": rend, "dd": maxdd}
 
-# ── Instruments à backtester (via Binance pour les données) ──────────────────
+# ── Instruments Capital.com à backtester ─────────────────────────────────────
 BACKTEST_LIST = [
-    # sym Binance      nom lisible
-    ("XAU/USDT",  "Or (XAU/USDT)"),
-    ("ETH/USDT",  "ETH (proxy EUR/USD)"),
-    ("SOL/USDT",  "SOL (proxy GBP/USD)"),
-    ("XRP/USDT",  "XRP (proxy BCO Oil)"),
-    ("BNB/USDT",  "BNB (proxy JPY)"),
-    ("ADA/USDT",  "ADA (proxy S&P500)"),
-    ("DOGE/USDT", "DOGE (proxy NASDAQ)"),
-    ("LINK/USDT", "LINK (proxy DAX)"),
+    # epic Capital.com   nom lisible
+    ("GOLD",      "Or / Gold"),
+    ("EURUSD",    "EUR/USD"),
+    ("GBPUSD",    "GBP/USD"),
+    ("USDJPY",    "USD/JPY"),
+    ("US500",     "S&P 500"),
+    ("US100",     "NASDAQ 100"),
+    ("DE40",      "DAX 40"),
+    ("OIL_BRENT", "Brent Oil"),
 ]
 
 if __name__ == "__main__":

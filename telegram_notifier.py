@@ -191,8 +191,8 @@ class TelegramNotifier:
             f"🏁 Prix de sortie : <code>{price:,.4f}</code>\n"
             f"📐 Mouvement : +{pips:.4f} ({abs(pips/entry*100):.2f}%)\n"
             f"{SEP}\n"
-            f"💰 PnL net : <b>{pnl_net:+.2f} USDT</b>\n"
-            f"💼 Balance : <b>{balance:,.2f} USDT</b>"
+            f"💰 PnL net : <b>{pnl_net:+.2f} €</b>\n"
+            f"💼 Balance : <b>{balance:,.2f} €</b>"
             f"{be_line}",
             markup=markup or self._wallet_button(),
         )
@@ -211,8 +211,8 @@ class TelegramNotifier:
             f"🏁 Sortie : <code>{price:,.4f}</code>\n"
             f"📐 +{pips:.4f}  ({abs(pips/entry*100):.2f}%)\n"
             f"{SEP}\n"
-            f"{emoji} PnL net : <b>{pnl_net:+.2f} USDT</b>\n"
-            f"💼 Balance : <b>{balance:,.2f} USDT</b>\n"
+            f"{emoji} PnL net : <b>{pnl_net:+.2f} €</b>\n"
+            f"💼 Balance : <b>{balance:,.2f} €</b>\n"
             f"🔥🔥🔥 3/3 TP touchés — trade parfait !",
             markup=self._wallet_button(),
         )
@@ -230,7 +230,7 @@ class TelegramNotifier:
                 f"{SEP}\n"
                 f"Sortie au prix d'entrée.\n"
                 f"<b>Capital 100% protégé</b> 💎\n"
-                f"PnL : ±0 USDT\n"
+                f"PnL : ±0 €\n"
                 f"{SEP}\n"
                 f"🔍 Prochaine opportunité en analyse..."
             )
@@ -244,8 +244,8 @@ class TelegramNotifier:
                 f"🔻 Sortie : <code>{price:,.4f}</code>\n"
                 f"📐 -{pips:.4f}  (-{abs(pips/entry*100):.2f}%)\n"
                 f"{SEP}\n"
-                f"❌ PnL net : <b>{pnl_net:+.2f} USDT</b>\n"
-                f"💼 Balance : <b>{balance:,.2f} USDT</b>\n"
+                f"❌ PnL net : <b>{pnl_net:+.2f} €</b>\n"
+                f"💼 Balance : <b>{balance:,.2f} €</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💡 {nb_trades_to_recover} trade(s) gagnant(s) pour compenser\n"
                 f"🔍 Prochain setup en surveillance..."
@@ -269,8 +269,8 @@ class TelegramNotifier:
             f"({pct_move:.2f}%)\n"
             f"📌 Raison : {reason}\n"
             f"{SEP}\n"
-            f"💰 PnL net : <b>{net:+.2f} USDT</b>\n"
-            f"💼 Balance : <b>{balance:,.2f} USDT</b>"
+            f"💰 PnL net : <b>{net:+.2f} €</b>\n"
+            f"💼 Balance : <b>{balance:,.2f} €</b>"
         )
 
     def notify_trailing_stop_update(self, symbol: str, old_sl: float, new_sl: float):
@@ -303,7 +303,7 @@ class TelegramNotifier:
             f"{lines}"
             f"{SEP}\n"
             f"WR : <b>{wr:.0f}%</b>    {bar} {wins}/{total}\n"
-            f"{trend} PnL net : <b>{total_net:+.2f} USDT</b>",
+            f"{trend} PnL net : <b>{total_net:+.2f} €</b>",
             markup=self._wallet_button(),
         )
 
@@ -349,7 +349,7 @@ class TelegramNotifier:
             f"Limite : {bar} 10%\n"
             f"{SEP}\n"
             f"🛑 Trading suspendu jusqu'à minuit UTC\n"
-            f"💼 Capital protégé : <b>{balance:,.2f} USDT</b>"
+            f"💼 Capital protégé : <b>{balance:,.2f} €</b>"
         )
 
     def notify_error(self, error: str, balance: float = 0.0, count: int = 1):
@@ -388,7 +388,7 @@ class TelegramNotifier:
             f"✅ <b>NEMESIS REDÉMARRÉ</b>\n"
             f"{SEP}\n"
             f"⏰ Heure : <b>{now}</b>\n"
-            f"💰 Balance : <b>{balance:,.2f} USDT</b>\n"
+            f"💰 Balance : <b>{balance:,.2f} €</b>\n"
             f"{SEP}\n"
             f"📡 Surveillance des 8 instruments reprise\n"
             f"🟢 Tous systèmes opérationnels ✅"
@@ -430,7 +430,7 @@ class TelegramNotifier:
             f"📍 Entrée : <code>{entry:.4f}</code>\n"
             f"🏁 Sortie : <code>{close_price:.4f}</code>  ({pct:.1f}%)\n"
             f"{SEP}\n"
-            f"💰 PnL : <b>{pnl:+.2f} USDT</b>",
+            f"💰 PnL : <b>{pnl:+.2f} €</b>",
             markup=self._wallet_button(),
         )
 
@@ -452,14 +452,14 @@ class TelegramNotifier:
         trades_block = ""
         for t in open_trades:
             e = "🟢" if t["pnl"] >= 0 else "🔴"
-            trades_block += f"{e} {t['symbol'].replace('/USDT','')} — {t['pnl']:+.2f}$\n"
+            trades_block += f"{e} {t['symbol'].replace('/USDT','')} — {t['pnl']:+.2f}€\n"
         if not trades_block:
             trades_block = "— Aucun trade ouvert\n"
 
         msg = (
             f"⚡ <b>NEMESIS — WALLET LIVE</b>\n"
             f"{SEP}\n"
-            f"💰 Capital : <b>{balance:,.2f} USDT</b>\n"
+            f"💰 Capital : <b>{balance:,.2f} €</b>\n"
             f"{trend} Jour   : <b>{daily_pnl:+.2f}$</b>  ({pct_day:+.1f}%)\n"
             f"📊 Total  : <b>{total_pnl:+.2f}$</b>  ({pct_all:+.1f}%)\n"
             f"{SEP}\n"

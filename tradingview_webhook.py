@@ -89,7 +89,7 @@ class WebhookServer:
 
         @self._app.route("/health", methods=["GET"])
         def health():
-            return jsonify({"status": "ok", "bot": "Nemesis v1.0"}), 200
+            return jsonify({"status": "ok", "bot": "Nemesis v2.0"}), 200
 
     def start(self):
         """Démarre le serveur en thread daemon."""

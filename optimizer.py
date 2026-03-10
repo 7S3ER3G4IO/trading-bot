@@ -316,7 +316,7 @@ def hyperopt_symbol(symbol: str, days: int, tf: str, n_trials: int = 100, df_pre
 
     e = "🟢" if pnl > 0 else "🔴"
     print(f"  {e} {symbol:<14} "
-          f"score={best_params['required_score']}/6  "
+          f"score={best_params['required_score']}/3  "
           f"ADX≥{best_params['adx_min']}  "
           f"SL×{best_params['atr_sl_multiplier']:.1f}  "
           f"TP×{best_params['tp_multiplier']:.1f}  "
@@ -348,7 +348,7 @@ def print_report(all_params: dict):
         tot += pnl
         e = "🟢" if pnl > 0 else "🔴"
         print(f"  {e} {sym.replace('/USDT',''):<10}  "
-              f"{p.get('required_score',5)}/6  "
+              f"{p.get('required_score',5)}/3  "
               f"{p.get('adx_min',25):<4}  "
               f"{p.get('atr_sl_multiplier',1.0):<4.1f}  "
               f"{p.get('tp_multiplier',2.0):<4.1f}  "

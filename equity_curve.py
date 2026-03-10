@@ -151,7 +151,7 @@ class EquityCurve:
         ax1.set_title(f"⚡ {title} — Courbe d'Équité",
                       color="white", fontsize=12, fontweight="bold")
         ax1.tick_params(colors="#9999bb", labelsize=8)
-        ax1.set_ylabel("Balance (USDT)", color="#9999bb", fontsize=9)
+        ax1.set_ylabel("Balance (€)", color="#9999bb", fontsize=9)
         ax1.legend(facecolor="#2d2d4e", labelcolor="white", fontsize=8)
         for spine in ax1.spines.values():
             spine.set_edgecolor("#2d2d4e")
@@ -178,7 +178,7 @@ class EquityCurve:
                  color="#9999bb", fontfamily="monospace")
 
         fig.text(0.99, 0.01,
-                 f"Nemesis v1.0 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
+                 f"Nemesis v2.0 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
                  ha="right", va="bottom", fontsize=7, color="#666688")
 
         plt.tight_layout(rect=[0, 0.04, 1, 1])
@@ -198,7 +198,7 @@ class EquityCurve:
         return (
             f"📈 <b>EQUITY CURVE</b>\n"
             f"\n"
-            f"💰 Capital actuel : <b>{current:,.2f} USDT</b>\n"
+            f"💰 Capital actuel : <b>{current:,.2f} €</b>\n"
             f"📊 PnL total : <b>{self.total_pnl_pct():+.1f}%</b>\n"
             f"📉 Max Drawdown : <b>{self.max_drawdown():.1f}%</b>\n"
             f"\n"
