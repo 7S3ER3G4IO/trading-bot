@@ -843,7 +843,8 @@ class TradingBot:
         df  = self.strategy.compute_indicators(df)
 
         # ── UPGRADE : Retest Entry (Anti-Fakeout) ────────────────────────────
-        # Vérifier d'abord s'il y a un retest en attente pour cet instrument.
+        # Vérifie s'il y a un retest en attente pour cet instrument.
+        # BYPASS si score >= 2 (signal fort = entrée directe sans attendre retest)
         pending = self._pending_retest.get(instrument)
         if pending:
             try:
@@ -860,9 +861,9 @@ class TradingBot:
                     # Condition retest : prix revenu près du niveau cassé
                     in_retest_zone = abs(mid - p_level) <= tolerance
 
-                    # Annulation : trop longtemps sans retest (>8 ticks = 4 min)
-                    if ticks > 8:
-                        logger.debug(f"⏳ Retest {instrument} expiré ({ticks} ticks) — annulé")
+                    # Annulation : trop longtemps sans retest (> 6 ticks = 3 min)
+                    if ticks > 6:
+                        logger.info(f"⏳ Retest {instrument} expiré ({ticks} ticks) — annulé")
                         self._pending_retest[instrument] = None
                         return
 
@@ -881,7 +882,7 @@ class TradingBot:
                         # Pas encore retesté → attendre
                         logger.debug(
                             f"⏳ Retest {instrument} {p_sig} | prix={mid:.5f} "
-                            f"| niveau={p_level:.5f} | ticks={ticks}/8"
+                            f"| niveau={p_level:.5f} | ticks={ticks}/6"
                         )
                         return
             except Exception as _re:
@@ -894,10 +895,11 @@ class TradingBot:
             if sig == "HOLD":
                 return
 
-            # Stocker le breakout en attente de retest (sauf si momentum extrême)
+            # Stocker le breakout en attente de retest UNIQUEMENT si score < 2
+            # Score ≥ 2 = signal fort → entrée directe sans attendre le retest
             sr_now  = self.strategy.compute_session_range(df)
             atr_now = self.strategy.get_atr(df)
-            if atr_now > 0:
+            if atr_now > 0 and score < 2:
                 retest_level = sr_now["high"] if sig == "BUY" else sr_now["low"]
                 self._pending_retest[instrument] = {
                     "sig":           sig,
@@ -908,11 +910,12 @@ class TradingBot:
                     "ticks_waited":  0,
                 }
                 logger.info(
-                    f"🔔 Breakout {instrument} {sig} | niveau={retest_level:.5f} "
-                    f"| En attente retest (ATR={atr_now:.5f})…"
+                    f"🔔 Breakout {instrument} {sig} score={score} | niveau={retest_level:.5f} "
+                    f"| Attente retest (ATR={atr_now:.5f})…"
                 )
                 return  # ← attendre le retest la prochaine fois
-            # atr=0 : pas de données suffisantes → entrée directe
+            # score >= 2 ou atr=0 : entrée directe sans retest
+            logger.info(f"⚡ Entrée directe {instrument} {sig} score={score} (bypass retest)")
 
 
         # BUG FIX #5 : Vérification RiskManager avant d'ouvrir

@@ -38,17 +38,16 @@ PRE_SESSIONS_UTC = [
     (12 * 60,      13 * 60 + 15), # Pré-NY     : 12h00 → 13h15
 ]
 
-MIN_RANGE_PCT    = 0.08   # Range min = 0.08% du prix (filtre marché calme)
+MIN_RANGE_PCT    = 0.05   # Range min = 0.05% du prix (assoupli de 0.08%)
 MAX_RANGE_PCT    = 2.0    # Range max = 2.0% du prix (filtre spread excessif)
-MIN_SCORE        = 2      # Score minimum sur 3
-ADX_MIN          = 18
+MIN_SCORE        = 1      # Score minimum sur 7 (assoupli : 1 confirmation suffit)
+ADX_MIN          = 15     # ADX assoupli de 18 à 15 (capte plus de tendances)
 ATR_PERIOD       = 14
 REQUIRED_SCORE   = MIN_SCORE  # Alias pour compatibilité
 
 # Jours de trading autorisés (Lundi=0 ... Dimanche=6)
-# Lundi (0) : voléatilité erratique post-weekend
-# Vendredi (4) : fermeture de positions institutionnelles avant weekend
-ALLOWED_WEEKDAYS = {1, 2, 3}  # Mardi, Mercredi, Jeudi uniquement
+# Tous les jours ouvrables : les filtres de session et de range filtrent déjà assez
+ALLOWED_WEEKDAYS = {0, 1, 2, 3, 4}  # Lundi → Vendredi
 
 
 def _bar_session_idx(h: int, m: int) -> int:
@@ -195,11 +194,11 @@ class Strategy:
         range_pct  = sr["pct"]
 
         if range_pct < MIN_RANGE_PCT:
-            logger.debug(f"😴 Range trop petit ({range_pct:.3f}%) — marché calme, skip")
+            logger.info(f"😴 Range trop petit ({range_pct:.3f}%) < {MIN_RANGE_PCT}% — marché calme, skip")
             return SIGNAL_HOLD, 0, []
 
         if range_pct > MAX_RANGE_PCT:
-            logger.debug(f"⚠️  Range trop grand ({range_pct:.3f}%) — spread excessif / news, skip")
+            logger.info(f"⚠️  Range trop grand ({range_pct:.3f}%) — spread excessif / news, skip")
             return SIGNAL_HOLD, 0, []
 
         last_close = float(curr["close"])
@@ -269,7 +268,7 @@ class Strategy:
                 wick_pct   = lower_wick / candle_range
 
             if wick_pct > 0.40:
-                logger.debug(
+                logger.info(
                     f"🕯️  Wick filter {sig} : mèche {wick_pct:.0%} > 40% — fakeout probable, skip"
                 )
                 return SIGNAL_HOLD, 0, []
@@ -313,6 +312,7 @@ class Strategy:
 
 
         if score < req_score:
+            logger.info(f"❌ Score {score}/{req_score} insuffisant sur {symbol} — confirmations: {confirmations}")
             return SIGNAL_HOLD, score, confirmations
 
         rng_info = f"Range {range_pct:.2f}% | {high_r:.5f}–{low_r:.5f}"
