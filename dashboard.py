@@ -54,6 +54,7 @@ _state: dict = {
     "last_update":     "—",
     "paused":          False,
     "symbols":         [],
+    "max_slots":       4,   # MAX_OPEN_TRADES (mis à jour via update_state)
     "filters": {
         "fear_greed":   "—",
         "volatility":   "—",
@@ -209,8 +210,8 @@ _HTML = r"""<!DOCTYPE html>
   </div>
   <div class="kpi {{ 'green' if s.trades|length > 0 else 'blue' }}">
     <label>⚡ Positions ouvertes</label>
-    <div class="value neu">{{ s.trades|length }}/2</div>
-    <div class="sub">Slots disponibles : {{ 2 - s.trades|length }}</div>
+    <div class="value neu">{{ s.trades|length }}/{{ s.max_slots }}</div>
+    <div class="sub">Slots disponibles : {{ s.max_slots - s.trades|length }}</div>
   </div>
 </div>
 
@@ -227,9 +228,9 @@ _HTML = r"""<!DOCTYPE html>
         {% for t in s.trades %}
         <tr>
           <td><strong>{{ t.symbol }}</strong></td>
-          <td><span class="badge-side {{ 'badge-buy' if t.side == 'LONG' else 'badge-sell' }}">{{ t.side }}</span></td>
+          <td><span class="badge-side {{ 'badge-buy' if t.side == 'BUY' else 'badge-sell' }}">{{ t.side }}</span></td>
           <td>{{ '{:.4f}'.format(t.entry) }}</td>
-          <td class="{{ 'pos' if t.pnl >= 0 else 'neg' }}"><strong>{{ '+' if t.pnl >= 0 else '' }}{{ '{:.2f}'.format(t.pnl) }} $</strong></td>
+          <td class="{{ 'pos' if t.pnl >= 0 else 'neg' }}"><strong>{{ '+' if t.pnl >= 0 else '' }}{{ '{:.2f}'.format(t.pnl) }} €</strong></td>
         </tr>
         {% endfor %}
       </table>
@@ -280,7 +281,7 @@ _HTML = r"""<!DOCTYPE html>
         <td><strong>{{ t.symbol }}</strong></td>
         <td><span class="badge-side {{ 'badge-buy' if t.side == 'LONG' else 'badge-sell' }}">{{ t.side }}</span></td>
         <td style="color:var(--{{ 'green' if t.result in ['TP1','TP2','TP3'] else 'red' }})">{{ t.result }}</td>
-        <td class="{{ 'pos' if t.pnl >= 0 else 'neg' }}"><strong>{{ '+' if t.pnl >= 0 else '' }}{{ '{:.2f}'.format(t.pnl) }} $</strong></td>
+        <td class="{{ 'pos' if t.pnl >= 0 else 'neg' }}"><strong>{{ '+' if t.pnl >= 0 else '' }}{{ '{:.2f}'.format(t.pnl) }} €</strong></td>
       </tr>
       {% endfor %}
     </table>

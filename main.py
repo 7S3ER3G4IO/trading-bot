@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta, date
 from loguru import logger
 
 from logger import setup_logger
-from config import LOOP_INTERVAL_SECONDS, DAILY_REPORT_HOUR_UTC, SESSION_HOURS
+from config import LOOP_INTERVAL_SECONDS, DAILY_REPORT_HOUR_UTC, SESSION_HOURS, MAX_OPEN_TRADES
 from strategy import Strategy, SIGNAL_BUY, SIGNAL_SELL, SIGNAL_HOLD
 from risk_manager import RiskManager
 from telegram_notifier import TelegramNotifier
@@ -332,7 +332,27 @@ class TradingBot:
                 trades=open_trades, wr_overall=round(wr, 1),
                 n_total=total, symbols=list(CAPITAL_INSTRUMENTS),
                 paused=self._manual_pause, futures_balance=0.0,
+                max_slots=MAX_OPEN_TRADES,
             )
+            # ── Filtres dashboard (valeurs réelles) ────────────────────────
+            try:
+                fg = self.context._fg_value
+                fg_label = self.context._fg_label
+                dash_filter("fear_greed",
+                    f"{fg}/100 ({fg_label})" if fg is not None else "—")
+            except Exception:
+                pass
+            try:
+                drift_res = self.drift.check_drift()
+                drift_str = "🟢 Stable" if not drift_res.get("drift") else "🔴 Dérivé"
+                dash_filter("drift", drift_str)
+            except Exception:
+                pass
+            try:
+                news_pause, news_reason = self.calendar.should_pause_trading()
+                dash_filter("news", "⏸️ Pause" if news_pause else "🟢 OK")
+            except Exception:
+                pass
             if balance > 0:
                 logger.debug(
                     f"💰 Balance : {balance:,.2f}€ | PnL total : {pnl_total_real:+.2f}€"
