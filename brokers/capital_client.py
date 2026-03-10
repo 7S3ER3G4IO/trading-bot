@@ -36,9 +36,12 @@ CAPITAL_EMAIL    = os.getenv("CAPITAL_EMAIL",    "")
 CAPITAL_PASSWORD = os.getenv("CAPITAL_PASSWORD", "")
 CAPITAL_DEMO     = os.getenv("CAPITAL_DEMO", "true").lower() == "true"
 
-# Double URL : demo + live — Railway peut ne pas résoudre le hostname demo
-DEMO_URL = "https://demo-api-capital.backend.capital.com/api/v1"
-LIVE_URL = "https://api-capital.backend.capital.com/api/v1"
+# URLs officielles Capital.com (vérifiées DNS — Cloudflare CDN)
+# LIVE et DEMO utilisent le même endpoint REST, le compte détermine le type
+DEMO_URL = "https://demo-api-capital.backend.capital.com/api/v1"  # fallback
+LIVE_URL = "https://api-capital.backend.capital.com/api/v1"       # fallback
+# URL officielle documentation Capital.com Open API
+OPEN_URL  = "https://open-api.capital.com/api/v1"
 BASE_URL  = DEMO_URL if CAPITAL_DEMO else LIVE_URL
 
 # Résolution timeframe → format Capital.com
@@ -106,13 +109,17 @@ class CapitalClient:
 
     def _authenticate(self) -> bool:
         """
-        Crée une session Capital.com et récupère les tokens CST + X-SECURITY-TOKEN.
-        Si le DNS du compte DEMO échoue (Railway), bascule automatiquement sur l'URL LIVE.
+        Auth Capital.com. Essaie dans l'ordre :
+        1. URL DEMO/LIVE selon CAPITAL_DEMO
+        2. URL fallback opposée (LIVE si DEMO, DEMO si LIVE)
+        3. URL officielle open-api.capital.com (toujours résoluble via Cloudflare)
         """
-        urls_to_try = [BASE_URL]
-        # Si mode DEMO, tente aussi le LIVE comme fallback (même compte peut fonctionner)
-        if CAPITAL_DEMO and LIVE_URL not in urls_to_try:
-            urls_to_try.append(LIVE_URL)
+        urls_to_try: list = [BASE_URL]
+        fallback = LIVE_URL if CAPITAL_DEMO else DEMO_URL
+        if fallback not in urls_to_try:
+            urls_to_try.append(fallback)
+        if OPEN_URL not in urls_to_try:
+            urls_to_try.append(OPEN_URL)  # Toujours résoluble (Cloudflare CDN)
 
         for url in urls_to_try:
             try:
@@ -125,17 +132,19 @@ class CapitalClient:
                 r.raise_for_status()
                 self._cst   = r.headers.get("CST")
                 self._token = r.headers.get("X-SECURITY-TOKEN")
-                self._auth_ts = time.time()
-                self._base_url = url  # mémorise l'URL qui fonctionne
+                self._auth_ts  = time.time()
+                self._base_url = url
                 env = "DEMO" if CAPITAL_DEMO else "LIVE"
-                fallback = " (fallback LIVE)" if url == LIVE_URL and CAPITAL_DEMO else ""
-                logger.info(f"🏦 Capital.com connecté ({env}){fallback} ✅")
+                tag = " (open-api fallback)" if url == OPEN_URL else (
+                      " (fallback opposé)" if url != BASE_URL else ""
+                )
+                logger.info(f"🏦 Capital.com connecté ({env}){tag} ✅ — {url}")
                 return bool(self._cst and self._token)
             except Exception as e:
                 logger.warning(f"⚠️  Capital.com auth échoué sur {url}: {type(e).__name__}: {e}")
                 continue
 
-        logger.error("❌ Capital.com : toutes les URLs ont échoué (DEMO + LIVE)")
+        logger.error("❌ Capital.com : toutes les URLs ont échoué (DEMO + LIVE + open-api)")
         return False
 
     def _headers(self) -> dict:
