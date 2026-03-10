@@ -271,7 +271,23 @@ class TradingBot:
             self._last_reset_day = today
             self._capital_closed_today.clear()
             self._dd_paused = False
+            self.reporter.reset_for_new_day()  # remet rapport à zéro
             logger.info("🔄 Reset quotidien — stats journalières effacées")
+
+        # ── Vérification drawdown journalier ─────────────────────────────
+        if not self._dd_paused and self.capital.available:
+            cur_bal = self.capital.get_balance()
+            if cur_bal > 0 and self.initial_balance > 0:
+                dd_pct = (self.initial_balance - cur_bal) / self.initial_balance * 100
+                if dd_pct >= self.DAILY_DD_LIMIT:
+                    self._dd_paused = True
+                    self.telegram.send_message(
+                        f"🚨 <b>DRAWDOWN JOURNALIER ATTEINT</b>\n"
+                        f"Balance : <code>{cur_bal:,.2f}€</code>\n"
+                        f"DD : <b>{dd_pct:.1f}%</b> (limite : {self.DAILY_DD_LIMIT:.1f}%)\n"
+                        f"⏸️ Trading suspendu jusqu'à demain."
+                    )
+                    logger.warning(f"🚨 DD journalier {dd_pct:.1f}% — trading suspendu")
 
         # ── Morning Brief (07h00 UTC) ─────────────────────────────────────────
         if self.context.should_send_brief():
@@ -491,6 +507,13 @@ class TradingBot:
                      confirmations=list(confirmations), df=df.copy())  # .copy() évite race condition
         threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
 
+        # ── Dashboard : enregistre l'ouverture ─────────────────────────────
+        try:
+            dash_open(symbol=CAPITAL_NAMES.get(instrument, instrument),
+                      side=direction, entry=entry, qty=size1)
+        except Exception:
+            pass
+
     def _on_ws_be_triggered(self, instrument: str, entry_or_sl: float, event: str = "TP1"):
         """
         Callback WebSocket — appelé en < 500ms quand TP1 ou TP2 est franchi.
@@ -604,6 +627,21 @@ class TradingBot:
                 # Persiste la fermeture en BDD
                 try:
                     self.db.close_capital_trade(instrument)
+                except Exception:
+                    pass
+                # Dashboard : enregistre la fermeture + PnL
+                try:
+                    dash_close(symbol=CAPITAL_NAMES.get(instrument, instrument),
+                               pnl=round(pnl_est * 3, 2), result=result,
+                               side=state["direction"])
+                    self.reporter.record_trade(
+                        symbol=CAPITAL_NAMES.get(instrument, instrument),
+                        side=state["direction"],
+                        result=result,
+                        pnl_gross=round(pnl_est * 3, 2),
+                        entry=state["entry"],
+                        exit_price=close_px,
+                    )
                 except Exception:
                     pass
                 self.capital_ws.unwatch(instrument)
