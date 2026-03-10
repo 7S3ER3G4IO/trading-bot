@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta, date
 from loguru import logger
 
 from logger import setup_logger
-from config import LOOP_INTERVAL_SECONDS, DAILY_REPORT_HOUR_UTC
+from config import LOOP_INTERVAL_SECONDS, DAILY_REPORT_HOUR_UTC, SESSION_HOURS
 from strategy import Strategy, SIGNAL_BUY, SIGNAL_SELL, SIGNAL_HOLD
 from risk_manager import RiskManager
 from telegram_notifier import TelegramNotifier
