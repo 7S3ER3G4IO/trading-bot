@@ -197,6 +197,11 @@ class TradingBot:
         self._last_morning_day     = None
         self._last_session_push    = ""    # "London" ou "NY" pour éviter double envoi
         self._last_heartbeat_push  = datetime.now(timezone.utc)  # heartbeat toutes les 30min
+        # ── Sprint 4 — Auto-optimisation & Backup ──────────────────────
+        self._last_backup_time    = datetime.now(timezone.utc)   # backup Supabase
+        self._drift_size_reduced  = False   # flag réduction taille post-drift
+        self._drift_reduced_until: Optional[datetime] = None
+
 
         # ── Drift Detector + Protection + MTF + Equity + HMM Regime ────────────
         self.drift      = DriftDetector()
@@ -470,7 +475,80 @@ class TradingBot:
                             f"Seuil 10% atteint. Pause trading 48h. Reprise demain."
                         )
 
+        # \u2500\u2500 SPRINT 4 : Backup Supabase automatique (toutes les 5 min) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Survie au crash/redémarrage Railway sans perdre l'état des positions.
+        elapsed_backup = (now - self._last_backup_time).total_seconds()
+        if elapsed_backup >= 300:  # 5 minutes
+            self._last_backup_time = now
+            try:
+                for inst, state in self.capital_trades.items():
+                    if state is not None:
+                        self.db.save_capital_trade(inst, state)
+                logger.debug("💾 Backup Supabase — états positions sauvegardés")
+            except Exception as _bk_e:
+                logger.debug(f"Backup Supabase: {_bk_e}")
+
+        # \u2500\u2500 SPRINT 4 : Drift Auto-Size Reduction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # Si concept drift détecté → réduire automatiquement de 50% pendant 48h
+        # (au lieu de juste alerter comme avant)
+        try:
+            drift_result = self.drift.check_drift()
+            if drift_result.get("drift") and not self._drift_size_reduced:
+                self._drift_size_reduced  = True
+                self._drift_reduced_until = now + timedelta(hours=48)
+                logger.warning("🔴 Drift détecté → taille réduite de 50% pour 48h")
+                self.telegram.send_message(
+                    "🔴 <b>Concept Drift détecté</b>\n"
+                    "La stratégie dérive par rapport au backtest.\n"
+                    "Taille des positions réduite de <b>50%</b> pour 48h.\n"
+                    "Optimisation auto planifiée dimanche prochain."
+                )
+            elif self._drift_reduced_until and now > self._drift_reduced_until:
+                # Fin de la période de réduction
+                self._drift_size_reduced  = False
+                self._drift_reduced_until = None
+                logger.info("🟢 Période drift terminée — taille normale restaurée")
+        except Exception:
+            pass
+
+        # \u2500\u2500 SPRINT 4 : Auto-Optimisation Hebdomadaire (Dimanche 2h UTC) \u2500\u2500\u2500\u2500\u2500
+        # Lance optimizer.py (Optuna) chaque dimanche matin à 2h UTC.
+        # Evite de relancer si déjà lancé cette semaine (clé = isoweek).
+        if (now.weekday() == 6 and now.hour == 2 and now.minute < 5):
+            cur_week = now.isocalendar()[1]
+            if self._last_hyperopt_week != cur_week:
+                self._last_hyperopt_week = cur_week
+                logger.info(f"⚙️  Auto-Optimisation hebdo S{cur_week} — lancement...")
+                self.telegram.send_message(
+                    f"⚙️ <b>Auto-Optimisation S{cur_week}</b>\n"
+                    f"Optuna en cours (30 trials × {len(CAPITAL_INSTRUMENTS)} instruments)...\n"
+                    f"Résultats dans ~10 minutes."
+                )
+                import threading, subprocess, sys
+                def _run_optimizer():
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, "optimizer.py",
+                             "--trials", "30", "--days", "30"],
+                            cwd=os.path.dirname(os.path.abspath(__file__)),
+                            capture_output=True, text=True, timeout=600
+                        )
+                        if result.returncode == 0:
+                            logger.info("✅ Auto-Optimisation terminée")
+                            self.telegram.send_message(
+                                "✅ <b>Auto-Optimisation terminée</b>\n"
+                                "Nouveaux paramètres appliqués au prochain tick."
+                            )
+                        else:
+                            logger.warning(f"⚠️ Optimizer exit {result.returncode}: {result.stderr[:200]}")
+                    except subprocess.TimeoutExpired:
+                        logger.warning("⏱️ Optimizer timeout (>10min)")
+                    except Exception as _opt_e:
+                        logger.error(f"❌ Optimizer: {_opt_e}")
+                threading.Thread(target=_run_optimizer, daemon=True).start()
+
         # ── Auto-push Telegram : ouverture de session ─────────────────────────
+
         h_utc = now.hour
         # Détecte début de session London (8h UTC) et NY (13h UTC)
         current_session = ""
@@ -838,6 +916,12 @@ class TradingBot:
         )
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
         size1 = max(min_sz, round(total_size / 3, 2))
+
+        # Sprint 4 : Drift size reduction (50% si drift actif)
+        if self._drift_size_reduced and self._drift_reduced_until and datetime.now(timezone.utc) < self._drift_reduced_until:
+            size1 = max(min_sz, round(size1 * 0.5, 2))
+            logger.debug(f"🔴 Drift reduction active — taille réduite à {size1}")
+
 
         # ── UPGRADE : Session Overlap Boost (13h-17h UTC = volume max) ─────────
         # Le London-NY Overlap est la fenêtre de liquidité maximale de la journée.
