@@ -264,11 +264,25 @@ class TradingBot:
         except Exception:
             pass
 
-        # Morning Brief
+        # ── Morning Brief (07h00 UTC) ─────────────────────────────────────────
         if self.context.should_send_brief():
             balance = self.capital.get_balance() if self.capital.available else 0.0
+            _, reason = self.calendar.should_pause_trading()
+            brief = self.context.build_morning_brief(balance, reason or None)
+            self.telegram.notify_morning_brief(brief)
+            self.context.mark_brief_sent()
 
-        return True
+        # ── Fear & Greed refresh (1×/heure) ──────────────────────────────
+        self.context.refresh_fear_greed()
+
+        # ── Wallet stats (toutes les 30 min) ─────────────────────────────
+        wallet_interval = timedelta(minutes=30)
+        if now - self._last_wallet_post >= wallet_interval:
+            balance_w = self.capital.get_balance() if self.capital.available else 0.0
+            if balance_w > 0:
+                self._post_wallet_stats(balance_w)
+            self._last_wallet_post = now
+
 
     def _run_auto_hyperopt(self):
         """
@@ -542,10 +556,111 @@ class TradingBot:
                     pass
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
+    # ─── Wallet stats ────────────────────────────────────────────────────────
 
+    def _post_wallet_stats(self, balance: float):
+        """Envoie les stats portefeuille Capital.com via tgc.send_daily_dashboard."""
+        try:
+            closed_today = self._capital_closed_today
+            # Win rate par instrument
+            wr_by_instr: dict = {}
+            for t in closed_today:
+                instr = t.get("instrument", "?")
+                name  = CAPITAL_NAMES.get(instr, instr)
+                wins_i  = sum(1 for x in closed_today if x.get("instrument") == instr and x.get("pnl", 0) > 0)
+                total_i = sum(1 for x in closed_today if x.get("instrument") == instr)
+                wr_by_instr[name] = (wins_i / total_i * 100) if total_i > 0 else 0.0
 
+            tgc.send_daily_dashboard(
+                balance=balance,
+                initial_balance=self.initial_balance,
+                day_trades=closed_today,
+                win_rate_instrument=wr_by_instr,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️  _post_wallet_stats : {e}")
 
+    # ─── Callbacks Telegram ──────────────────────────────────────────────────
 
+    def _force_close(self, instrument: str) -> str:
+        """Ferme de force une position Capital.com via commande Telegram."""
+        state = self.capital_trades.get(instrument)
+        if state is None:
+            return f"⚠️ Aucune position ouverte sur {instrument}"
+        try:
+            refs = state.get("refs", [])
+            closed = 0
+            for ref in refs:
+                if ref:
+                    ok = self.capital.close_position(ref)
+                    if ok:
+                        closed += 1
+            self.capital_trades[instrument] = None
+            self.capital_ws.unwatch(instrument)
+            name = CAPITAL_NAMES.get(instrument, instrument)
+            return f"✅ {name} fermé ({closed} positions)"
+        except Exception as e:
+            return f"❌ Erreur fermeture {instrument} : {e}"
+
+    def _force_be(self, instrument: str) -> str:
+        """Active manuellement le Break-Even sur une position Capital.com."""
+        state = self.capital_trades.get(instrument)
+        if state is None:
+            return f"⚠️ Aucune position ouverte sur {instrument}"
+        entry = state.get("entry", 0)
+        refs  = state.get("refs", [])
+        ok_count = 0
+        for ref in refs[1:]:   # TP2 + TP3
+            if ref:
+                try:
+                    if self.capital.modify_position_stop(ref, entry):
+                        ok_count += 1
+                except Exception:
+                    pass
+        name = CAPITAL_NAMES.get(instrument, instrument)
+        return f"✅ BE activé sur {name} ({ok_count} positions)" if ok_count else f"❌ BE échec {name}"
+
+    def _do_pause(self) -> str:
+        """Met le bot en pause manuelle."""
+        self._manual_pause = True
+        return "⏸️ Bot mis en pause."
+
+    def _do_resume(self) -> str:
+        """Reprend le trading après pause manuelle."""
+        self._manual_pause = False
+        return "▶️ Trading repris."
+
+    def _do_brief(self) -> str:
+        """Envoie la matinale à la demande."""
+        try:
+            import threading
+            balance = self.capital.get_balance() if self.capital.available else 0.0
+            _, reason = self.calendar.should_pause_trading()
+            brief = self.context.build_morning_brief(balance, reason or None)
+            self.telegram.notify_morning_brief(brief)
+            return "☀️ Matinale envoyée."
+        except Exception as e:
+            return f"❌ Matinale : {e}"
+
+    def _do_backtest(self) -> str:
+        """Lance un backtest rapide en arrière-plan."""
+        try:
+            import threading, subprocess, sys
+            def _run():
+                result = subprocess.run(
+                    [sys.executable, "backtester_oanda.py", "--quick"],
+                    capture_output=True, text=True, timeout=120
+                )
+                if result.returncode == 0:
+                    self.telegram.send_message("✅ <b>Backtest terminé</b>\n" + result.stdout[-1000:])
+                else:
+                    self.telegram.send_message(f"❌ Backtest erreur:\n{result.stderr[:500]}")
+            threading.Thread(target=_run, daemon=True).start()
+            return "⏳ Backtest lancé..."
+        except Exception as e:
+            return f"❌ Backtest : {e}"
+
+    # ──────────────────────────────────────────────────────────────────────────
 
     def _status_text(self) -> str:
         balance = self.capital.get_balance() if self.capital.available else 0.0
