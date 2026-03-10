@@ -164,6 +164,15 @@ class TradingBot:
         self._daily_start_balance = self.initial_balance
         self._dd_paused           = False
         self.DAILY_DD_LIMIT       = float(os.getenv("DAILY_DD_LIMIT", "3.0"))
+        # ── Drawdown Mensuel (circuit breaker long terme) ─────────────────────
+        self._monthly_start_balance = self.initial_balance
+        self._monthly_dd_paused     = False
+        self._last_reset_month      = datetime.now(timezone.utc).month
+        # ── Historique equity pour Chart.js ───────────────────────────────
+        self._equity_history: list  = [
+            {"t": datetime.now(timezone.utc).strftime("%H:%M"), "v": self.initial_balance}
+        ]
+        self._bot_start_time        = datetime.now(timezone.utc)
 
         # ─── État Capital.com ─────────────────────────────────────────────
         self.capital_trades: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
@@ -342,6 +351,23 @@ class TradingBot:
             total = len(self._capital_closed_today)
             wr    = (wins / total * 100) if total > 0 else 0.0
             pnl_total_real = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
+            # \u2500\u2500 Snapshot \u00e9quit\u00e9 pour Chart.js (max 200 points) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            if balance > 0:
+                self._equity_history.append({
+                    "t": now.strftime("%H:%M"),
+                    "v": round(balance, 2),
+                })
+                if len(self._equity_history) > 200:
+                    self._equity_history = self._equity_history[-200:]
+
+            # Calcul DD mensuel pour affichage
+            monthly_dd_pct = 0.0
+            if self._monthly_start_balance > 0 and balance > 0:
+                monthly_dd_pct = round(
+                    (self._monthly_start_balance - balance) / self._monthly_start_balance * 100, 2
+                )
+
+            uptime_h = round((datetime.now(timezone.utc) - self._bot_start_time).total_seconds() / 3600, 1)
             dash_update(
                 balance=balance, initial=self.initial_balance,
                 pnl_total=pnl_total_real,
@@ -350,7 +376,11 @@ class TradingBot:
                 n_total=total, symbols=list(CAPITAL_INSTRUMENTS),
                 paused=self._manual_pause, futures_balance=0.0,
                 max_slots=MAX_OPEN_TRADES,
+                equity_history=list(self._equity_history),
+                monthly_dd_pct=monthly_dd_pct,
+                uptime_h=uptime_h,
             )
+
             # ── Filtres dashboard (valeurs réelles) ────────────────────────
             try:
                 fg = self.context._fg_value
@@ -406,6 +436,34 @@ class TradingBot:
                 self._daily_start_balance = self.capital.get_balance() or self._daily_start_balance
             logger.info("🔄 Reset quotidien — stats journalières effacées")
             self._last_session_push = ""    # reset push session pour le nouveau jour
+
+            # ── Reset mensuel & Drawdown Mensuel ─────────────────────────────
+            cur_month = now.month
+            if cur_month != self._last_reset_month:
+                self._last_reset_month      = cur_month
+                self._monthly_dd_paused     = False
+                self._monthly_start_balance = self.capital.get_balance() or self._monthly_start_balance
+                logger.info("📅 Reset mensuel — drawdown mensuel remis à zéro")
+            else:
+                # Vérification DD mensuel (toujours dans le même mois)
+                if self._monthly_start_balance > 0 and not self._monthly_dd_paused:
+                    bal_now = self.capital.get_balance() or 0
+                    monthly_dd_pct = (self._monthly_start_balance - bal_now) / self._monthly_start_balance * 100
+                    if monthly_dd_pct >= 15:
+                        self._monthly_dd_paused = True
+                        self._dd_paused = True
+                        logger.critical(f"🚨 DD MENSUEL CRITIQUE {monthly_dd_pct:.1f}% ≥ 15% — pause totale")
+                        self.telegram.send_message(
+                            f"🚨 <b>DD MENSUEL CRITIQUE — {monthly_dd_pct:.1f}%</b>\n"
+                            f"Seuil 15% atteint. Bot en pause jusqu'au 1er du mois."
+                        )
+                    elif monthly_dd_pct >= 10:
+                        self._dd_paused = True
+                        logger.warning(f"⚠️ DD mensuel {monthly_dd_pct:.1f}% ≥ 10% — pause 48h")
+                        self.telegram.send_message(
+                            f"⚠️ <b>DD Mensuel — {monthly_dd_pct:.1f}%</b>\n"
+                            f"Seuil 10% atteint. Pause trading 48h. Reprise demain."
+                        )
 
         # ── Auto-push Telegram : ouverture de session ─────────────────────────
         h_utc = now.hour

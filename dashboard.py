@@ -64,6 +64,10 @@ _state: dict = {
     },
     "sharpe":          0.0,
     "max_dd":          0.0,
+    # Sprint 2 — Equity Chart + Monthly DD
+    "equity_history":  [],
+    "monthly_dd_pct":  0.0,
+    "uptime_h":        0.0,
 }
 
 _HTML = r"""<!DOCTYPE html>
@@ -215,6 +219,21 @@ _HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<!-- ── Equity Curve Chart.js ── -->
+<div class="section" style="margin-bottom:24px">
+  <h2>📈 Equity Curve</h2>
+  <div class="card" style="padding:12px 16px">
+    <div style="display:flex;gap:20px;margin-bottom:10px;font-size:.8rem;color:var(--muted)">
+      <span>DD Mensuel : <b style="color:{% if s.monthly_dd_pct|default(0) > 10 %}var(--red){% else %}var(--green){% endif %}">
+        {{ "%.1f"|format(s.monthly_dd_pct|default(0)) }}%
+      </b></span>
+      <span>Uptime : <b>{{ s.uptime_h|default(0) }}h</b></span>
+      <span>Capital initial : <b>{{ "%.2f"|format(s.initial) }}€</b></span>
+    </div>
+    <canvas id="equityChart" height="110"></canvas>
+  </div>
+</div>
+
 <!-- Trades ouverts + Filtres -->
 <div class="two-col">
 
@@ -222,6 +241,7 @@ _HTML = r"""<!DOCTYPE html>
   <div class="section">
     <h2>Positions ouvertes</h2>
     <div class="card">
+
       {% if s.trades %}
       <table>
         <tr><th>Actif</th><th>Sens</th><th>Entrée</th><th>PnL</th></tr>
@@ -295,9 +315,97 @@ _HTML = r"""<!DOCTYPE html>
   Nemesis v2.0 · Audit 2026 · Refresh automatique 15s
 </div>
 
-<script>setTimeout(()=>location.reload(), 15000);</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// ── Equity Curve Chart.js ───────────────────────────────────────────────
+let _eqChart = null;
+
+function computeMA(data, period) {
+  return data.map((v, i) => {
+    if (i < period - 1) return null;
+    const slice = data.slice(i - period + 1, i + 1);
+    return slice.reduce((a, b) => a + b, 0) / period;
+  });
+}
+
+function initChart(labels, values) {
+  const ctx = document.getElementById('equityChart');
+  if (!ctx) return;
+  const ma20 = computeMA(values, 20);
+  const grad = ctx.getContext('2d').createLinearGradient(0, 0, 0, 130);
+  grad.addColorStop(0, 'rgba(79,158,255,0.3)');
+  grad.addColorStop(1, 'rgba(79,158,255,0.0)');
+
+  _eqChart = new Chart(ctx.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Balance',
+          data: values,
+          borderColor: '#4f9eff',
+          backgroundColor: grad,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+        },
+        {
+          label: 'MA20',
+          data: ma20,
+          borderColor: '#7c5cfc',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false }},
+      scales: {
+        x: { ticks: { color: '#5a6a8a', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: '#1e2a45' } },
+        y: { ticks: { color: '#5a6a8a', font: { size: 10 },
+                      callback: v => v.toLocaleString('fr-FR', {minimumFractionDigits:0}) + '€' },
+             grid: { color: '#1e2a45' } }
+      }
+    }
+  });
+}
+
+async function refreshDash() {
+  try {
+    const r = await fetch('/api/state');
+    const d = await r.json();
+    const hist = d.equity_history || [];
+    if (hist.length < 2) return;
+    const labels = hist.map(p => p.t);
+    const values = hist.map(p => p.v);
+    if (!_eqChart) {
+      initChart(labels, values);
+    } else {
+      const ma20 = computeMA(values, 20);
+      _eqChart.data.labels = labels;
+      _eqChart.data.datasets[0].data = values;
+      _eqChart.data.datasets[1].data = ma20;
+      _eqChart.update('none');
+    }
+  } catch(e) { console.warn('Equity chart refresh:', e); }
+}
+
+// Init immédiat + refresh toutes les 30s (sans reload page)
+document.addEventListener('DOMContentLoaded', () => { refreshDash(); setInterval(refreshDash, 30000); });
+// Reload complet toutes les 5min pour rafraîchir tous les KPIs
+setTimeout(() => location.reload(), 300000);
+</script>
 </body>
 </html>"""
+
 
 
 @app.route("/")
@@ -315,7 +423,18 @@ def api_state():
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "bot": "Nemesis v2.0", "balance": _state["balance"]})
+    with _state_lock:
+        s = dict(_state)
+    uptime = s.get("uptime_h", 0)
+    return jsonify({
+        "ok":           True,
+        "bot":          "Nemesis v2.0",
+        "balance":      s["balance"],
+        "monthly_dd":   s.get("monthly_dd_pct", 0),
+        "uptime_h":     uptime,
+        "paused":       s["paused"],
+        "last_update":  s["last_update"],
+    })
 
 
 @app.route("/ip")
