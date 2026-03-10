@@ -69,6 +69,23 @@ except ImportError:
         def format_status(self): return ""
 
 try:
+    from mtf_filter import MTFFilter
+except ImportError:
+    class MTFFilter:  # stub: laisse passer tous les signaux
+        def __init__(self, *a, **kw): pass
+        def validate_signal(self, symbol, signal): return True
+
+try:
+    from equity_curve import EquityCurve
+except ImportError:
+    class EquityCurve:  # stub silencieux
+        def __init__(self, *a, **kw): pass
+        def record(self, balance): pass
+        def is_below_ma(self, *a): return False
+        def format_report(self): return ""
+        def generate_chart(self, *a): return b""
+
+try:
     from tradingview_webhook import get_webhook_server
     _WEBHOOK_OK = bool(os.getenv("WEBHOOK_SECRET"))
 except ImportError:
@@ -151,6 +168,8 @@ class TradingBot:
         # ─── Drift Detector (BUG FIX #I) ─────────────────────────────────
         self.drift      = DriftDetector()
         self.protection = ProtectionModel()  # Blacklist auto après 3 SL consécutifs
+        self.mtf        = MTFFilter(capital_client=self.capital)  # Filtre 1h/4h
+        self.equity     = EquityCurve(initial_balance=balance or 10_000.0)
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
@@ -287,6 +306,13 @@ class TradingBot:
             )
         except Exception:
             pass
+
+        # ── EquityCurve : enregistrement + circuit breaker ────────────────────
+        if balance > 0:
+            self.equity.record(balance)
+            if self.equity.is_below_ma(ma_period=20) and not self._dd_paused:
+                logger.warning("⏸️  EquityCurve sous MA20 — circuit breaker déclenché")
+                self._dd_paused = True
 
         # ── Reset quotidien (minuit UTC) ─────────────────────────────────────
         if today != self._last_reset_day:
@@ -450,6 +476,10 @@ class TradingBot:
 
         # Protection Model : blacklist après 3 SL consécutifs
         if self.protection.is_blocked(instrument):
+            return
+
+        # MTFFilter : confluence 1h + 4h avant d'entrer
+        if not self.mtf.validate_signal(instrument, sig):
             return
 
         entry    = float(df.iloc[-1]["close"])

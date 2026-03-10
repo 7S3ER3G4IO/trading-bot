@@ -1,5 +1,5 @@
 """
-mtf_filter.py — Multi-Timeframe Confluence Filter (#1)
+mtf_filter.py — Multi-Timeframe Confluence Filter
 
 Confirme la direction d'un signal 5m en vérifiant l'alignement
 des tendances sur 1h et 4h avant d'entrer.
@@ -24,30 +24,30 @@ CACHE_TTL = 300   # 5 minutes
 
 class MTFFilter:
 
-    def __init__(self, exchange=None):
-        self._exchange = exchange
+    def __init__(self, capital_client=None):
+        self._client = capital_client
         self._cache: dict = {}
         self._cache_ts: dict = {}
 
-    def _get_exchange(self):
-        if self._exchange:
-            return self._exchange
-        from backtester import get_exchange
-        return get_exchange()
+    def _get_client(self):
+        if self._client:
+            return self._client
+        from brokers.capital_client import CapitalClient
+        self._client = CapitalClient()
+        return self._client
 
     def _fetch_tf(self, symbol: str, timeframe: str, limit: int = 50) -> pd.DataFrame:
-        """Fetch recent candles for a given timeframe."""
+        """Fetch recent candles from Capital.com for a given timeframe."""
         key = f"{symbol}_{timeframe}"
         now = time.time()
         if key in self._cache and (now - self._cache_ts.get(key, 0)) < CACHE_TTL:
             return self._cache[key]
 
         try:
-            exc   = self._get_exchange()
-            bars  = exc.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-            df    = pd.DataFrame(bars, columns=["timestamp","open","high","low","close","volume"])
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-            df.set_index("timestamp", inplace=True)
+            client = self._get_client()
+            df = client.fetch_ohlcv(symbol, timeframe=timeframe, count=limit)
+            if df is None or df.empty:
+                return pd.DataFrame()
 
             # Compute EMAs
             df["ema9"]  = ta.trend.EMAIndicator(df["close"], window=9).ema_indicator()
@@ -66,7 +66,7 @@ class MTFFilter:
         """Returns BULL / BEAR / NEUTRAL for a given DataFrame."""
         if df.empty or len(df) < 3:
             return "NEUTRAL"
-        last = df.iloc[-1]
+        last  = df.iloc[-1]
         ema9  = last.get("ema9",  0)
         ema21 = last.get("ema21", 0)
         close = last.get("close", 0)
@@ -93,22 +93,20 @@ class MTFFilter:
         bias_1h = self._tf_bias(self._fetch_tf(symbol, "1h", 60))
         bias_4h = self._tf_bias(self._fetch_tf(symbol, "4h", 60))
 
-        ticker = symbol.replace("/USDT", "")
-
         if signal == "BUY":
             ok = (bias_1h in ("BULL", "NEUTRAL")) and (bias_4h in ("BULL", "NEUTRAL"))
             if bias_1h == "BULL" and bias_4h == "BULL":
-                logger.info(f"✅ MTF {ticker} BUY confirmé | 1h={bias_1h} 4h={bias_4h}")
+                logger.info(f"✅ MTF {symbol} BUY confirmé | 1h={bias_1h} 4h={bias_4h}")
             elif not ok:
-                logger.warning(f"❌ MTF {ticker} BUY rejeté | 1h={bias_1h} 4h={bias_4h} (bearish HTF)")
+                logger.warning(f"❌ MTF {symbol} BUY rejeté | 1h={bias_1h} 4h={bias_4h} (bearish HTF)")
             return ok
 
         else:  # SELL
             ok = (bias_1h in ("BEAR", "NEUTRAL")) and (bias_4h in ("BEAR", "NEUTRAL"))
             if not ok:
-                logger.warning(f"❌ MTF {ticker} SELL rejeté | 1h={bias_1h} 4h={bias_4h} (bullish HTF)")
+                logger.warning(f"❌ MTF {symbol} SELL rejeté | 1h={bias_1h} 4h={bias_4h} (bullish HTF)")
             else:
-                logger.info(f"✅ MTF {ticker} SELL confirmé | 1h={bias_1h} 4h={bias_4h}")
+                logger.info(f"✅ MTF {symbol} SELL confirmé | 1h={bias_1h} 4h={bias_4h}")
             return ok
 
     def get_htf_context(self, symbol: str) -> dict:
@@ -126,12 +124,12 @@ class MTFFilter:
 
 
 if __name__ == "__main__":
-    from config import SYMBOLS
+    from brokers.capital_client import CAPITAL_INSTRUMENTS
     mtf = MTFFilter()
-    print(f"\n📊 Multi-Timeframe Confluence — Nemesis\n")
-    for sym in SYMBOLS:
+    print(f"\n📊 Multi-Timeframe Confluence — Nemesis Capital.com\n")
+    for sym in CAPITAL_INSTRUMENTS:
         ctx = mtf.get_htf_context(sym)
         aligned = "✅ Aligné" if ctx["aligned"] else "⚠️  Contradictoire"
-        ticker  = sym.replace("/USDT","")
-        print(f"  {aligned}  {ticker:<8} | 1h={ctx['1h']:<8} 4h={ctx['4h']:<8} 1D={ctx['1d']}")
+        print(f"  {aligned}  {sym:<12} | 1h={ctx['1h']:<8} 4h={ctx['4h']:<8} 1D={ctx['1d']}")
     print()
+
