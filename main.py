@@ -749,10 +749,12 @@ class TradingBot:
 
         # Pause manuelle ou drawdown
         if self._manual_pause or self._dd_paused:
+            logger.info("⏸️  Trading en pause (manuel ou DD) — skip ce tick")
             return
 
         # Capital.com non disponible → rien à faire
         if not self.capital.available:
+            logger.warning("⚠️  Capital.com non disponible — skip ce tick")
             return
 
         # ── Surveillance des positions ouvertes ──────────────────────────
@@ -760,25 +762,35 @@ class TradingBot:
 
         # ── Vérification session London/NY (08h-10h30 / 13h30-16h UTC) ──
         if not self.strategy.is_session_ok():
+            logger.debug(f"🕐 Hors session ({now.hour}h{now.minute:02d} UTC) — skip")
             return
 
         # ── Pause calendrier économique ───────────────────────────────────
         should_pause, reason = self.calendar.should_pause_trading()
         if should_pause:
-            logger.debug(f"📅 Trading suspendu : {reason}")
+            logger.info(f"📅 Trading suspendu : {reason}")
             return
 
         # ── Limite corrélation (max 2 CFD simultanées) ───────────────────────
         active_count = sum(1 for s in self.capital_trades.values() if s is not None)
         if active_count >= 2:
+            logger.debug(f"🔒 Positions max atteint ({active_count}/2) — skip ce tick")
             return  # Plafond atteint — on surveille mais on n'ouvre rien
 
         # ── Scan des instruments Capital.com ─────────────────────────────────
         balance = self.capital.get_balance()
         if balance <= 0:
+            logger.warning("⚠️  Balance = 0 ou inaccessible — skip ce tick")
             return
 
         per_instrument = balance / len(CAPITAL_INSTRUMENTS)
+
+        # ── Heartbeat visible : confirme que la boucle tourne ──────────────────
+        logger.info(
+            f"🔍 Scan {len(CAPITAL_INSTRUMENTS)} instruments | "
+            f"Balance={balance:,.0f}€ | Positions={active_count}/2 | "
+            f"{now.hour}h{now.minute:02d} UTC"
+        )
 
         for instrument in CAPITAL_INSTRUMENTS:
             # Ne pas ouvrir si limite atteinte entre deux itérations
@@ -788,6 +800,7 @@ class TradingBot:
                 self._process_capital_symbol(instrument, per_instrument)
             except Exception as e:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
+
 
     def _run_auto_hyperopt(self):
         """
