@@ -50,6 +50,16 @@ except ImportError:
     _MORNING_OK = False
 
 try:
+    from drift_detector import DriftDetector
+    _DRIFT_OK = True
+except ImportError:
+    _DRIFT_OK = False
+    class DriftDetector:  # stub silencieux si module absent
+        def record_trade(self, *a, **kw): pass
+        def check_drift(self): return {"drift": False}
+        def format_status(self): return ""
+
+try:
     from tradingview_webhook import get_webhook_server
     _WEBHOOK_OK = bool(os.getenv("WEBHOOK_SECRET"))
 except ImportError:
@@ -129,6 +139,12 @@ class TradingBot:
         self._last_hyperopt_week   = None
         self._last_morning_day     = None
 
+        # ─── Drift Detector (BUG FIX #I) ─────────────────────────────────
+        self.drift = DriftDetector()
+
+        # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
+        self.calendar.start_background_refresh()
+
         # ─── TradingView Webhook (opt-in) ─────────────────────────────────
         if _WEBHOOK_OK:
             self._webhook = get_webhook_server()
@@ -207,10 +223,8 @@ class TradingBot:
             except Exception as e:
                 logger.error(f"❌ Restauration trade Capital.com {instrument} : {e}")
 
-    def _correlation_ok(self, symbol: str) -> bool:
-        """Capital.com: max 2 CFD ouverts simultanément."""
-        active = sum(1 for s in self.capital_trades.values() if s is not None)
-        return active < 2
+    # BUG FIX #N : _correlation_ok() supprimé — méthode morte jamais appelée.
+    # La limite de 2 trades simultanés est déjà gérée dans _tick() ligne 345–347.
 
     # ─── Boucle principale ───────────────────────────────────────────────────
 
@@ -270,13 +284,17 @@ class TradingBot:
             self._capital_closed_today.clear()
             self._dd_paused = False
             self.reporter.reset_for_new_day()  # remet rapport à zéro
+            # BUG FIX #2 : met à jour le solde de début de journée pour le DD journalier
+            if self.capital.available:
+                self._daily_start_balance = self.capital.get_balance() or self._daily_start_balance
             logger.info("🔄 Reset quotidien — stats journalières effacées")
 
         # ── Vérification drawdown journalier ─────────────────────────────
         if not self._dd_paused and self.capital.available:
             cur_bal = self.capital.get_balance()
-            if cur_bal > 0 and self.initial_balance > 0:
-                dd_pct = (self.initial_balance - cur_bal) / self.initial_balance * 100
+            # BUG FIX #2 : utilise _daily_start_balance (solde début de jour) et non initial_balance (lancement bot)
+            if cur_bal > 0 and self._daily_start_balance > 0:
+                dd_pct = (self._daily_start_balance - cur_bal) / self._daily_start_balance * 100
                 if dd_pct >= self.DAILY_DD_LIMIT:
                     self._dd_paused = True
                     self.telegram.send_message(
@@ -292,7 +310,7 @@ class TradingBot:
             balance = self.capital.get_balance() if self.capital.available else 0.0
             _, reason = self.calendar.should_pause_trading()
             brief = self.context.build_morning_brief(balance, reason or None)
-            self.telegram.notify_morning_brief(brief)
+            self.telegram.notify_morning_brief(brief, nb_instruments=len(CAPITAL_INSTRUMENTS))
             self.context.mark_brief_sent()
 
         # ── Fear & Greed refresh (1×/heure) ──────────────────────────────
@@ -414,6 +432,12 @@ class TradingBot:
         if sig == "HOLD":
             return
 
+        # BUG FIX #5 : Vérification RiskManager avant d'ouvrir
+        balance_for_risk = self.capital.get_balance() or balance
+        if not self.risk.can_open_trade(balance_for_risk):
+            logger.info(f"⛔ {instrument} bloqué par RiskManager (DD ou MAX_TRADES)")
+            return
+
         entry    = float(df.iloc[-1]["close"])
         sr       = self.strategy.compute_session_range(df)
         direction = "BUY" if sig == "BUY" else "SELL"
@@ -482,13 +506,17 @@ class TradingBot:
             "tp1_hit":   False,
             "tp2_hit":   False,
         }
-        # Session tracker (pour résumé London/NY)
+        # BUG FIX #3 : calcule name/session une seule fois (suppression doublon)
         name    = CAPITAL_NAMES.get(instrument, instrument)
         hour    = datetime.now(timezone.utc).hour
-        minute_ = datetime.now(timezone.utc).minute
+        minute  = datetime.now(timezone.utc).minute
         # London : 08h-10h UTC | NY : 13h30-16h UTC
-        tracker = self._london_tracker if (hour < 13 or (hour == 13 and minute_ < 30)) else self._ny_tracker
+        session = "London" if (hour < 13 or (hour == 13 and minute < 30)) else "NY"
+        tracker = self._london_tracker if session == "London" else self._ny_tracker
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
+
+        # BUG FIX #5 : Notifie le RiskManager de l'ouverture
+        self.risk.on_trade_opened()
 
         # Persiste immédiatement en BDD (survit aux redémarrages Railway mid-trade)
         try:
@@ -499,11 +527,6 @@ class TradingBot:
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
 
         # ─── ÉTAPE 4 : Telegram en background (ne bloque pas la boucle) ────────
-        name    = CAPITAL_NAMES.get(instrument, instrument)
-        # Session London : 08h-10h UTC | NY : 13h30-16h UTC
-        hour = datetime.now(timezone.utc).hour
-        minute = datetime.now(timezone.utc).minute
-        session = "London" if (hour < 13 or (hour == 13 and minute < 30)) else "NY"
 
         import threading
         _snap = dict(instrument=instrument, name=name, sig=sig,
@@ -612,6 +635,10 @@ class TradingBot:
                 # Enregistre pour le dashboard quotidien
                 name_close = CAPITAL_NAMES.get(instrument, instrument)
                 pip_close  = CAPITAL_PIP.get(instrument, 0.0001)
+                # BUG FIX #1 : initialiser les variables AVANT le try pour éviter NameError si get_current_price échoue
+                close_px = entry
+                pnl_est  = 0.0
+                result   = "LOSS"
                 try:
                     current  = self.capital.get_current_price(instrument)
                     close_px = current["mid"] if current else entry
@@ -635,13 +662,13 @@ class TradingBot:
                     self.db.close_capital_trade(instrument)
                 except Exception:
                     pass
-                # Dashboard : enregistre la fermeture + PnL
+                # Dashboard : enregistre la fermeture + PnL (pnl_est/close_px/result toujours définis)
                 try:
-                    dash_close(symbol=CAPITAL_NAMES.get(instrument, instrument),
+                    dash_close(symbol=name_close,
                                pnl=round(pnl_est * 3, 2), result=result,
                                side=state["direction"])
                     self.reporter.record_trade(
-                        symbol=CAPITAL_NAMES.get(instrument, instrument),
+                        symbol=name_close,
                         side=state["direction"],
                         result=result,
                         pnl_gross=round(pnl_est * 3, 2),
@@ -652,6 +679,13 @@ class TradingBot:
                     pass
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
+                # BUG FIX #5 + #I : Notifie RiskManager et DriftDetector de la fermeture
+                self.risk.on_trade_closed()
+                self.drift.record_trade(
+                    pnl=round(pnl_est * 3, 2),
+                    win=(result == "WIN"),
+                    symbol=name_close,
+                )
     # ─── Wallet stats ────────────────────────────────────────────────────────
 
     def _post_wallet_stats(self, balance: float):
@@ -691,10 +725,21 @@ class TradingBot:
                     ok = self.capital.close_position(ref)
                     if ok:
                         closed += 1
+            name = CAPITAL_NAMES.get(instrument, instrument)
+            # ── Nettoyage état ──────────────────────────────────────────
             self.capital_trades[instrument] = None
             self.capital_ws.unwatch(instrument)
-            name = CAPITAL_NAMES.get(instrument, instrument)
-            return f"✅ {name} fermé ({closed} positions)"
+            # ── Persiste la fermeture en BDD (sinon resurgi au restart) ─
+            try:
+                self.db.close_capital_trade(instrument)
+            except Exception:
+                pass
+            # ── Dashboard ────────────────────────────────────────────────
+            try:
+                dash_close(symbol=name, pnl=0.0, result="MANUAL", side=state.get("direction","?"))
+            except Exception:
+                pass
+            return f"✅ {name} fermé manuellement ({closed} positions)"
         except Exception as e:
             return f"❌ Erreur fermeture {instrument} : {e}"
 
@@ -733,18 +778,19 @@ class TradingBot:
             balance = self.capital.get_balance() if self.capital.available else 0.0
             _, reason = self.calendar.should_pause_trading()
             brief = self.context.build_morning_brief(balance, reason or None)
-            self.telegram.notify_morning_brief(brief)
+            self.telegram.notify_morning_brief(brief, nb_instruments=len(CAPITAL_INSTRUMENTS))
             return "☀️ Matinale envoyée."
         except Exception as e:
             return f"❌ Matinale : {e}"
 
-    def _do_backtest(self) -> str:
+    def _do_backtest(self, symbol: str = None, days: int = 30) -> str:
         """Lance un backtest rapide en arrière-plan."""
         try:
             import threading, subprocess, sys
+            _days = str(days) if days else "30"
             def _run():
                 result = subprocess.run(
-                    [sys.executable, "backtester_oanda.py", "--quick"],
+                    [sys.executable, "backtester_oanda.py", "--days", _days],
                     capture_output=True, text=True, timeout=120
                 )
                 if result.returncode == 0:

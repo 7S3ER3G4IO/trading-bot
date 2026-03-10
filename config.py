@@ -47,7 +47,7 @@ SESSION_HOURS = LONDON_HOURS + NY_HOURS  # Fenêtres actives pour le scalping
 # ─── GESTION DU RISQUE ────────────────────────────────────────────────────────
 RISK_PER_TRADE       = 0.01    # 1% du capital par trade par symbole
 ATR_SL_MULTIPLIER    = 1.0     # SL = 1.0 ATR (tighter = meilleur R:R)
-MIN_SCORE            = 5       # Signal seulement si score >= 5/6
+MIN_SCORE_LEGACY     = 5       # Legacy OANDA (non utilisé — strategy.py définit son propre MIN_SCORE=2/3)
 MAX_OPEN_TRADES      = 14              # 5 crypto + 9 OANDA instruments
 DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
 

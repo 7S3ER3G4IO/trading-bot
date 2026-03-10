@@ -20,7 +20,10 @@ except ImportError:
 app   = Flask("nemesis_dashboard")
 app.logger.disabled = True
 
-# ─── State partagé ─────────────────────────────────────────────────────────
+# ─── State partagé ────────────────────────────────────────────────
+# BUG FIX #V : Lock pour protéger _state contre les race conditions
+# Flask (thread serveur) lit _state / main.py (thread trading) écrit _state
+_state_lock = threading.Lock()
 _state: dict = {
     "balance":         0.0,
     "futures_balance": 0.0,
@@ -168,9 +171,9 @@ _HTML = r"""<!DOCTYPE html>
 <!-- KPI Grid -->
 <div class="kpi-grid">
   <div class="kpi blue">
-    <label>💰 Balance Spot USDT</label>
+    <label>💰 Balance Capital.com (€)</label>
     <div class="value neu">{{ '{:,.2f}'.format(s.balance) }}</div>
-    <div class="sub">Initial : {{ '{:,.0f}'.format(s.initial) }} USDT</div>
+    <div class="sub">Initial : {{ '{:,.0f}'.format(s.initial) }} €</div>
   </div>
   {% if s.futures_balance > 0 %}
   <div class="kpi blue">
@@ -191,8 +194,8 @@ _HTML = r"""<!DOCTYPE html>
   </div>
   <div class="kpi {{ 'green' if s.trades|length > 0 else 'blue' }}">
     <label>⚡ Positions ouvertes</label>
-    <div class="value neu">{{ s.trades|length }}/4</div>
-    <div class="sub">Slots disponibles : {{ 4 - s.trades|length }}</div>
+    <div class="value neu">{{ s.trades|length }}/2</div>
+    <div class="sub">Slots disponibles : {{ 2 - s.trades|length }}</div>
   </div>
 </div>
 
@@ -273,7 +276,7 @@ _HTML = r"""<!DOCTYPE html>
 </div>
 
 <div style="text-align:center;color:var(--muted);font-size:.72rem;margin-top:12px">
-  Nemesis v1.0 · Audit 2026 · Refresh automatique 15s
+  Nemesis v2.0 · Audit 2026 · Refresh automatique 15s
 </div>
 
 <script>setTimeout(()=>location.reload(), 15000);</script>
@@ -283,17 +286,20 @@ _HTML = r"""<!DOCTYPE html>
 
 @app.route("/")
 def index():
-    return render_template_string(_HTML, s=_state)
+    with _state_lock:
+        snap = dict(_state)   # snapshot atomique pour le rendu
+    return render_template_string(_HTML, s=snap)
 
 
 @app.route("/api/state")
 def api_state():
-    return jsonify(_state)
+    with _state_lock:
+        return jsonify(dict(_state))
 
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "bot": "Nemesis v1.0", "balance": _state["balance"]})
+    return jsonify({"ok": True, "bot": "Nemesis v2.0", "balance": _state["balance"]})
 
 
 @app.route("/ip")
@@ -310,37 +316,42 @@ def get_ip():
 # ─── API pour mise à jour depuis le bot ────────────────────────────────────
 
 def update_state(**kwargs):
-    """Appelé par main.py pour mettre à jour le state du dashboard."""
-    _state.update(kwargs)
-    _state["last_update"] = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    """Appelé par main.py pour mettre à jour le state du dashboard. Thread-safe."""
+    with _state_lock:
+        _state.update(kwargs)
+        _state["last_update"] = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
 
 def update_trade_open(symbol: str, side: str, entry: float, qty: float):
-    trades = _state.setdefault("trades", [])
-    trades = [t for t in trades if t["symbol"] != symbol]
-    trades.append({"symbol": symbol, "side": side, "entry": entry,
-                   "qty": qty, "pnl": 0.0, "ts": datetime.now(timezone.utc).strftime("%H:%M")})
-    _state["trades"] = trades
+    with _state_lock:
+        trades = _state.setdefault("trades", [])
+        trades = [t for t in trades if t["symbol"] != symbol]
+        trades.append({"symbol": symbol, "side": side, "entry": entry,
+                       "qty": qty, "pnl": 0.0, "ts": datetime.now(timezone.utc).strftime("%H:%M")})
+        _state["trades"] = trades
 
 
 def update_trade_close(symbol: str, pnl: float, result: str, side: str):
-    _state["trades"] = [t for t in _state.get("trades", []) if t["symbol"] != symbol]
-    hist = _state.setdefault("history", [])
-    hist.insert(0, {
-        "symbol": symbol, "side": side, "pnl": pnl, "result": result,
-        "ts": datetime.now(timezone.utc).strftime("%d/%m %H:%M")
-    })
-    _state["history"] = hist[:20]
+    with _state_lock:
+        _state["trades"] = [t for t in _state.get("trades", []) if t["symbol"] != symbol]
+        hist = _state.setdefault("history", [])
+        hist.insert(0, {
+            "symbol": symbol, "side": side, "pnl": pnl, "result": result,
+            "ts": datetime.now(timezone.utc).strftime("%d/%m %H:%M")
+        })
+        _state["history"] = hist[:20]
 
 
 def update_pnl(symbol: str, current_pnl: float):
-    for t in _state.get("trades", []):
-        if t["symbol"] == symbol:
-            t["pnl"] = current_pnl
+    with _state_lock:
+        for t in _state.get("trades", []):
+            if t["symbol"] == symbol:
+                t["pnl"] = current_pnl
 
 
 def update_filter(name: str, value: str):
-    _state["filters"][name] = value
+    with _state_lock:
+        _state["filters"][name] = value
 
 
 # ─── Démarrage ─────────────────────────────────────────────────────────────

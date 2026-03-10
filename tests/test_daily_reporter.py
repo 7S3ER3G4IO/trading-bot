@@ -6,14 +6,15 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import json
 import pytest
-from daily_reporter import DailyReporter, BINANCE_FEE_RATE
+from daily_reporter import DailyReporter, CFD_FEE_RATE
 
 
 class TestDailyReporter:
     def setup_method(self, method):
         # Fichier temporaire pour les tests
         self.reporter = DailyReporter()
-        self.reporter._trades = []   # Reset pour chaque test
+        self.reporter._trades = []         # Reset trades journaliers
+        self.reporter._weekly_trades = []  # Reset trades hebdo (BUG FIX : évite la lecture du disk)
 
     # ─── record_trade ───────────────────────────────────────────────────────
 
@@ -26,13 +27,15 @@ class TestDailyReporter:
         entry  = 50000.0
         self.reporter.record_trade("BTC/USDT", "BUY", "TP1", 150.0, entry, 50450, amount)
         trade = self.reporter._trades[0]
-        expected_fees = round(entry * amount * BINANCE_FEE_RATE * 2, 4)
-        assert abs(trade.fees - expected_fees) < 0.001
+        # CFD Capital.com : pas de commission séparée — CFD_FEE_RATE = 0.0
+        expected_fees = round(entry * amount * CFD_FEE_RATE * 2, 4)
+        assert abs(trade.fees - expected_fees) < 0.001  # doit être 0.0
 
     def test_record_trade_pnl_net_less_than_gross(self):
         self.reporter.record_trade("BTC/USDT", "BUY", "TP1", 150.0, 50000, 50450, 0.01)
         trade = self.reporter._trades[0]
-        assert trade.pnl_net < trade.pnl_gross
+        # CFD_FEE_RATE = 0.0 → pnl_net == pnl_gross (pas de commission)
+        assert trade.pnl_net == trade.pnl_gross
 
     def test_multiple_trades_accumulated(self):
         self.reporter.record_trade("BTC/USDT", "BUY", "TP1", 150.0, 50000, 50450, 0.01)

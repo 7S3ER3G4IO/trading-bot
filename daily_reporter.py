@@ -9,10 +9,11 @@ from typing import List, Optional
 from loguru import logger
 
 REPORT_FILE          = "logs/daily_trades.json"
+WEEKLY_FILE          = "logs/weekly_trades.json"   # BUG FIX #B — accumulateur hebdo séparé
 REPORT_HOUR_UTC      = 20   # 21h CET
 WEEKLY_REPORT_HOUR   = 21   # 22h CET
 WEEKLY_REPORT_DOW    = 6    # Dimanche (0=lundi)
-BINANCE_FEE_RATE     = 0.001  # 0.1% par ordre
+CFD_FEE_RATE         = 0.0    # Capital.com CFD : pas de commission séparée (spread intégré au prix)
 
 
 @dataclass
@@ -31,10 +32,12 @@ class DailyReporter:
     def __init__(self):
         os.makedirs("logs", exist_ok=True)
         self._trades: List[TradeRecord] = []
+        self._weekly_trades: List[TradeRecord] = []  # BUG FIX #B — accumule sur 7 jours
         self._report_sent_today       = False
         self._weekly_report_sent      = False
         self._last_weekly_check_day   = -1
         self._load()
+        self._load_weekly()
 
     # ─── Enregistrement ──────────────────────────────────────────────────────
 
@@ -51,7 +54,7 @@ class DailyReporter:
         now  = datetime.now(timezone(timedelta(hours=1)))
         pips = abs(exit_price - entry)
         # Frais = 2 ordres (entrée + sortie) × 0.1% × montant total en USDT
-        fees = round(entry * amount * BINANCE_FEE_RATE * 2, 4)
+        fees = round(entry * amount * CFD_FEE_RATE * 2, 4)
         pnl_net = round(pnl_gross - fees, 4)
 
         rec = TradeRecord(
@@ -65,7 +68,9 @@ class DailyReporter:
             pips=round(pips, 2),
         )
         self._trades.append(rec)
+        self._weekly_trades.append(rec)  # BUG FIX #B : accumule aussi dans le rapport hebdo
         self._save()
+        self._save_weekly()
         logger.info(f"📝 Trade enregistré : {rec.symbol} {result} | PnL net={pnl_net:+.2f} (frais={fees:.2f})")
 
     # ─── Bilan journalier ─────────────────────────────────────────────────────
@@ -151,17 +156,19 @@ class DailyReporter:
         return False
 
     def build_weekly_report(self) -> str:
-        if not self._trades:
+        # BUG FIX #B : lit depuis _weekly_trades (accumulation 7j) et non _trades (journalier)
+        trades = self._weekly_trades
+        if not trades:
             return "📅 *Bilan hebdomadaire* — Aucun trade cette semaine."
 
         cet = datetime.now(timezone(timedelta(hours=1)))
-        wins       = sum(1 for t in self._trades if t.result != "SL")
-        total_net  = sum(t.pnl_net for t in self._trades)
-        total_fees = sum(t.fees for t in self._trades)
-        best  = max(self._trades, key=lambda t: t.pnl_net)
-        worst = min(self._trades, key=lambda t: t.pnl_net)
-        score = f"{wins}/{len(self._trades)}"
-        pct   = f"{wins / len(self._trades) * 100:.0f}%"
+        wins       = sum(1 for t in trades if t.result != "SL")
+        total_net  = sum(t.pnl_net for t in trades)
+        total_fees = sum(t.fees for t in trades)
+        best  = max(trades, key=lambda t: t.pnl_net)
+        worst = min(trades, key=lambda t: t.pnl_net)
+        score = f"{wins}/{len(trades)}"
+        pct   = f"{wins / len(trades) * 100:.0f}%"
 
         return (
             f"📅 *BILAN DE LA SEMAINE*\n"
@@ -178,6 +185,9 @@ class DailyReporter:
     def mark_weekly_sent(self):
         cet = datetime.now(timezone(timedelta(hours=1)))
         self._last_weekly_check_day = cet.day
+        # BUG FIX #B : reset la liste hebdo après envoi (le dimanche soir)
+        self._weekly_trades = []
+        self._save_weekly()
 
     # ─── Reset & persistance ──────────────────────────────────────────────────
 
@@ -193,6 +203,14 @@ class DailyReporter:
         except Exception as e:
             logger.error(f"❌ Sauvegarde journal : {e}")
 
+    def _save_weekly(self):
+        """BUG FIX #B : persistence de la liste hebdomadaire."""
+        try:
+            with open(WEEKLY_FILE, "w") as f:
+                json.dump([asdict(t) for t in self._weekly_trades], f, indent=2)
+        except Exception as e:
+            logger.error(f"❌ Sauvegarde journal hebdo : {e}")
+
     def _load(self):
         try:
             if os.path.exists(REPORT_FILE):
@@ -201,3 +219,13 @@ class DailyReporter:
                     self._trades = [TradeRecord(**d) for d in data]
         except Exception:
             self._trades = []
+
+    def _load_weekly(self):
+        """BUG FIX #B : chargement de l'accumulateur hebdomadaire."""
+        try:
+            if os.path.exists(WEEKLY_FILE):
+                with open(WEEKLY_FILE) as f:
+                    data = json.load(f)
+                    self._weekly_trades = [TradeRecord(**d) for d in data]
+        except Exception:
+            self._weekly_trades = []

@@ -41,7 +41,8 @@ class TestStrategy:
     def test_compute_indicators_returns_required_columns(self):
         df = make_ohlcv()
         df = self.strat.compute_indicators(df)
-        required = ["ema9", "ema21", "rsi", "macd", "macd_signal", "adx", "atr"]
+        # Colonnes réellement calculées par strategy.compute_indicators()
+        required = ["ema9", "ema21", "rsi", "adx", "atr", "vol_ma", "ema200"]
         for col in required:
             assert col in df.columns, f"Colonne manquante : {col}"
 
@@ -58,11 +59,12 @@ class TestStrategy:
         signal, score, confirmations = self.strat.get_signal(df)
         assert signal in (SIGNAL_BUY, SIGNAL_SELL, SIGNAL_HOLD)
 
-    def test_score_is_between_0_and_6(self):
+    def test_score_is_between_0_and_3(self):
+        """Score max = 3 confirmations (ADX + Volume + Momentum)."""
         df = make_ohlcv()
         df = self.strat.compute_indicators(df)
         _, score, _ = self.strat.get_signal(df)
-        assert 0 <= score <= 6
+        assert 0 <= score <= 3
 
     def test_confirmations_is_list(self):
         df = make_ohlcv()

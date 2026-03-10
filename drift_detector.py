@@ -122,16 +122,17 @@ class DriftDetector:
                 )
                 severity = "HIGH" if severity == "OK" else severity
 
-        # 3. Page-Hinkley Test
+        # 3. Page-Hinkley Test — BUG FIX #J : recalcul from scratch à chaque appel
+        # (avant: _pht_sum/_pht_min s'accumulaient entre les appels → faux positifs)
+        pht_sum = 0.0
+        pht_min = 0.0
         for pnl in pnls[-10:]:
-            self._pht_sum += pnl - PHT_DELTA
-            self._pht_min  = min(self._pht_min, self._pht_sum)
-            pht_stat       = self._pht_sum - self._pht_min
+            pht_sum += pnl - PHT_DELTA
+            pht_min  = min(pht_min, pht_sum)
+            pht_stat = pht_sum - pht_min
             if pht_stat > PHT_LAMBDA:
                 reasons.append(f"Page-Hinkley = {pht_stat:.2f} > {PHT_LAMBDA} (tendance baissière détectée)")
                 severity = "MEDIUM" if severity == "OK" else severity
-                self._pht_sum = 0.0
-                self._pht_min = 0.0
                 break
 
         drift = len(reasons) > 0

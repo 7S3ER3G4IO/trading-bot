@@ -153,15 +153,15 @@ class TelegramNotifier:
         self._send(
             f"📈 <b>{ticker} — {emoji}</b>\n"
             f"{SEP}\n"
-            f"{stars}  Score {score}/8  |  {self._session()}\n"
+            f"{stars}  Score {score}/3  |  {self._session()}\n"
             f"📍 Entrée : <code>{entry:,.4f}</code>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"──────────────────\n"
             f"🎯 TP1 : <code>{tp1:,.4f}</code>  (+{pct(tp1):.1f}%)\n"
             f"🎯 TP2 : <code>{tp2:,.4f}</code>  (+{pct(tp2):.1f}%)\n"
             f"🎯 TP3 : <code>Ouvert</code>\n"
             f"🛑 SL  : <code>{sl:,.4f}</code>  (-{pct(sl):.1f}%)\n"
             f"{SEP}\n"
-            f"💰 Balance : <b>{balance:,.2f}$</b>\n"
+            f"💰 Balance : <b>{balance:,.2f}€</b>\n"
             f"🔍 {' | '.join(confirmations[:3]) if confirmations else '—'}",
             markup=markup or self._wallet_button(),
         )
@@ -314,20 +314,20 @@ class TelegramNotifier:
             f"{report}"
         )
 
-    def notify_morning_brief(self, brief: str):
+    def notify_morning_brief(self, brief: str, nb_instruments: int = 8):
         """Rapport matinal structuré."""
         d    = self._date_fr()
         sess = self._session()
         self._send(
             f"☀️ <b>BRIEFING DU {d.upper()}</b>\n"
             f"{SEP}\n"
-            f"🕐 Session actuelle : {sess}\n"
+            f"🔐 Session actuelle : {sess}\n"
             f"🇬🇧 London open : 09h00–11h00\n"
             f"🗽 NY open      : 14h30–17h00\n"
             f"{SEP}\n"
             f"{brief}\n"
             f"{SEP}\n"
-            f"🤖 Nemesis surveillera <b>8 instruments</b> aujourd'hui ✅"
+            f"🤖 Nemesis surveillera <b>{nb_instruments} instruments</b> aujourd'hui ✅"
         )
 
     def notify_news_pause(self, event_name: str, minutes: float):
@@ -360,7 +360,7 @@ class TelegramNotifier:
         self._send(
             f"{severity} <b>ERREUR BOT #{count} — {level}</b>\n"
             f"{SEP}\n"
-            f"⏰ {now}  |  Balance : <b>{balance:,.2f}$</b>\n"
+            f"⏰ {now}  |  Balance : <b>{balance:,.2f}€</b>\n"
             f"{SEP}\n"
             f"<code>{error[:300]}</code>\n"
             f"{SEP}\n"

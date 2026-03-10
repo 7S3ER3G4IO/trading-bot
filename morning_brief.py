@@ -109,7 +109,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, bias: str) -> bytes:
     # Timestamp
     fig.text(
         0.99, 0.01,
-        f"Nemesis v1.0 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
+        f"Nemesis v2.0 | {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC",
         ha="right", va="bottom",
         fontsize=8, color="#666688",
     )
@@ -238,7 +238,7 @@ def analyze_asset(symbol: str, df: pd.DataFrame) -> dict:
         "marche":     marche,
         "vol_signal": vol_signal,
         "macd_up":    macd > macd_s,
-        "rsi":        round(rsi, 1),
+        # BUG FIX #P : supprimer la 2ème clé 'rsi' qui écrasait silencieusement la 1ère
     }
 
 

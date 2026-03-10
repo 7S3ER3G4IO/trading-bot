@@ -33,7 +33,9 @@ CAPITAL_DEMO = os.getenv("CAPITAL_DEMO", "true").lower() == "true"
 
 WS_URL = "wss://api-streaming-capital.backend-capital.com/connect"
 
-PING_INTERVAL = 300   # secondes entre chaque PING (Capital.com exige < 10 min)
+# Capital.com coupe la connexion après ~60s sans message applicatif.
+# On envoie un heartbeat JSON {"destination":"ping"} toutes les 30s.
+HEARTBEAT_INTERVAL = 30  # secondes
 
 
 class CapitalWebSocket:
@@ -56,6 +58,7 @@ class CapitalWebSocket:
         self._ws        = None
         self._thread    = None
         self._running   = False
+        self._heartbeat_thread = None  # thread ping JSON applicatif
 
         # Positions surveillées : {epic: {entry, tp1, refs, tp1_hit}}
         self._watched: Dict[str, dict] = {}
@@ -150,11 +153,31 @@ class CapitalWebSocket:
         )
         self._ws = ws
 
-        # run_forever bloque jusqu'à déconnexion
-        ws.run_forever(
-            ping_interval=PING_INTERVAL,
-            ping_timeout=10,
-        )
+        # Lance le heartbeat JSON (Capital.com coupe à ~60s sans message)
+        self._start_heartbeat(ws)
+
+        # run_forever bloque jusqu'à déconnexion (sans ping TCP — on gère en applicatif)
+        ws.run_forever(ping_interval=0)
+
+    def _start_heartbeat(self, ws):
+        """
+        Thread daemon qui envoie un ping JSON applicatif toutes les HEARTBEAT_INTERVAL s.
+        Capital.com exige des messages réguliers pour maintenir la session ouverte.
+        Format officiel : {"destination": "ping"}
+        """
+        def _beat():
+            time.sleep(5)  # attente initiale — laisse le temps à l'auth de se terminer
+            while self._running and ws.sock and ws.sock.connected:
+                try:
+                    ws.send(json.dumps({"destination": "ping"}))
+                    logger.debug(f"💓 WS heartbeat envoyé")
+                except Exception as e:
+                    logger.warning(f"⚠️ WS heartbeat échec: {e}")
+                    break
+                time.sleep(HEARTBEAT_INTERVAL)
+
+        self._heartbeat_thread = threading.Thread(target=_beat, daemon=True, name="ws_heartbeat")
+        self._heartbeat_thread.start()
 
     def _on_open(self, ws, cst: str, token: str):
         """Authentification + abonnement aux instruments surveillés."""

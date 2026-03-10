@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 from risk_manager import RiskManager
 from strategy import SIGNAL_BUY, SIGNAL_SELL
+from config import MAX_OPEN_TRADES
 
 
 class TestRiskManager:
@@ -72,16 +73,18 @@ class TestRiskManager:
         rm = RiskManager(10_000.0)
         assert rm.can_open_trade(10_000) is True
 
-    def test_cannot_open_trade_with_low_balance(self):
-        """Pas de trade si solde < 200 USDT."""
+    def test_cannot_open_trade_after_large_drawdown(self):
+        """Si le solde est très bas vs balance initiale → drawdown déclenche le refus."""
         rm = RiskManager(10_000.0)
+        # Solde 100€ vs initial 10000€ → drawdown ~99% → can_open_trade False
         result = rm.can_open_trade(100)
         assert result is False
 
     def test_can_open_trade_respects_max_trades(self):
-        """Ne peut pas ouvrir plus de MAX_TRADES simultanément."""
+        """Ne peut pas ouvrir plus de MAX_OPEN_TRADES simultanément."""
         rm = RiskManager(10_000.0)
-        for _ in range(10):  # Simuler l'ouverture de nombreux trades
+        # Ouvre exactement MAX_OPEN_TRADES trades pour atteindre la limite
+        for _ in range(MAX_OPEN_TRADES):
             rm.on_trade_opened()
         result = rm.can_open_trade(10_000)
         assert result is False

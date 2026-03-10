@@ -124,7 +124,7 @@ class TelegramBotHandler:
 
         if cmd == "/start":
             self._reply(
-                "⚡ <b>Nemesis v1.0</b>\n\n"
+                "⚡ <b>Nemesis v2.0</b>\n\n"
                 "📊 /status — Solde &amp; état\n"
                 "📋 /trades — Positions actives\n"
                 "📈 /performance — Sharpe, Sortino, WR\n"

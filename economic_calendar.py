@@ -77,19 +77,33 @@ class EconomicCalendar:
         except Exception as e:
             logger.error(f"❌ Erreur parsing calendrier : {e}")
 
+    def start_background_refresh(self):
+        """
+        BUG FIX #C : Lance le refresh dans un thread daemon.
+        À appeler UNE FOIS au démarrage du bot (main.py __init__).
+        should_pause_trading() ne fera plus jamais d'I/O.
+        """
+        import threading
+        import time
+
+        def _loop():
+            while True:
+                self.refresh()
+                time.sleep(self._fetch_interval_hours * 3600)
+
+        t = threading.Thread(target=_loop, daemon=True, name="calendar_refresh")
+        t.start()
+        logger.info(f"📅 Calendrier économique : refresh en arrière-plan toutes les {self._fetch_interval_hours}h")
+
     def should_pause_trading(self) -> Tuple[bool, str]:
         """
         Retourne (True, raison) si le trading doit être mis en pause,
         (False, "") sinon.
+        BUG FIX #C : Aucun appel HTTP ici — lecture seule du cache _events.
         """
         # Rafraîchir si nécessaire
         now = datetime.now(timezone.utc)
-        if (
-            self._last_fetch is None
-            or (now - self._last_fetch).total_seconds() > self._fetch_interval_hours * 3600
-        ):
-            self.refresh()
-
+        
         for event in self._events:
             dt = event["dt"]
             delta_min = (dt - now).total_seconds() / 60
