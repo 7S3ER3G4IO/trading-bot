@@ -121,7 +121,20 @@ class BotReportsMixin:
                 f"🎯 Win Rate  : <b>{wr:.0f}%</b> ({wins}/{total} trades)\n"
                 f"📅 {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC"
             )
-            self.telegram.send_photo(buf.read(), caption=caption)
-            logger.info("📊 Rapport journalier PNG envoyé via Telegram")
+            # Send to Performance channel instead of main chat
+            import io as _io
+            from config import CHANNELS
+            import requests as _rq
+            _token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+            _perf_id = CHANNELS.get("performance", {}).get("id", "")
+            if _token and _perf_id:
+                try:
+                    _api = f"https://api.telegram.org/bot{_token}"
+                    _files = {"photo": ("report.png", _io.BytesIO(buf.read()), "image/png")}
+                    _data = {"chat_id": _perf_id, "caption": caption, "parse_mode": "HTML"}
+                    _rq.post(f"{_api}/sendPhoto", data=_data, files=_files, timeout=30)
+                except Exception:
+                    pass
+            logger.info("📊 Rapport journalier PNG envoyé → Performance")
         except Exception as _rp_e:
             logger.error(f"❌ Daily report: {_rp_e}")

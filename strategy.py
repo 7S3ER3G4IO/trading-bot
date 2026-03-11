@@ -425,9 +425,9 @@ class Strategy:
         rsi_lo = profile.get("rsi_lo", 30)
         rsi_hi = profile.get("rsi_hi", 70)
 
-        if rsi <= rsi_lo and c <= bb_lo * 1.005:
+        if rsi <= rsi_lo and c <= bb_lo * 1.015:
             sig = SIGNAL_BUY
-        elif rsi >= rsi_hi and c >= bb_up * 0.995:
+        elif rsi >= rsi_hi and c >= bb_up * 0.985:
             sig = SIGNAL_SELL
         else:
             return SIGNAL_HOLD, 0, [f"MR:RSI={rsi:.0f}(need≤{rsi_lo}/≥{rsi_hi})"]
@@ -472,9 +472,9 @@ class Strategy:
         if ema20 <= 0 or ema50 <= 0:
             return SIGNAL_HOLD, 0, []
 
-        if ema20 > ema50 and macd > macd_s and adx_val > 18:
+        if ema20 > ema50 and macd > macd_s and adx_val > 14:
             sig = SIGNAL_BUY
-        elif ema20 < ema50 and macd < macd_s and adx_val > 18:
+        elif ema20 < ema50 and macd < macd_s and adx_val > 14:
             sig = SIGNAL_SELL
         else:
             ema_dir = '>' if ema20 > ema50 else '<'

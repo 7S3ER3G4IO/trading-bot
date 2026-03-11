@@ -15,12 +15,10 @@ except ImportError:
     InlineKeyboardButton = None
 
 from nemesis_ui.renderer import NemesisRenderer as R
-from nemesis_ui.notifications import NotificationFormatter as NF
 from channels.router import ChannelRouter
 
 
-TELEGRAM_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID",   "")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 _API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}" if TELEGRAM_TOKEN else ""
 
 # ── Channel Router (singleton-like) ──────────────────────────────────────────

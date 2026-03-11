@@ -113,9 +113,13 @@ class TelegramBotHandler:
         bal, pnl = 0.0, 0.0
         if self._get_hub_data:
             try:
-                data = self._get_hub_data()
-                bal = data.get("balance", 0.0)
-                pnl = data.get("pnl_today", 0.0)
+                result = self._get_hub_data()
+                # _hub_data returns (balance, pnl_today) tuple
+                if isinstance(result, (tuple, list)) and len(result) >= 2:
+                    bal, pnl = result[0], result[1]
+                elif isinstance(result, dict):
+                    bal = result.get("balance", 0.0)
+                    pnl = result.get("pnl_today", 0.0)
             except Exception:
                 pass
         hub.send_hub(bal, pnl)

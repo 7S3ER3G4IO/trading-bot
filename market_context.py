@@ -50,9 +50,9 @@ class MarketContext:
     def get_context_line(self) -> str:
         """Ligne de contexte à inclure dans les alertes d'entrée."""
         self.refresh_fear_greed()
-        fg = f"🧠 Fear & Greed : `{self._fg_value}/100` _{self._fg_label}_" \
+        fg = f"🧠 Fear & Greed : <code>{self._fg_value}/100</code> <i>{self._fg_label}</i>" \
              if self._fg_value is not None else ""
-        trend = f"📈 Tendance Daily : `{self._daily_trend}`" \
+        trend = f"📈 Tendance Daily : <code>{self._daily_trend}</code>" \
                 if self._daily_trend != "N/A" else ""
         parts = [p for p in [fg, trend] if p]
         return "\n".join(parts) if parts else ""
@@ -99,20 +99,20 @@ class MarketContext:
         cet = datetime.now(timezone(timedelta(hours=1)))
         date_str = cet.strftime("%A %d/%m")
 
-        fg_line = f"{self.get_fg_emoji()} Fear & Greed : `{self._fg_value}/100` _{self._fg_label}_" \
-                  if self._fg_value else "🧠 Fear & Greed : N/A"
-        news_line = f"📅 Prochaine news HIGH : `{next_news}`" if next_news else "✅ Pas d'annonce majeure prévue"
+        fg_line = f"{self.get_fg_emoji()} Fear &amp; Greed : <code>{self._fg_value}/100</code> <i>{self._fg_label}</i>" \
+                  if self._fg_value else "🧠 Fear &amp; Greed : N/A"
+        news_line = f"📅 Prochaine news HIGH : <code>{next_news}</code>" if next_news else "✅ Pas d'annonce majeure prévue"
 
         return (
-            f"☀️ *Nemesis — Morning Brief*\n"
-            f"*{date_str.capitalize()}*\n"
+            f"☀️ <b>Nemesis — Morning Brief</b>\n"
+            f"<b>{date_str.capitalize()}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{fg_line}\n"
-            f"📊 Tendance Daily : `{self._daily_trend}`\n"
-            f"💰 Capital : `{balance:,.2f} €`\n"
+            f"📊 Tendance Daily : <code>{self._daily_trend}</code>\n"
+            f"💰 Capital : <code>{balance:,.2f} €</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{news_line}\n"
-            f"🟢 *Bot actif — Bonne journée !*"
+            f"🟢 <b>Bot actif — Bonne journée !</b>"
         )
 
     def mark_brief_sent(self):
