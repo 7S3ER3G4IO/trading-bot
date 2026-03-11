@@ -156,8 +156,9 @@ def _signal_summary_line(name: str, sig: str, entry: float,
                          tp1: float, tp2: float, tp3_label: str, sl: float) -> str:
     """Build the compact signal summary line used in TP/SL replies."""
     dir_emoji = "🟢" if sig == "BUY" else "🔴"
+    action_verb = "J'ACHÈTE" if sig == "BUY" else "JE VENDS"
     return (
-        f"{dir_emoji} {'J\'ACHÈTE' if sig == 'BUY' else 'JE VENDS'} {name} à {entry:.5f} "
+        f"{dir_emoji} {action_verb} {name} à {entry:.5f} "
         f"🎯 TP1 : {tp1:.5f} 🎯 TP2 : {tp2:.5f} 🎯 TP3 : {tp3_label} "
         f"🔒 SL : {sl:.5f}"
     )

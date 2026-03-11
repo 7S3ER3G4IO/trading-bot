@@ -187,41 +187,35 @@ class TelegramNotifier:
         remaining_qty: float, be_activated: bool = False,
         markup=None, open_time=None, sl: float = 0.0,
     ):
-        """Push premium → canal Trades."""
+        """TP hit — Station X compact reply format."""
         name = self._ticker(symbol)
         pnl_net = pnl_gross - fees
-
         self.gamification.on_trade_closed(won=True, pnl=pnl_net)
         new_ach = self.gamification.pop_new_achievements()
 
-        wr = (self.gamification.total_wins / self.gamification.total_trades * 100) \
-            if self.gamification.total_trades > 0 else 0.0
+        from brokers.capital_client import PIP_FACTOR as PIP
+        pip = PIP.get(symbol, 0.0001)
+        pips_gained = round(abs(price - entry) / pip)
 
-        text = NF.format_tp_hit(
-            tp_num=tp_num, name=name, entry=entry, price=price,
-            pnl_net=pnl_net, balance=balance,
-            be_activated=be_activated,
-            win_streak=self.gamification.win_streak, wr=wr,
-        )
-        # Premium: duration + R:R
-        extras = []
+        # Duration
+        dur_str = ""
         if open_time:
             from telegram_capital import _format_duration
             dur = _format_duration(open_time)
             if dur:
-                extras.append(dur)
-        if sl and sl != 0:
-            from telegram_capital import _calc_rr
-            rr = _calc_rr(entry, price, sl)
-            if rr:
-                extras.append(rr)
-        if extras:
-            text += "\n" + "  ·  ".join(extras)
+                dur_str = f"\n{dur}"
 
+        text = (
+            f"<b>TP{tp_num} TOUCHÉ</b> 🔥 <b>+{pips_gained} PIPS</b> ✅\n"
+            f"💰 {pnl_net:+.2f}€  ·  💼 {balance:,.2f}€"
+            f"{dur_str}"
+        )
+
+        from telegram_capital import _signal_msg_ids
+        reply_to = _signal_msg_ids.get(symbol)
         if self.router:
-            self.router.send_trade(text)
+            self.router.send_trade(text, reply_to=reply_to)
 
-        # Achievements → canal Stats
         for ach in new_ach:
             if self.router:
                 self.router.send_stats(NF.format_achievement_unlocked(ach["name"], ach["desc"]))
@@ -229,34 +223,36 @@ class TelegramNotifier:
     def notify_tp3_closed(self, symbol: str, price: float, entry: float,
                           pnl_gross: float, fees: float, balance: float,
                           open_time=None, sl: float = 0.0):
-        """Push → canal Trades."""
+        """TP3 complete — Station X compact reply format."""
         name = self._ticker(symbol)
         pnl_net = pnl_gross - fees
-
         self.gamification.on_trade_closed(won=True, pnl=pnl_net, is_tp3_complete=True)
         new_ach = self.gamification.pop_new_achievements()
 
-        text = NF.format_trade_complete(
-            name=name, entry=entry, price=price,
-            pnl_net=pnl_net, balance=balance,
-        )
-        # Premium: duration + R:R
-        extras = []
+        from brokers.capital_client import PIP_FACTOR as PIP
+        pip = PIP.get(symbol, 0.0001)
+        pips_gained = round(abs(price - entry) / pip)
+
+        dur_str = ""
         if open_time:
             from telegram_capital import _format_duration
             dur = _format_duration(open_time)
             if dur:
-                extras.append(dur)
-        if sl and sl != 0:
-            from telegram_capital import _calc_rr
-            rr = _calc_rr(entry, price, sl)
-            if rr:
-                extras.append(rr)
-        if extras:
-            text += "\n" + "  ·  ".join(extras)
+                dur_str = f"\n{dur}"
 
+        text = (
+            f"<b>TP3 MANUEL</b> 🔥 <b>+{pips_gained} PIPS</b> ✅\n"
+            f"🏆 3/3 TP touchés — trade parfait !\n"
+            f"💰 {pnl_net:+.2f}€  ·  💼 {balance:,.2f}€"
+            f"{dur_str}"
+        )
+
+        from telegram_capital import _signal_msg_ids
+        reply_to = _signal_msg_ids.get(symbol)
         if self.router:
-            self.router.send_trade(text)
+            self.router.send_trade(text, reply_to=reply_to)
+        # Clean up signal cache
+        _signal_msg_ids.pop(symbol, None)
 
         for ach in new_ach:
             if self.router:
@@ -267,41 +263,47 @@ class TelegramNotifier:
         is_be: bool, pnl_gross: float, fees: float, balance: float,
         open_time=None, sl: float = 0.0,
     ):
-        """Push → canal Trades."""
+        """SL hit — Station X compact reply format."""
         name = self._ticker(symbol)
         pnl_net = pnl_gross - fees
 
+        from brokers.capital_client import PIP_FACTOR as PIP
+        pip = PIP.get(symbol, 0.0001)
+        pips_lost = round(abs(price - entry) / pip)
+
+        from telegram_capital import _signal_msg_ids
+        reply_to = _signal_msg_ids.get(symbol)
+
         if is_be:
-            text = NF.format_be_hit(name=name, balance=balance)
+            text = (
+                f"<b>BREAK-EVEN</b> 🟡 <b>0 PIPS</b>\n"
+                f"Capital 100% protégé · 💼 {balance:,.2f}€"
+            )
         else:
             self.gamification.on_trade_closed(won=False, pnl=pnl_net)
             new_ach = self.gamification.pop_new_achievements()
 
-            initial = balance - pnl_net
-            portfolio_impact = (pnl_net / initial * 100) if initial > 0 else 0
-            wr = (self.gamification.total_wins / self.gamification.total_trades * 100) \
-                if self.gamification.total_trades > 0 else 0.0
+            dur_str = ""
+            if open_time:
+                from telegram_capital import _format_duration
+                dur = _format_duration(open_time)
+                if dur:
+                    dur_str = f"\n{dur}"
 
-            text = NF.format_sl_hit(
-                name=name, entry=entry, price=price,
-                pnl_net=pnl_net, balance=balance,
-                portfolio_impact_pct=portfolio_impact,
-                wr=wr, win_streak=self.gamification.win_streak,
+            text = (
+                f"<b>SL</b> -{pips_lost} pips\n"
+                f"❌ {pnl_net:+.2f}€  ·  💼 {balance:,.2f}€"
+                f"{dur_str}"
             )
 
             for ach in new_ach:
                 if self.router:
                     self.router.send_stats(NF.format_achievement_unlocked(ach["name"], ach["desc"]))
 
-        # Premium: duration
-        if open_time:
-            from telegram_capital import _format_duration
-            dur = _format_duration(open_time)
-            if dur:
-                text += f"\n{dur}"
-
         if self.router:
-            self.router.send_trade(text)
+            self.router.send_trade(text, reply_to=reply_to)
+        # Clean up signal cache
+        _signal_msg_ids.pop(symbol, None)
 
     def notify_trade_closed(
         self, symbol: str, reason: str,
@@ -310,35 +312,34 @@ class TelegramNotifier:
         entry: float, exit_price: float, daily_summary: str,
         open_time=None, sl: float = 0.0,
     ):
-        """Push → canal Trades."""
+        """Trade closed — Station X compact reply format."""
         name = self._ticker(symbol)
         net = total_pnl_gross - total_fees
-        pct_move = abs(exit_price - entry) / entry * 100 if entry > 0 else 0
-        emoji = "✅" if net >= 0 else "❌"
 
-        header = R.box_header(f"{emoji} TRADE CLÔTURÉ — {name}")
-        extras = []
+        from brokers.capital_client import PIP_FACTOR as PIP
+        pip = PIP.get(symbol, 0.0001)
+        pips_val = round(abs(exit_price - entry) / pip)
+        emoji = "✅" if net >= 0 else "❌"
+        sign = "+" if net >= 0 else "-"
+
+        dur_str = ""
         if open_time:
             from telegram_capital import _format_duration
             dur = _format_duration(open_time)
             if dur:
-                extras.append(dur)
-        if sl and sl != 0:
-            from telegram_capital import _calc_rr
-            rr = _calc_rr(entry, exit_price, sl)
-            if rr:
-                extras.append(rr)
-        extra_line = f"\n{'  ·  '.join(extras)}" if extras else ""
+                dur_str = f"\n{dur}"
 
         text = (
-            f"{header}\n\n"
-            f"<code>{entry:,.5f}</code> ➜ <code>{exit_price:,.5f}</code>  ({pct_move:.2f}%)\n"
-            f"📌 Raison : {reason}\n\n"
-            f"💰 {R.format_pnl(net)}  ·  💼 {balance:,.2f}€"
-            f"{extra_line}"
+            f"<b>CLÔTURÉ</b> {emoji} <b>{sign}{pips_val} PIPS</b>\n"
+            f"💰 {net:+.2f}€  ·  💼 {balance:,.2f}€"
+            f"{dur_str}"
         )
+
+        from telegram_capital import _signal_msg_ids
+        reply_to = _signal_msg_ids.get(symbol)
         if self.router:
-            self.router.send_trade(text)
+            self.router.send_trade(text, reply_to=reply_to)
+        _signal_msg_ids.pop(symbol, None)
 
     def notify_trailing_stop_update(self, symbol: str, old_sl: float, new_sl: float):
         """Log only — no push."""
