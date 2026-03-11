@@ -498,23 +498,40 @@ class BotTickMixin:
         )
 
         signals_found = 0
-        for instrument in CAPITAL_INSTRUMENTS:
-            # Ne pas ouvrir si limite atteinte entre deux itérations
+        _scan_sem = threading.Semaphore(8)  # A-1: max 8 concurrent API calls
+
+        def _scan_instrument(instrument):
+            """A-1: Scan a single instrument (runs in thread pool)."""
+            nonlocal signals_found
             if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
-                break
-            # ── Session per-instrument : chaque catégorie a sa propre fenêtre ──
+                return
             _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
             if not self.strategy.is_session_ok_for(instrument, _cat):
-                continue
+                return
+            _scan_sem.acquire()
             try:
                 _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
                 self._process_capital_symbol(instrument, balance)
-                _open_after  = sum(1 for s in self.capital_trades.values() if s is not None)
+                _open_after = sum(1 for s in self.capital_trades.values() if s is not None)
                 if _open_after > _open_before:
                     signals_found += 1
             except Exception as e:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
-            time.sleep(0.3)
+            finally:
+                _scan_sem.release()
+
+        # A-1: Parallel scan — 48 instruments in ~2-3s instead of ~14.4s
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        _scan_t0 = time.time()
+        with ThreadPoolExecutor(max_workers=8, thread_name_prefix="A1_scan") as scan_pool:
+            futures = [scan_pool.submit(_scan_instrument, instr) for instr in CAPITAL_INSTRUMENTS]
+            for f in as_completed(futures, timeout=60):
+                try:
+                    f.result()
+                except Exception as e:
+                    logger.debug(f"A-1 scan future: {e}")
+        _scan_elapsed = time.time() - _scan_t0
+        logger.debug(f"⚡ A-1 scan complete: {len(CAPITAL_INSTRUMENTS)} instruments in {_scan_elapsed:.1f}s")
 
         # ── S-3: Micro-Timeframe Scan (5m/15m — additional signals) ──────
         if MICRO_TF_PROFILES and not self._dd_paused and not self._manual_pause:

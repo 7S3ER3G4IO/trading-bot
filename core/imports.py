@@ -38,6 +38,7 @@ from ohlcv_cache import OHLCVCache
 from trade_executor import TradeExecutor
 from ml_scorer import MLScorer
 from concurrent.futures import ThreadPoolExecutor
+import threading
 
 
 try:

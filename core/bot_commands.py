@@ -249,5 +249,27 @@ class BotCommandsMixin:
         balance = self.capital.get_balance() if self.capital.available else 0.0
         pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
         return balance, pnl_today
-    # ── Hub pages removed — multi-channel uses URL buttons now ──────────────
 
+    def get_system_stats(self) -> dict:
+        """Returns comprehensive stats from all optimization modules."""
+        stats = {
+            "trades_today": len(self._capital_closed_today),
+            "pnl_today": sum(t.get("pnl", 0) for t in self._capital_closed_today),
+            "active_positions": sum(1 for s in self.capital_trades.values() if s is not None),
+        }
+        # OHLCV Cache stats
+        if hasattr(self, 'ohlcv_cache'):
+            stats["cache"] = self.ohlcv_cache.stats
+        # ML Scorer stats
+        if hasattr(self, 'ml_scorer') and self.ml_scorer:
+            stats["ml"] = self.ml_scorer.stats
+        # Risk Manager stats
+        if hasattr(self, 'risk'):
+            stats["risk"] = {
+                "dd_paused": getattr(self, '_dd_paused', False),
+                "vix_synthetic": getattr(self.risk, '_vix_synthetic', 0),
+                "dd_limit": getattr(self.risk, '_dynamic_dd_limit', 0.10),
+                "trades_today_count": getattr(self.risk, '_trades_today', 0),
+            }
+        return stats
+    # ── Hub pages removed — multi-channel uses URL buttons now ──────────────
