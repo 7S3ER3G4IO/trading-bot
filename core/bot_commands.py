@@ -75,23 +75,8 @@ class BotCommandsMixin:
             return f"❌ Matinale : {e}"
 
     def _do_backtest(self, symbol: str = None, days: int = 30) -> str:
-        """Lance un backtest rapide en arrière-plan."""
-        try:
-            import threading, subprocess, sys
-            _days = str(days) if days else "30"
-            def _run():
-                result = subprocess.run(
-                    [sys.executable, "backtester_oanda.py", "--days", _days],
-                    capture_output=True, text=True, timeout=120
-                )
-                if result.returncode == 0:
-                    self.telegram.send_message("✅ <b>Backtest terminé</b>\n" + result.stdout[-1000:])
-                else:
-                    self.telegram.send_message(f"❌ Backtest erreur:\n{result.stderr[:500]}")
-            threading.Thread(target=_run, daemon=True).start()
-            return "⏳ Backtest lancé..."
-        except Exception as e:
-            return f"❌ Backtest : {e}"
+        """Backtest désactivé (backtester supprimé lors du nettoyage)."""
+        return "⚠️ Backtest non disponible — backtester supprimé lors du nettoyage de code."
 
     # ── Sprint 3 : Commandes premium Telegram ─────────────────────────────────
 

@@ -418,8 +418,8 @@ class BotTickMixin:
 
         # ── Limite exposition (max 10 CFD simultanées) ───────────────────────
         active_count = sum(1 for s in self.capital_trades.values() if s is not None)
-        if active_count >= 10:
-            logger.debug(f"🔒 Positions max atteint ({active_count}/10) — skip ce tick")
+        if active_count >= MAX_OPEN_TRADES:
+            logger.debug(f"🔒 Positions max atteint ({active_count}/{MAX_OPEN_TRADES}) — skip ce tick")
             return  # Plafond atteint — on surveille mais on n'ouvre rien
 
         # ── Scan des instruments Capital.com ─────────────────────────────────
@@ -433,14 +433,14 @@ class BotTickMixin:
         # ── Heartbeat visible : confirme que la boucle tourne ──────────────────
         logger.info(
             f"🔍 Scan {len(CAPITAL_INSTRUMENTS)} instruments | "
-            f"Balance={balance:,.0f}€ | Positions={active_count}/10 | "
+            f"Balance={balance:,.0f}€ | Positions={active_count}/{MAX_OPEN_TRADES} | "
             f"{now.hour}h{now.minute:02d} UTC"
         )
 
         signals_found = 0
         for instrument in CAPITAL_INSTRUMENTS:
             # Ne pas ouvrir si limite atteinte entre deux itérations
-            if sum(1 for s in self.capital_trades.values() if s is not None) >= 10:
+            if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
                 break
             try:
                 _open_before = sum(1 for s in self.capital_trades.values() if s is not None)

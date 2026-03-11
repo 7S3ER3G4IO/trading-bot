@@ -136,7 +136,7 @@ class BotMonitorMixin:
             # ── ATR Trailing Stop (après TP1 / BE activé) ───────────────────
             if state.get("tp1_hit"):
                 try:
-                    df_trail = self.capital.get_ohlcv(instrument, "MINUTE_5", count=20)
+                    df_trail = self.capital.fetch_ohlcv(instrument, "5m", count=20)
                     if df_trail is not None and len(df_trail) >= 14:
                         df_trail = self.strategy.compute_indicators(df_trail)
                         atr = self.strategy.get_atr(df_trail)
@@ -250,7 +250,7 @@ class BotMonitorMixin:
                     symbol=name_close,
                 )
                 try:
-                    fresh_bal = self.capital.get_balance() or balance
+                    fresh_bal = self.capital.get_balance() or self.initial_balance
                     pnl_real  = round(fresh_bal - self.initial_balance, 2)
                     icon = "🟢" if pnl_final >= 0 else "🔴"
                     logger.info(

@@ -160,6 +160,7 @@ class BotSignalsMixin:
             rng = sr["size"]
             if rng <= 0 or sr["pct"] < 0.08:
                 return
+            sl_dist = rng  # pour ADX adaptatif ci-dessous
             if sig == "BUY":
                 sl  = sr["low"]  - rng * _sl_buf
                 tp1 = entry + rng * _tp1_r
@@ -202,16 +203,16 @@ class BotSignalsMixin:
 
         # ── UPGRADE : R:R Adaptatif (ADX > 30 = tendance forte) ─────────────
         adx_now = float(df.iloc[-1].get("adx", 0)) if "adx" in df.columns else 0
-        if adx_now > 30:
-            rr_tp2 = 2.5 if sig == "BUY" else 2.5
-            rr_tp3 = 4.0 if sig == "BUY" else 4.0
+        if adx_now > 30 and sl_dist > 0:
+            rr_tp2 = 2.5
+            rr_tp3 = 4.0
             logger.info(f"📈 ADX={adx_now:.0f} > 30 — R:R étendu : TP2=×2.5R, TP3=×4.0R")
             if sig == "BUY":
-                tp2 = entry + rng * rr_tp2
-                tp3 = entry + rng * rr_tp3
+                tp2 = entry + sl_dist * rr_tp2
+                tp3 = entry + sl_dist * rr_tp3
             else:
-                tp2 = entry - rng * rr_tp2
-                tp3 = entry - rng * rr_tp3
+                tp2 = entry - sl_dist * rr_tp2
+                tp3 = entry - sl_dist * rr_tp3
 
         # ── UPGRADE : HMM Regime Switching ───────────────────────────────
         regime_result = {"name": "RANGING", "regime": 0, "confidence": 0.5}
@@ -299,10 +300,14 @@ class BotSignalsMixin:
 
         # ─── Telegram en background ────────
         import threading
+        # sr disponible seulement pour BK, fallback pour MR/TF
+        _range_pct  = sr["pct"]  if _strat == "BK" and 'sr' in dir() else 0.0
+        _range_high = sr["high"] if _strat == "BK" and 'sr' in dir() else entry
+        _range_low  = sr["low"]  if _strat == "BK" and 'sr' in dir() else entry
         _snap = dict(instrument=instrument, name=name, sig=sig,
                      entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
                      size=size1, score=score, session=session,
-                     range_pct=sr["pct"], range_high=sr["high"], range_low=sr["low"],
+                     range_pct=_range_pct, range_high=_range_high, range_low=_range_low,
                      confirmations=list(confirmations), df=df.copy())
         threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
 
@@ -332,7 +337,7 @@ class BotSignalsMixin:
             logger.debug(f"Signal card: {_kex}")
 
         if self.capital_trades[instrument]:
-            self.capital_trades[instrument]["ab_variant"] = ab_variant
+            self.capital_trades[instrument]["ab_variant"] = self.ab.get_variant(instrument)
 
         try:
             dash_open(symbol=CAPITAL_NAMES.get(instrument, instrument),
