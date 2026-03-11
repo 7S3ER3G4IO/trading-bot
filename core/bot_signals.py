@@ -301,9 +301,9 @@ class BotSignalsMixin:
         # ─── Telegram en background ────────
         import threading
         # sr disponible seulement pour BK, fallback pour MR/TF
-        _range_pct  = sr["pct"]  if _strat == "BK" and 'sr' in dir() else 0.0
-        _range_high = sr["high"] if _strat == "BK" and 'sr' in dir() else entry
-        _range_low  = sr["low"]  if _strat == "BK" and 'sr' in dir() else entry
+        _range_pct  = sr["pct"]  if _strat == "BK" else 0.0
+        _range_high = sr["high"] if _strat == "BK" else entry
+        _range_low  = sr["low"]  if _strat == "BK" else entry
         _snap = dict(instrument=instrument, name=name, sig=sig,
                      entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
                      size=size1, score=score, session=session,

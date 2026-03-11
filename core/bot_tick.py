@@ -226,7 +226,7 @@ class BotTickMixin:
                     f"Optuna en cours (30 trials × {len(CAPITAL_INSTRUMENTS)} instruments)...\n"
                     f"Résultats dans ~10 minutes."
                 )
-                import threading, subprocess, sys
+                import threading
                 def _run_optimizer():
                     try:
                         logger.info("⚙️ Auto-optimisation: optimizer supprimé — AB Tester actif à la place.")
@@ -459,32 +459,4 @@ class BotTickMixin:
                     pass
 
 
-    def _run_auto_hyperopt(self):
-        """
-        #4 — Lance le Hyperopt Optuna en arrière-plan (thread non-bloquant).
-        Exécuté automatiquement chaque lundi à 00h UTC.
-        Met à jour symbol_params.json → params rechargés au prochain tick.
-        """
-        import threading, subprocess, sys
-        def _run():
-            try:
-                self.telegram.send_message(
-                    "⚙️ <b>Auto-Hyperopt démarré</b>\n"
-                    "Optimisation des paramètres pour la semaine...\n"
-                    "⏳ ~60 secondes"
-                )
-                result = subprocess.run(
-                    [sys.executable, "optimizer.py", "--days", "14", "--trials", "80"],
-                    capture_output=True, text=True, timeout=300
-                )
-                if result.returncode == 0:
-                    self.telegram.send_message(
-                        "✅ <b>Auto-Hyperopt terminé</b>\n"
-                        "Nouveaux paramètres actifs pour la semaine 🎯"
-                    )
-                    logger.info("✅ Auto-Hyperopt terminé")
-                else:
-                    logger.error(f"❌ Auto-Hyperopt échec: {result.stderr[:200]}")
-            except Exception as e:
-                logger.error(f"❌ Auto-Hyperopt erreur: {e}")
-        threading.Thread(target=_run, daemon=True).start()
+
