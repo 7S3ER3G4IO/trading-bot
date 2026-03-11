@@ -40,8 +40,10 @@ def _send(text: str, markup=None):
     try:
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
         if markup:
-            import json
-            payload["reply_markup"] = json.dumps(markup.to_dict())
+            try:
+                payload["reply_markup"] = markup.to_dict()
+            except AttributeError:
+                pass
         r = requests.post(f"{_API}/sendMessage", json=payload, timeout=10)
         if not r.ok:
             logger.warning(f"⚠️ Telegram: {r.status_code} {r.text[:80]}")

@@ -68,8 +68,10 @@ class TelegramNotifier:
                 "parse_mode": "HTML",
             }
             if markup:
-                import json
-                payload["reply_markup"] = json.dumps(markup.to_dict())
+                try:
+                    payload["reply_markup"] = markup.to_dict()
+                except AttributeError:
+                    pass
             r = requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
             if not r.ok:
                 logger.warning(f"⚠️  Telegram {r.status_code}: {r.text[:80]}")
@@ -87,8 +89,10 @@ class TelegramNotifier:
             files = {"photo": ("chart.png", io.BytesIO(image_bytes), "image/png")}
             data  = {"chat_id": self.chat_id, "caption": caption, "parse_mode": "HTML"}
             if markup:
-                import json
-                data["reply_markup"] = json.dumps(markup.to_dict())
+                try:
+                    data["reply_markup"] = json.dumps(markup.to_dict())
+                except AttributeError:
+                    pass
             r = requests.post(f"{self._api}/sendPhoto", data=data, files=files, timeout=30)
             if not r.ok:
                 logger.warning(f"⚠️  Telegram sendPhoto {r.status_code}: {r.text[:80]}")

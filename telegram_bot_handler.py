@@ -429,14 +429,10 @@ class TelegramBotHandler:
             "parse_mode": "HTML",
         }
         if markup:
-            import json
             try:
-                payload["reply_markup"] = json.dumps(markup.to_dict())
+                payload["reply_markup"] = markup.to_dict()
             except AttributeError:
-                try:
-                    payload["reply_markup"] = markup.to_json()
-                except AttributeError:
-                    pass
+                pass
         try:
             requests.post(f"{self._base}/sendMessage", json=payload, timeout=10)
         except Exception as e:
@@ -451,14 +447,10 @@ class TelegramBotHandler:
             "parse_mode": "HTML",
         }
         if markup:
-            import json
             try:
-                payload["reply_markup"] = json.dumps(markup.to_dict())
+                payload["reply_markup"] = markup.to_dict()
             except AttributeError:
-                try:
-                    payload["reply_markup"] = markup.to_json()
-                except AttributeError:
-                    pass
+                pass
         try:
             r = requests.post(f"{self._base}/editMessageText", json=payload, timeout=10)
             if not r.ok:

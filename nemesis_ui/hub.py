@@ -149,17 +149,18 @@ class NemesisHub:
             logger.debug(f"Hub pin: {e}")
 
     @staticmethod
-    def _serialize_markup(markup) -> str:
-        """Serialize markup to JSON string for the API."""
+    def _serialize_markup(markup):
+        """Serialize markup to dict for the API (requests.post json= auto-serializes)."""
         if markup is None:
-            return ""
+            return None
         try:
-            return json.dumps(markup.to_dict())
+            return markup.to_dict()
         except AttributeError:
             try:
-                return markup.to_json()
-            except AttributeError:
-                return ""
+                import json
+                return json.loads(markup.to_json())
+            except (AttributeError, Exception):
+                return None
 
     # ── State Persistence ─────────────────────────────────────────────────────
 
