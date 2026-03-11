@@ -308,9 +308,14 @@ class CapitalWebSocket:
 
         for ref in [state["ref2"], state["ref3"]]:
             if ref:
-                success = self._client.modify_position_stop(ref, entry)
+                # BE at entry + 1 pip (covers spread)
+                long_trade = state["tp1"] > entry
+                from brokers.capital_client import CAPITAL_PIP
+                pip = CAPITAL_PIP.get(epic, 0.0001)
+                be_price = entry + pip if long_trade else entry - pip
+                success = self._client.modify_position_stop(ref, be_price)
                 if success:
-                    logger.info(f"  ✅ BE activé {ref}")
+                    logger.info(f"  ✅ BE activé {ref} @ {be_price:.5f}")
 
         if self._on_be:
             try:

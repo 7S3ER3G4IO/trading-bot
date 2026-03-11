@@ -41,16 +41,19 @@ class BotCommandsMixin:
             return f"⚠️ Aucune position ouverte sur {instrument}"
         entry = state.get("entry", 0)
         refs  = state.get("refs", [])
+        direction = state.get("direction", "BUY")
+        pip = CAPITAL_PIP.get(instrument, 0.0001)
+        be_price = entry + pip if direction == "BUY" else entry - pip
         ok_count = 0
         for ref in refs[1:]:   # TP2 + TP3
             if ref:
                 try:
-                    if self.capital.modify_position_stop(ref, entry):
+                    if self.capital.modify_position_stop(ref, be_price):
                         ok_count += 1
                 except Exception:
                     pass
         name = CAPITAL_NAMES.get(instrument, instrument)
-        return f"✅ BE activé sur {name} ({ok_count} positions)" if ok_count else f"❌ BE échec {name}"
+        return f"✅ BE activé sur {name} @ {be_price:.5f} ({ok_count} positions)" if ok_count else f"❌ BE échec {name}"
 
     def _do_pause(self) -> str:
         """Met le bot en pause manuelle."""
@@ -176,7 +179,8 @@ class BotCommandsMixin:
                 px = self.capital.get_current_price(epic)
                 if px:
                     mid = px["mid"]
-                    unrealized = round((mid - entry) * (1 if direction == "BUY" else -1) * 3, 2)
+                    n_refs = sum(1 for r in state.get("refs", []) if r)
+                    unrealized = round((mid - entry) * (1 if direction == "BUY" else -1) * n_refs, 2)
                     total_unrealized += unrealized
             except Exception:
                 pass

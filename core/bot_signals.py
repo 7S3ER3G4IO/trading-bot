@@ -10,9 +10,9 @@ class BotSignalsMixin:
         """
         Analyse un instrument Capital.com avec la stratégie London/NY Open Breakout.
         Ouvre 3 positions (taille/3) avec 3 niveaux de TP :
-          TP1 = range × 0.8   (sortie rapide + déclencheur BE)
-          TP2 = range × 1.8   (objectif principal)
-          TP3 = range × 3.0   (laisser courir)
+          TP1 = range × 1.5   (sortie rapide + déclencheur BE)
+          TP2 = range × 3.0   (objectif principal)
+          TP3 = range × 5.0   (laisser courir)
         """
         state = self.capital_trades.get(instrument)
 
@@ -145,9 +145,9 @@ class BotSignalsMixin:
 
         # ═══ SL / TP dynamiques par stratégie et actif ══════════════════════════════
         _sl_buf = _profile.get("sl_buffer", 0.10)
-        _tp1_r  = _profile.get("tp1", 0.8)
-        _tp2_r  = _profile.get("tp2", 1.8)
-        _tp3_r  = _profile.get("tp3", 3.0)
+        _tp1_r  = _profile.get("tp1", 1.5)
+        _tp2_r  = _profile.get("tp2", 3.0)
+        _tp3_r  = _profile.get("tp3", 5.0)
         entry   = float(df.iloc[-1]["close"])
         direction = "BUY" if sig == "BUY" else "SELL"
         atr_val = self.strategy.get_atr(df)

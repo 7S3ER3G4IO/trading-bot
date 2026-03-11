@@ -51,7 +51,8 @@ class BotTickMixin:
                     if px:
                         mid = px["mid"]
                         direction = state.get("direction", "BUY")
-                        unrealized_pnl = round((mid - entry) * (1 if direction == "BUY" else -1) * 3, 2)
+                        n_refs = sum(1 for r in state.get("refs", []) if r)
+                        unrealized_pnl = round((mid - entry) * (1 if direction == "BUY" else -1) * n_refs, 2)
                 except Exception:
                     pass
                 open_trades.append({
