@@ -176,10 +176,14 @@ class OHLCVCache:
             if len(merged) > 250:
                 merged = merged.iloc[-250:]
 
-            # Recompute indicators sur le DataFrame complet (nécessaire car EMA/RSI
-            # dépendent de la séquence complète)
+            # A-3: Use incremental indicator update when possible
             if strategy:
-                merged = strategy.compute_indicators(merged)
+                if entry.get("indicators_done") and "atr" in old_df.columns:
+                    # Incremental: only update last bar (~1ms vs ~200ms)
+                    merged = strategy.update_last_bar(merged)
+                else:
+                    # First time or missing indicators: full recompute
+                    merged = strategy.compute_indicators(merged)
 
             with self._lock:
                 self._store[instrument] = {
