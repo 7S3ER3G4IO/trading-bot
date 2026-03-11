@@ -148,6 +148,21 @@ def _send_photo_to_channel(channel: str, image_bytes: bytes, caption: str):
         logger.error(f"❌ Telegram send_photo: {e}")
 
 
+# ── Signal message ID cache (for reply-to) ────────────────────────────────────
+_signal_msg_ids: dict = {}   # {instrument: message_id}
+
+
+def _signal_summary_line(name: str, sig: str, entry: float,
+                         tp1: float, tp2: float, tp3_label: str, sl: float) -> str:
+    """Build the compact signal summary line used in TP/SL replies."""
+    dir_emoji = "🟢" if sig == "BUY" else "🔴"
+    return (
+        f"{dir_emoji} {'J\'ACHÈTE' if sig == 'BUY' else 'JE VENDS'} {name} à {entry:.5f} "
+        f"🎯 TP1 : {tp1:.5f} 🎯 TP2 : {tp2:.5f} 🎯 TP3 : {tp3_label} "
+        f"🔒 SL : {sl:.5f}"
+    )
+
+
 # ─── 1. Notification d'entrée complète → canal TRADES ─────────────────────────
 
 def notify_capital_entry(
@@ -157,29 +172,26 @@ def notify_capital_entry(
     range_pct: float, range_high: float, range_low: float,
     confirmations: list, df=None,
 ):
-    """Notification d'ouverture de trade premium → TRADES channel."""
+    """Notification d'ouverture Station X style → TRADES channel."""
     from brokers.capital_client import PIP_FACTOR as PIP
     pip = PIP.get(instrument, 0.0001)
 
     def pips(a, b): return round(abs(a - b) / pip)
 
-    rr = R.format_rr(entry, sl, tp2)
-    score_bar = R.score_bar(score, 3)
+    direction = "ACHAT" if sig == "BUY" else "VENTE"
+    dir_emoji = "🟢" if sig == "BUY" else "🔴"
+    action = "J'ACHÈTE" if sig == "BUY" else "JE VENDS"
 
-    caption = (
-        f"{R.box_header(f'📈 Capital.com — {name}')}\n\n"
-        f"{'🟢 LONG' if sig == 'BUY' else '🔴 SHORT'}  ·  {session} Open\n"
-        f"{score_bar}  Score {score}/3  ·  {rr}\n\n"
-        f"📍 <b>Niveaux</b>\n"
-        f"  📍 Entrée <code>{entry:.5f}</code>\n"
-        f"  🛑 SL    <code>{sl:.5f}</code>  ({pips(entry,sl)} pips)\n"
-        f"  🎯 TP1   <code>{tp1:.5f}</code>  ({pips(entry,tp1)} pips)\n"
-        f"  🎯 TP2   <code>{tp2:.5f}</code>  ({pips(entry,tp2)} pips)\n"
-        f"  🎯 TP3   <code>{tp3:.5f}</code>  ({pips(entry,tp3)} pips)\n\n"
-        f"📦 3 × {size} unités  ·  Range {range_pct:.2f}%\n"
-        f"🔬 {' · '.join(confirmations)}"
+    signal_text = (
+        f"<b>{direction} {name} NOW !</b>\n\n"
+        f"{dir_emoji} {action} {name} à <b>{entry:.5f}</b>\n\n"
+        f"🎯 TP1 : {tp1:.5f}  ({pips(entry, tp1)} pips)\n"
+        f"🎯 TP2 : {tp2:.5f}  ({pips(entry, tp2)} pips)\n"
+        f"🎯 TP3 : Ouvert\n\n"
+        f"🔒 SL : {sl:.5f}  ({pips(entry, sl)} pips)"
     )
 
+    msg_id = None
     if df is not None:
         try:
             from signal_card import generate_signal_card
@@ -191,26 +203,30 @@ def notify_capital_entry(
                 session=session,
             )
             if chart_bytes:
-                _send_photo_to_channel("trades", chart_bytes, caption)
-                return
+                msg_id = _send_photo_to_channel("trades", chart_bytes, signal_text)
         except Exception as e:
             logger.debug(f"Signal card: {e}")
 
-    _send_to_channel("trades", caption)
+    if not msg_id:
+        if _router:
+            msg_id = _router.send_trade(signal_text)
+
+    # Store message_id for reply-to on TP/SL
+    if msg_id:
+        _signal_msg_ids[instrument] = msg_id
 
 
 # ─── 2. Alerte TP1 + activation Break-Even → canal TRADES ─────────────────────
 
 def notify_tp1_be(name: str, instrument: str, entry: float,
                   pips_tp1: float, size: float):
-    header = R.box_header(f"🎯 TP1 TOUCHÉ — {name}")
-    _send_to_channel("trades",
-        f"{header}\n\n"
-        f"✅ +{pips_tp1:.0f} pips | Position 1/3 fermée\n"
-        f"🟡 <b>Break-Even activé</b> sur TP2 + TP3\n"
-        f"📍 SL déplacé à l'entrée : <code>{entry:.5f}</code>\n\n"
-        f"🔒 Risque = 0  ·  2 positions encore ouvertes"
-    )
+    reply_to = _signal_msg_ids.get(instrument)
+    if _router:
+        _router.send_trade(
+            f"<b>TP1 TOUCHÉ</b> 🔥 <b>+{pips_tp1:.0f} PIPS</b> ✅\n"
+            f"🟡 Break-Even activé · SL → entrée",
+            reply_to=reply_to,
+        )
 
 
 # ─── 3. Barre de progression → canal TRADES ──────────────────────────────────

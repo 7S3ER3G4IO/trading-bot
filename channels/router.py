@@ -30,13 +30,14 @@ class ChannelRouter:
     # ── Public send methods ────────────────────────────────────────────────
 
     def send_to(self, channel_key: str, text: str, parse_mode: str = "HTML",
-                silent: bool = False, pin: bool = False) -> Optional[int]:
+                silent: bool = False, pin: bool = False,
+                reply_to: int = None) -> Optional[int]:
         """Send a message to a specific channel. Returns message_id."""
         ch = CHANNELS.get(channel_key)
         if not ch:
             logger.warning(f"⚠️ Canal inconnu : {channel_key}")
             return None
-        msg_id = self._send(ch["id"], text, parse_mode, silent=silent)
+        msg_id = self._send(ch["id"], text, parse_mode, silent=silent, reply_to=reply_to)
         if pin and msg_id:
             self._pin(ch["id"], msg_id)
         return msg_id
@@ -70,9 +71,10 @@ class ChannelRouter:
         """Dashboard: silent by default (heartbeat, sessions)."""
         return self.send_to("dashboard", text, silent=silent, pin=pin)
 
-    def send_trade(self, text: str, silent: bool = False) -> Optional[int]:
+    def send_trade(self, text: str, silent: bool = False,
+                   reply_to: int = None) -> Optional[int]:
         """Trades: NOT silent (important alerts)."""
-        return self.send_to("trades", text, silent=silent)
+        return self.send_to("trades", text, silent=silent, reply_to=reply_to)
 
     def send_performance(self, text: str, silent: bool = True) -> Optional[int]:
         """Performance: silent by default (reports, recaps)."""
@@ -93,7 +95,7 @@ class ChannelRouter:
     # ── Internal API ───────────────────────────────────────────────────────
 
     def _send(self, chat_id: str, text: str, parse_mode: str = "HTML",
-              silent: bool = False) -> Optional[int]:
+              silent: bool = False, reply_to: int = None) -> Optional[int]:
         """Send a message via Telegram API. Returns message_id."""
         if not self._api or not _requests:
             return None
@@ -104,6 +106,8 @@ class ChannelRouter:
                 "parse_mode": parse_mode,
                 "disable_notification": silent,
             }
+            if reply_to:
+                payload["reply_to_message_id"] = reply_to
             r = _requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
             if r.ok:
                 return r.json().get("result", {}).get("message_id")

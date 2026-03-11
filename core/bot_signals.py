@@ -250,17 +250,16 @@ class BotSignalsMixin:
         if size1 <= 0:
             return
 
-        # ─── ORDRES EN PARALLÈLE ────────────────────────
+        # ─── ORDRES SÉQUENTIELS (anti-throttling Capital.com) ────
+        import time as _time
         def _place(tp):
             return self.capital.place_market_order(instrument, direction, size1, sl, tp)
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            f1 = pool.submit(_place, tp1)
-            f2 = pool.submit(_place, tp2)
-            f3 = pool.submit(_place, tp3)
-            ref1 = f1.result()
-            ref2 = f2.result()
-            ref3 = f3.result()
+        ref1 = _place(tp1)
+        _time.sleep(0.5)
+        ref2 = _place(tp2)
+        _time.sleep(0.5)
+        ref3 = _place(tp3)
 
         if not any([ref1, ref2, ref3]):
             return

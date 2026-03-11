@@ -98,8 +98,6 @@ def generate_signal_card(
 
         hlines = dict(
             hlines=[entry, sl, tp1, tp2, tp3],
-            linestyle="--",
-            linewidths=1.0,
         )
 
         # ─── Générer la figure ─────────────────────────────────────────────────
