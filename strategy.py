@@ -238,9 +238,8 @@ class Strategy:
             return self._signal_tf(df, symbol, asset_profile)
 
         # ═══ BREAKOUT (BK) — logique originale ═══
-        # Filtre session (skip en futures_mode pour backtests)
-        if not futures_mode and not self.is_session_ok():
-            return SIGNAL_HOLD, 0, []
+        # Note: le filtre session est géré per-instrument dans bot_tick.py
+        # via is_session_ok_for() — plus de gate ici
 
         curr = df.iloc[-1]
 
