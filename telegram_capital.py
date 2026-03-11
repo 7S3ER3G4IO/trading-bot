@@ -374,3 +374,61 @@ def notify_bot_paused(reason: str = ""):
 
 def notify_bot_resumed():
     _send_to_channel("dashboard", "▶️ <b>BOT REPRIS</b> — Surveillance active ✅")
+
+
+# ─── 8. System Stats → canal STATS ──────────────────────────────────────────
+
+def notify_system_stats(stats_text: str):
+    """Send /stats output to Stats channel."""
+    _send_to_channel("stats", stats_text)
+
+
+def notify_performance(perf_text: str):
+    """Send /performance output to Performance channel."""
+    _send_to_channel("performance", perf_text)
+
+
+def notify_health(health_text: str):
+    """Send /health output to Dashboard channel."""
+    _send_to_channel("dashboard", health_text)
+
+
+# ─── 9. ML Model Events → canal STATS ───────────────────────────────────────
+
+def notify_ml_trained(samples: int, accuracy: float = 0.0):
+    """Notify when ML model is trained for the first time."""
+    header = R.box_header("🧠 ML MODEL TRAINED")
+    _send_to_channel("stats",
+        f"{header}\n\n"
+        f"📊 Samples: <b>{samples}</b>\n"
+        f"🎯 Accuracy: <b>{accuracy:.1%}</b>\n\n"
+        f"Le modèle va maintenant ajuster les scores de chaque signal.\n"
+        f"🏅 Achievement débloqué : <b>🧠 ML Oracle</b>"
+    )
+
+
+# ─── 10. Kill-Switch Alert → canal RISK ──────────────────────────────────────
+
+def notify_kill_switch(reason: str, category: str = ""):
+    """Notify kill-switch activation."""
+    header = R.box_header("🚨 KILL-SWITCH ACTIVÉ")
+    _send_to_channel("risk",
+        f"{header}\n\n"
+        f"⛔ <b>{reason}</b>\n"
+        f"📊 Catégorie: {category or '—'}\n\n"
+        f"Trading stoppé pour cette catégorie.\n"
+        f"🔄 Reprise automatique après cooldown."
+    )
+
+
+# ─── 11. Regime Change → canal DASHBOARD ─────────────────────────────────────
+
+def notify_regime_change(old_regime: str, new_regime: str, fg_value: int = 0):
+    """Notify market regime change."""
+    emojis = {"RISK_ON": "🟢", "RISK_OFF": "🔴", "NEUTRAL": "⚪"}
+    _send_to_channel("dashboard",
+        f"🌍 <b>Changement de régime</b>\n\n"
+        f"{emojis.get(old_regime, '⚪')} {old_regime} → {emojis.get(new_regime, '⚪')} <b>{new_regime}</b>\n"
+        f"🧠 Fear & Greed: {fg_value}/100\n\n"
+        f"{'Position multiplier: ×1.2 — mode agressif' if new_regime == 'RISK_ON' else 'Position multiplier: ×0.7 — mode défensif' if new_regime == 'RISK_OFF' else 'Position multiplier: ×1.0 — mode normal'}"
+    )

@@ -23,6 +23,13 @@ ACHIEVEMENTS = {
     "consistency":    {"name": "📈 Consistent",      "desc": "5 jours positifs d'affilée", "threshold": 5},
     "first_blood":    {"name": "⚔️ First Blood",     "desc": "Premier trade gagnant",   "threshold": 1},
     "centurion":      {"name": "🏛️ Centurion",       "desc": "100 trades complétés",    "threshold": 100},
+    # New Wave 12 achievements
+    "ml_oracle":      {"name": "🧠 ML Oracle",       "desc": "Modèle ML entraîné (100+ samples)", "threshold": 100},
+    "overlap_king":   {"name": "⚡ Overlap King",    "desc": "5 wins pendant London/NY overlap", "threshold": 5},
+    "machine_gun":    {"name": "🔫 Machine Gun",     "desc": "30+ trades en une journée", "threshold": 30},
+    "risk_master":    {"name": "🛡️ Risk Master",     "desc": "Survécu 3 drawdowns consécutifs","threshold": 3},
+    "night_hawk":     {"name": "🦉 Night Hawk",      "desc": "Win en session Asia",      "threshold": 1},
+    "marathon":       {"name": "🏃 Marathon",         "desc": "7 jours positifs d'affilée", "threshold": 7},
 }
 
 
@@ -42,14 +49,21 @@ class GamificationTracker:
         self.trades_since_last_sl: int = 0  # for iron shield
         self.positive_days_streak: int = 0  # consecutive positive days
         self.daily_pnl: float = 0.0         # accumulator for current day
+        self.daily_trade_count: int = 0     # trades today (for machine_gun)
         self._current_day: Optional[str] = None
         self.unlocked: List[str] = []       # list of unlocked achievement IDs
-        self._newly_unlocked: List[str] = []  # achievements unlocked this session (not yet announced)
+        self._newly_unlocked: List[str] = []  # achievements unlocked this session
+        # New counters
+        self.overlap_wins: int = 0          # wins during London/NY overlap
+        self.dd_survivals: int = 0          # drawdowns survived
+        self.asia_wins: int = 0             # wins in Asia session
+        self.ml_trained: bool = False       # ML model trained
         self._load()
 
     # ── Core ──────────────────────────────────────────────────────────────────
 
-    def on_trade_closed(self, won: bool, pnl: float, is_tp3_complete: bool = False) -> List[str]:
+    def on_trade_closed(self, won: bool, pnl: float, is_tp3_complete: bool = False,
+                        is_overlap: bool = False, session: str = "") -> List[str]:
         """
         Record a trade result. Returns list of newly unlocked achievements.
         """
@@ -59,12 +73,19 @@ class GamificationTracker:
         # Day tracking
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if self._current_day != today:
-            # New day — finalize previous day
             if self._current_day is not None:
                 self._finalize_day()
             self._current_day = today
             self.daily_pnl = 0.0
+            self.daily_trade_count = 0
         self.daily_pnl += pnl
+        self.daily_trade_count += 1
+
+        # Session/overlap tracking
+        if won and is_overlap:
+            self.overlap_wins += 1
+        if won and session.lower() == "asia":
+            self.asia_wins += 1
 
         if won:
             self.total_wins += 1
@@ -110,6 +131,13 @@ class GamificationTracker:
             "diamond_day":    self.best_day_pnl >= 100,
             "consistency":    self.positive_days_streak >= 5,
             "centurion":      self.total_trades >= 100,
+            # New achievements
+            "ml_oracle":      self.ml_trained,
+            "overlap_king":   self.overlap_wins >= 5,
+            "machine_gun":    self.daily_trade_count >= 30,
+            "risk_master":    self.dd_survivals >= 3,
+            "night_hawk":     self.asia_wins >= 1,
+            "marathon":       self.positive_days_streak >= 7,
         }
 
         for ach_id, condition in checks.items():
@@ -275,8 +303,13 @@ class GamificationTracker:
                 "trades_since_last_sl": self.trades_since_last_sl,
                 "positive_days_streak": self.positive_days_streak,
                 "daily_pnl": round(self.daily_pnl, 2),
+                "daily_trade_count": self.daily_trade_count,
                 "current_day": self._current_day,
                 "unlocked": self.unlocked,
+                "overlap_wins": self.overlap_wins,
+                "dd_survivals": self.dd_survivals,
+                "asia_wins": self.asia_wins,
+                "ml_trained": self.ml_trained,
             }
             with open(GAMIFICATION_FILE, "w") as f:
                 json.dump(data, f, indent=2)
@@ -300,8 +333,13 @@ class GamificationTracker:
                 self.trades_since_last_sl = data.get("trades_since_last_sl", 0)
                 self.positive_days_streak = data.get("positive_days_streak", 0)
                 self.daily_pnl = data.get("daily_pnl", 0.0)
+                self.daily_trade_count = data.get("daily_trade_count", 0)
                 self._current_day = data.get("current_day")
                 self.unlocked = data.get("unlocked", [])
+                self.overlap_wins = data.get("overlap_wins", 0)
+                self.dd_survivals = data.get("dd_survivals", 0)
+                self.asia_wins = data.get("asia_wins", 0)
+                self.ml_trained = data.get("ml_trained", False)
                 logger.debug(f"🏅 Gamification chargé : {self.total_trades} trades, streak={self.win_streak}")
         except Exception as e:
             logger.debug(f"Gamification load: {e}")
