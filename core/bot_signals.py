@@ -215,6 +215,13 @@ class BotSignalsMixin:
             instrument=instrument, score=score,
             current_atr=atr_val, avg_atr=atr_20_avg
         )
+
+        # Wave 12: Apply market regime multiplier to sizing
+        regime_mult = self.context.get_regime_multiplier() if hasattr(self, 'context') else 1.0
+        dynamic_risk *= regime_mult
+        if regime_mult != 1.0:
+            logger.info(f"🌍 Regime {self.context.regime} → sizing ×{regime_mult:.1f} → risk={dynamic_risk:.3f}")
+
         total_size = self.capital.position_size(
             balance=balance, risk_pct=dynamic_risk, entry=entry, sl=sl, epic=instrument
         )
@@ -328,6 +335,20 @@ class BotSignalsMixin:
         )
 
         # ─── Sauvegarde état ──────────────────────────────────────
+        # Wave 13: Detect overlap and log correlation
+        _is_overlap = self.context.is_overlap() if hasattr(self, 'context') else False
+        _session_quality = self.context.session_quality() if hasattr(self, 'context') else ""
+
+        # Correlation warning
+        if hasattr(self, 'context'):
+            for open_inst in self.capital_trades:
+                if self.capital_trades[open_inst] is not None and open_inst != instrument:
+                    corr = self.context.get_correlation(instrument, open_inst)
+                    if abs(corr) > 0.7:
+                        logger.warning(
+                            f"⚠️ Corrélation {instrument}↔{open_inst}: {corr:.2f} — positions corrélées"
+                        )
+
         self.capital_trades[instrument] = {
             "refs":      [ref1, ref2, ref3],
             "entry":     entry,
@@ -336,17 +357,19 @@ class BotSignalsMixin:
             "tp2":       tp2,
             "tp3":       tp3,
             "direction": direction,
-            "size":      size1,  # F-2: stored for PnL calculation
-            "tp1_hit":   _partial_tp1_failed,  # EC-1: auto-BE if TP1 order failed
+            "size":      size1,
+            "tp1_hit":   _partial_tp1_failed,
             "tp2_hit":   False,
             "score":      score,
             "confirmations": confirmations,
             "regime":    regime_result.get("name", "RANGING"),
             "fear_greed": self.context._fg_value,
-            "in_overlap": False,
+            "in_overlap": _is_overlap,
+            "session_quality": _session_quality,
             "adx_at_entry": adx_now,
             "open_time":  datetime.now(timezone.utc),
-            "ml_features": _ml_features,  # S-4: for outcome recording
+            "ml_features": _ml_features,
+            "market_regime": self.context.regime if hasattr(self, 'context') else "NEUTRAL",
         }
         if _partial_tp1_failed:
             logger.warning(
