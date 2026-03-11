@@ -372,11 +372,32 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
         else:
             global_bias = "MIXTE ⚪ — Sélectif, attendre les confirmations"
 
+        # Best/worst performers by ATR volatility
+        sorted_by_atr = sorted(analyses, key=lambda x: x[2].get("atr_pct", 0), reverse=True)
+        hot_assets = [a[2]["ticker"] for a in sorted_by_atr[:3]]
+        cold_assets = [a[2]["ticker"] for a in sorted_by_atr[-2:]]
+
         actifs_summary = "\n".join([
             f"{'🟢' if 'haussier' in a['bias'].lower() else '🔴' if 'baissier' in a['bias'].lower() else '⚪'} "
             f"<b>{a['ticker']}</b> — {a['bias']} | Support : {a['support']:,.4f}"
             for _, _, a in analyses
         ])
+
+        # System health section
+        system_lines = "\n\n🤖 <b>Santé Système</b>"
+        try:
+            from ml_scorer import MLScorer
+            ml = MLScorer()
+            ml_stats = ml.stats
+            if ml_stats.get("model_ready"):
+                system_lines += f"\n  🧠 ML : actif ({ml_stats['samples']} samples)"
+            else:
+                system_lines += f"\n  🧠 ML : entraînement ({ml_stats['samples']}/{ml_stats['min_required']})"
+        except Exception:
+            system_lines += "\n  🧠 ML : —"
+
+        system_lines += f"\n  🔥 Top volatilité : {', '.join(hot_assets)}"
+        system_lines += f"\n  ❄️ Faible activité : {', '.join(cold_assets)}"
 
         telegram_notifier.router.send_briefing(
             f"📋 <b>SYNTHÈSE — Matinale du {date_str}</b>\n"
@@ -384,6 +405,7 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
             f"{actifs_summary}\n"
             f"\n"
             f"Biais global : <b>{global_bias}</b>\n"
+            f"{system_lines}\n"
             f"\n"
             f"Bonne session à tous, on reste disciplinés ! 💪\n"
             f"Les alertes de trade arriveront automatiquement dès qu'un signal est confirmé ✅"

@@ -170,41 +170,96 @@ class ABTester:
         self._save()
 
     def _evaluate(self, instrument: str):
-        """Compare les deux variantes et bascule vers le meilleur."""
+        """Compare les deux variantes avec z-test de significativité statistique."""
+        import math
         stats = self._state[instrument]["stats"]
-        pf_a = stats["A"].profit_factor
-        pf_b = stats["B"].profit_factor
+        n_a, n_b = stats["A"].n, stats["B"].n
+        wr_a, wr_b = stats["A"].win_rate, stats["B"].win_rate
+        pf_a, pf_b = stats["A"].profit_factor, stats["B"].profit_factor
 
-        winner = "B" if pf_b > pf_a * 1.05 else "A"  # B doit être 5% meilleur pour gagner
+        # Z-test pour la différence de proportions (win rates)
+        p_pooled = (wr_a * n_a + wr_b * n_b) / (n_a + n_b) if (n_a + n_b) > 0 else 0.5
+        se = math.sqrt(max(p_pooled * (1 - p_pooled) * (1/n_a + 1/n_b), 1e-10))
+        z_score = (wr_b - wr_a) / se if se > 0 else 0
+
+        # p-value (two-tailed) — approximation via normal CDF
+        # |z| > 1.96 → p < 0.05
+        # |z| > 2.576 → p < 0.01
+        p_value = 2 * (1 - self._normal_cdf(abs(z_score)))
+        significant = p_value < 0.05
+
         old_variant = self._state[instrument]["variant"]
+
+        if significant and pf_b > pf_a:
+            winner = "B"
+        elif significant and pf_a > pf_b:
+            winner = "A"
+        else:
+            winner = old_variant  # Pas assez de preuve → garder l'actuel
 
         if winner != old_variant:
             self._state[instrument]["variant"] = winner
             logger.info(
-                f"🏆 AB Test {instrument} : variante {winner} promotionnée "
-                f"(PF_A={pf_a:.2f} vs PF_B={pf_b:.2f})"
+                f"🏆 AB Test {instrument} : variante {winner} ← statistiquement significatif "
+                f"(z={z_score:.2f}, p={p_value:.4f}, PF_A={pf_a:.2f} vs PF_B={pf_b:.2f})"
             )
         else:
-            logger.debug(f"AB Test {instrument} : variante {old_variant} maintenue (PF_A={pf_a:.2f} PF_B={pf_b:.2f})")
+            logger.debug(
+                f"AB Test {instrument} : {old_variant} maintenu "
+                f"(z={z_score:.2f}, p={p_value:.4f}, sig={significant})"
+            )
 
         # Réinitialiser les stats pour le prochain cycle
         stats["A"].trades.clear()
         stats["B"].trades.clear()
 
+    @staticmethod
+    def _normal_cdf(x):
+        """Approximation de la CDF normale standard (Abramowitz & Stegun)."""
+        import math
+        a1, a2, a3, a4, a5 = 0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429
+        p = 0.3275911
+        sign = 1 if x >= 0 else -1
+        x = abs(x) / math.sqrt(2)
+        t = 1.0 / (1.0 + p * x)
+        y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-x * x)
+        return 0.5 * (1.0 + sign * y)
+
     def weekly_report(self) -> str:
-        """Génère un rapport hebdomadaire A/B pour Telegram."""
+        """Génère un rapport hebdomadaire A/B avec p-values."""
+        import math
         lines = ["📊 <b>Rapport A/B Testing</b>", ""]
+
+        total_a_pnl, total_b_pnl = 0, 0
         for inst, data in sorted(self._state.items()):
             v    = data["variant"]
             sa   = data["stats"]["A"]
             sb   = data["stats"]["B"]
-            n_a  = sa.n
-            n_b  = sb.n
-            pf_a = f"{sa.profit_factor:.2f}" if n_a else "—"
-            pf_b = f"{sb.profit_factor:.2f}" if n_b else "—"
+            n_a, n_b = sa.n, sb.n
+
+            # Z-test
+            if n_a >= 5 and n_b >= 5:
+                p_pooled = (sa.win_rate * n_a + sb.win_rate * n_b) / (n_a + n_b)
+                se = math.sqrt(max(p_pooled * (1 - p_pooled) * (1/n_a + 1/n_b), 1e-10))
+                z = (sb.win_rate - sa.win_rate) / se if se > 0 else 0
+                p_val = 2 * (1 - self._normal_cdf(abs(z)))
+                sig = "★" if p_val < 0.05 else "·"
+                p_str = f"p={p_val:.2f}"
+            else:
+                sig, p_str = "·", "—"
+
+            pf_a = f"{sa.profit_factor:.1f}" if n_a else "—"
+            pf_b = f"{sb.profit_factor:.1f}" if n_b else "—"
+            total_a_pnl += sa.total_pnl
+            total_b_pnl += sb.total_pnl
+
             lines.append(
-                f"  {inst}: ★{v}  A={pf_a}({n_a}tr) B={pf_b}({n_b}tr)"
+                f"{sig}{v} {inst:<8} A:{pf_a}({n_a}) B:{pf_b}({n_b}) {p_str}"
             )
+
+        lines.append("")
+        lines.append(f"💰 Total A: {total_a_pnl:+.2f}€ | B: {total_b_pnl:+.2f}€")
+        lines.append(f"🏆 Winner global: <b>{self.global_winner()}</b>")
         return "\n".join(lines)
 
     def global_winner(self) -> str:

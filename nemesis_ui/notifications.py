@@ -16,6 +16,7 @@ class NotificationFormatter:
         score: int, confirmations: list,
         session: str, win_streak: int = 0,
         sparkline_data: list = None,
+        ml_prob: float = 0.0,
     ) -> str:
         direction = "🟢 LONG" if sig in ("BUY", "LONG") else "🔴 SHORT"
         score_bar = R.score_bar(score, 3)
@@ -33,6 +34,11 @@ class NotificationFormatter:
         if win_streak > 0:
             streak_str = f"  ·  {R.format_streak(win_streak)}"
 
+        ml_line = ""
+        if ml_prob > 0 and ml_prob != 0.5:
+            ml_icon = "🟢" if ml_prob >= 0.6 else "🟡" if ml_prob >= 0.4 else "🔴"
+            ml_line = f"\n🧠 ML P(win) : {ml_icon} {ml_prob:.0%}"
+
         return (
             f"{header}\n\n"
             f"{direction}  ·  <b>{name}</b>  ·  {session}\n"
@@ -44,6 +50,7 @@ class NotificationFormatter:
             f"  🎯 TP3  Trailing\n"
             f"  🛑 SL   <code>{sl:,.5f}</code>  (-{pct(sl):.2f}%)\n\n"
             f"🔬 {' · '.join(confirmations[:4]) if confirmations else '—'}"
+            f"{ml_line}"
             f"{streak_str}"
             f"{spark}"
         )
