@@ -370,10 +370,7 @@ class BotTickMixin:
         # ── Surveillance des positions ouvertes ──────────────────────────
         self._monitor_capital_positions()
 
-        # ── Vérification session London/NY (08h-10h30 / 13h30-16h UTC) ──
-        if not self.strategy.is_session_ok():
-            logger.debug(f"🕐 Hors session ({now.hour}h{now.minute:02d} UTC) — skip")
-            return
+        # ── Vérification session : désormais per-instrument dans la boucle ci-dessous ──
 
         # ── Pause calendrier économique ───────────────────────────────────
         should_pause, reason = self.calendar.should_pause_trading()
@@ -407,6 +404,10 @@ class BotTickMixin:
             # Ne pas ouvrir si limite atteinte entre deux itérations
             if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
                 break
+            # ── Session per-instrument : chaque catégorie a sa propre fenêtre ──
+            _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
+            if not self.strategy.is_session_ok_for(instrument, _cat):
+                continue
             try:
                 _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
                 self._process_capital_symbol(instrument, per_instrument)

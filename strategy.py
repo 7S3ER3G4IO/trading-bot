@@ -68,6 +68,36 @@ def _bar_in_presession(h: int, m: int) -> int:
             return i
     return -1
 
+# Sessions élargies par catégorie d'actif (heures UTC : [(debut_h, debut_m), (fin_h, fin_m)])
+# Chaque entrée est une liste de tuples (start, end) en minutes depuis minuit
+SESSION_WINDOWS = {
+    # Crypto : 06h-22h UTC (16h) — marchés actifs globalement
+    "crypto":      [(6 * 60, 22 * 60)],
+    # Forex BK/TF : London élargi + NY élargi (8h)
+    "forex":       [(7 * 60, 10 * 60 + 30),
+                    (12 * 60, 16 * 60 + 30)],
+    # Forex MR : 07h-20h UTC (13h) — MR ne dépend pas du timing de breakout
+    "forex_mr":    [(7 * 60, 20 * 60)],
+    # Indices : London marchés + NY + after-hours (10h)
+    "indices":     [(7 * 60, 10 * 60 + 30),
+                    (13 * 60, 20 * 60)],
+    # Stocks US : NY étendu (7h)
+    "stocks":      [(13 * 60, 20 * 60)],
+    # Commodités : London + NY élargi (8h)
+    "commodities": [(7 * 60, 10 * 60 + 30),
+                    (13 * 60, 16 * 60 + 30)],
+}
+
+
+def _in_session_window(h: int, m: int, category: str) -> bool:
+    """Vérifie si l'heure UTC est dans la fenêtre de session de la catégorie."""
+    t = h * 60 + m
+    windows = SESSION_WINDOWS.get(category, SESSION_WINDOWS["forex"])
+    for start, end in windows:
+        if start <= t < end:
+            return True
+    return False
+
 
 class Strategy:
 
@@ -109,15 +139,18 @@ class Strategy:
         return df.dropna()
 
     def is_session_ok(self) -> bool:
-        """Retourne True uniquement pendant les fenêtres de breakout ET les bons jours."""
+        """Retourne True si on est dans une fenêtre de trading quelconque (fallback global)."""
         now = datetime.now(timezone.utc)
-        # Filtre Lundi/Vendredi : ces jours ont trop de bruit et de faux signaux
         if now.weekday() not in ALLOWED_WEEKDAYS:
-            logger.debug(
-                f"🗓️  Jour filtré : {now.strftime('%A')} (Lundi & Vendredi exclus)"
-            )
             return False
         return _bar_session_idx(now.hour, now.minute) >= 0
+
+    def is_session_ok_for(self, instrument: str, category: str = "forex") -> bool:
+        """Retourne True si l'heure UTC est dans la fenêtre de session de cet actif."""
+        now = datetime.now(timezone.utc)
+        if now.weekday() not in ALLOWED_WEEKDAYS:
+            return False
+        return _in_session_window(now.hour, now.minute, category)
 
     def compute_session_range(self, df: pd.DataFrame) -> dict:
         """

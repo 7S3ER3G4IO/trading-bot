@@ -13,10 +13,9 @@ ATR_SL_MULTIPLIER    = 1.0     # SL = 1.0 ATR
 MAX_OPEN_TRADES      = 10      # Capital.com CFD : max 10 positions simultanées
 DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
 
-# Sessions de trading actives (heures UTC)
-LONDON_HOURS  = list(range(7, 11))    # 7h-10h UTC
-NY_HOURS      = list(range(13, 17))   # 13h-16h UTC
-SESSION_HOURS = LONDON_HOURS + NY_HOURS
+# Sessions de trading actives (heures UTC) — plage globale pour heartbeat/dashboard
+# Le filtrage fin par catégorie d'actif est dans strategy.py (SESSION_WINDOWS)
+SESSION_HOURS = list(range(6, 22))  # 06h-22h UTC (couvre crypto étendu)
 
 # ─── CALENDRIER ÉCONOMIQUE ───────────────────────────────────────────────────
 NEWS_PAUSE_BEFORE_MIN = 30    # Pause X min avant news HIGH impact
