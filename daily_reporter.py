@@ -79,7 +79,7 @@ class DailyReporter:
         now = datetime.now(timezone.utc)
         return now.hour == REPORT_HOUR_UTC and now.minute < 2 and not self._report_sent_today
 
-    def build_report(self) -> str:
+    def build_report(self, ml_scorer=None, context=None) -> str:
         if not self._trades:
             return "📊 *Bilan du jour* — Aucun trade aujourd'hui."
 
@@ -88,6 +88,8 @@ class DailyReporter:
         wins, total_gross, total_net, total_fees = 0, 0.0, 0.0, 0.0
         lines = []
 
+        # Per-instrument grouping
+        by_inst = {}
         for t in self._trades:
             if t.result == "SL":
                 emoji, suffix = "❌", f"-{t.pips:.0f} pts"
@@ -103,20 +105,55 @@ class DailyReporter:
             action = "ACHAT" if t.side == "BUY" else "VENTE"
             lines.append(f"<code>{t.date_str} {action} {t.symbol}  {suffix}  {emoji}</code>")
 
+            # Accumulate per instrument
+            if t.symbol not in by_inst:
+                by_inst[t.symbol] = {"pnl": 0, "count": 0, "wins": 0}
+            by_inst[t.symbol]["pnl"] += t.pnl_net
+            by_inst[t.symbol]["count"] += 1
+            if t.result != "SL":
+                by_inst[t.symbol]["wins"] += 1
+
         score = f"{wins}/{len(self._trades)}"
         pct   = f"{wins / len(self._trades) * 100:.0f}%"
 
-        rpt = (
-            f"📊 <b>BILAN DU JOUR — {date_label}</b>\n\n"
-        )
+        rpt = f"📊 <b>BILAN DU JOUR — {date_label}</b>\n\n"
         for l in lines:
             rpt += l + "\n"
+
         rpt += (
             f"\n🏆 BILAN TRADES : <b>{score}</b> | <b>{pct}</b>\n"
             f"💵 PnL brut : <code>{total_gross:+.2f} €</code>\n"
             f"💸 Frais CFD : <code>-{total_fees:.2f} €</code>\n"
             f"✅ <b>PnL net : <code>{total_net:+.2f} €</code></b>"
         )
+
+        # Best/worst instruments
+        if by_inst:
+            ranked = sorted(by_inst.items(), key=lambda x: x[1]["pnl"], reverse=True)
+            best = ranked[0]
+            worst = ranked[-1]
+            rpt += (
+                f"\n\n📈 <b>Best</b> : {best[0]} ({best[1]['pnl']:+.2f}€, "
+                f"{best[1]['wins']}/{best[1]['count']})"
+            )
+            if len(ranked) > 1:
+                rpt += (
+                    f"\n📉 <b>Worst</b> : {worst[0]} ({worst[1]['pnl']:+.2f}€, "
+                    f"{worst[1]['wins']}/{worst[1]['count']})"
+                )
+
+        # ML model status
+        if ml_scorer:
+            ml_stats = ml_scorer.stats
+            if ml_stats.get("model_ready"):
+                rpt += f"\n\n🧠 ML : actif ({ml_stats['samples']} samples)"
+            else:
+                rpt += f"\n🧠 ML : {ml_stats['samples']}/{ml_stats['min_required']} samples"
+
+        # Market regime
+        if context:
+            rpt += f"\n🌍 Régime : {context.regime}"
+
         return rpt
 
     def build_report_lines(self) -> list:

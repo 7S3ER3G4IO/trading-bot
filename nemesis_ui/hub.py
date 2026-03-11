@@ -65,7 +65,8 @@ class NemesisHub:
     @staticmethod
     def _build_hub_text(balance: float = 0.0, pnl_today: float = 0.0,
                         open_positions: int = 0, equity_data: list = None,
-                        confidence: tuple = None) -> str:
+                        confidence: tuple = None,
+                        system_stats: dict = None) -> str:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         time_str = now.strftime("%H:%M UTC")
@@ -101,6 +102,30 @@ class NemesisHub:
             conf_score, conf_emoji, conf_label = confidence
             conf_line = f"\n🎢 Confiance : {conf_emoji} <b>{conf_score}%</b> ({conf_label})"
 
+        # System health section
+        sys_line = ""
+        if system_stats:
+            # ML status
+            ml = system_stats.get("ml", {})
+            ml_icon = "🟢" if ml.get("model_ready") else "🟡"
+            ml_txt = f"{ml_icon} ML"
+
+            # Risk
+            r = system_stats.get("risk", {})
+            risk_icon = "🔴" if r.get("dd_paused") else "🟢"
+            risk_txt = f"{risk_icon} Risk"
+
+            # Market context
+            ctx = system_stats.get("context", {})
+            regime = ctx.get("regime", "—")
+            session = ctx.get("session", "—")
+
+            sys_line = (
+                f"\n\n🤖 <b>SYSTÈME</b>\n"
+                f"{ml_txt} · {risk_txt} · 🌍 {regime}\n"
+                f"📡 {session}"
+            )
+
         return (
             "⚡ <b>NEMESIS COMMAND CENTER</b>\n"
             "\n"
@@ -110,7 +135,8 @@ class NemesisHub:
             f"{pos_line}\n"
             f"⏭ {next_sess}"
             f"{conf_line}"
-            f"{sparkline}\n"
+            f"{sparkline}"
+            f"{sys_line}\n"
             "\n"
             "👇 Accède à tes canaux dédiés :\n"
         )
