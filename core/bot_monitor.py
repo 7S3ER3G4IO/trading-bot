@@ -168,6 +168,7 @@ class BotMonitorMixin:
                                 for ref in [refs[1], refs[2]]:
                                     if ref and ref in open_refs:
                                         self.capital.modify_position_stop(ref, new_trail_sl)
+                                        time.sleep(0.3)  # R-2: rate-limit trailing API calls
                                 state["trailing_sl"] = new_trail_sl
                                 logger.debug(
                                     f"🔄 Trailing Stop {instrument} {direction} "
@@ -185,28 +186,58 @@ class BotMonitorMixin:
                 close_px = entry
                 pnl_est  = 0.0
                 result   = "LOSS"
+                size_per = state.get("size", 1.0)  # C-2: actual position size
                 try:
                     current  = self.capital.get_current_price(instrument)
                     close_px = current["mid"] if current else entry
-                    pnl_est  = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
-                    pips_pnl = round(pnl_est / pip_close)
-                    result   = "WIN" if pnl_est > 0 else "LOSS"
-                    # Count actual positions that were open (not all assumed to be 3)
+                    diff     = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
+                    pips_pnl = round(diff / pip_close)
+                    # C-2: PnL = price_diff × size × n_positions
                     n_positions = sum(1 for r in refs if r)
+                    pnl_est  = round(diff * size_per * n_positions, 4)
+                    result   = "WIN" if pnl_est > 0 else "LOSS"
                     self._capital_closed_today.append({
                         "instrument": instrument,
-                        "pnl": round(pnl_est * n_positions, 4),
+                        "pnl": pnl_est,
                         "direction": state["direction"],
                         "symbol": name_close,
                     })
+                    # F-6: also track monthly for leaderboard
+                    self._capital_closed_month.append({
+                        "instrument": instrument,
+                        "pnl": pnl_est,
+                        "direction": state["direction"],
+                        "symbol": name_close,
+                    })
+
+                    # C-1: Telegram close notification
+                    try:
+                        duration_min = 0
+                        if state.get("open_time"):
+                            duration_min = int((datetime.now(timezone.utc) - state["open_time"]).total_seconds() / 60)
+                        pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
+                        icon = "🟢" if pnl_est >= 0 else "🔴"
+                        result_txt = "✅ WIN" if result == "WIN" else "❌ LOSS"
+                        if self.telegram.router:
+                            self.telegram.router.send_trade(
+                                f"{icon} <b>Trade Fermé — {name_close}</b>\n\n"
+                                f"  Direction : <b>{state['direction']}</b>\n"
+                                f"  Entrée : <code>{entry:.5f}</code>\n"
+                                f"  Sortie : <code>{close_px:.5f}</code>\n"
+                                f"  Résultat : <b>{result_txt}</b>\n"
+                                f"  PnL : <b>{pnl_est:+.2f}€</b> ({pips_pnl:+.0f} pips)\n"
+                                f"  Durée : {duration_min} min\n\n"
+                                f"📊 Bilan du jour : <b>{pnl_today:+.2f}€</b>"
+                            )
+                    except Exception as _tg_close:
+                        logger.debug(f"Telegram close: {_tg_close}")
+
                     # ── Heatmap ──
                     try:
                         h_heat = datetime.now(timezone.utc).hour
                         if instrument not in self._heatmap_data:
                             self._heatmap_data[instrument] = {}
-                        self._heatmap_data[instrument].setdefault(h_heat, []).append(
-                            round(pnl_est * n_positions, 4)
-                        )
+                        self._heatmap_data[instrument].setdefault(h_heat, []).append(pnl_est)
                     except Exception:
                         pass
 
@@ -214,12 +245,12 @@ class BotMonitorMixin:
                     h_close = datetime.now(timezone.utc).hour
                     m_close = datetime.now(timezone.utc).minute
                     tracker_close = self._london_tracker if (h_close < 13 or (h_close == 13 and m_close < 30)) else self._ny_tracker
-                    tracker_close.record_close(name=name_close, pnl=pnl_est * n_positions, result=result)
+                    tracker_close.record_close(name=name_close, pnl=pnl_est, result=result)
 
                     # ── Feedback DRL + AB + LSTM ──
-                    pnl_trade = round(pnl_est * n_positions, 4)
+                    pnl_trade = pnl_est
                     won_trade = pnl_trade > 0
-                    rr_trade  = abs(pnl_trade) / max(abs(pnl_est), 0.0001)
+                    rr_trade  = abs(pnl_trade) / max(abs(diff * size_per), 0.0001)
                     try:
                         self.drl.record_trade(pnl_trade, rr_trade, state["direction"])
                     except Exception:
@@ -242,13 +273,13 @@ class BotMonitorMixin:
                     pass
                 try:
                     dash_close(symbol=name_close,
-                               pnl=round(pnl_est * n_positions, 2), result=result,
+                               pnl=round(pnl_est, 2), result=result,
                                side=state["direction"])
                     self.reporter.record_trade(
                         symbol=name_close,
                         side=state["direction"],
                         result=result,
-                        pnl_gross=round(pnl_est * n_positions, 2),
+                        pnl_gross=round(pnl_est, 2),
                         entry=state["entry"],
                         exit_price=close_px,
                     )
@@ -257,7 +288,7 @@ class BotMonitorMixin:
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
                 self.risk.on_trade_closed(instrument=instrument)
-                pnl_final = round(pnl_est * n_positions, 2)
+                pnl_final = round(pnl_est, 2)
                 self.protection.on_trade_closed(instrument, pnl_final)
                 self.drift.record_trade(
                     pnl=pnl_final,

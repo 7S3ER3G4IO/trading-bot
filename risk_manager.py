@@ -2,43 +2,30 @@
 risk_manager.py — Gestion du risque avec système 3 TP + Break Even.
 
 Logique :
-  - TP1 = SL_distance × 1.0  → ferme 1/3 de la position → SL déplacé à BE
-  - TP2 = SL_distance × 2.0  → ferme 1/3 de la position → SL reste à BE
-  - TP3 = SL_distance × 3.0  → ferme le dernier 1/3 → trade terminé
+  - 3 positions ouvertes simultanément (même taille)
+  - TP1 → ferme pos1 → SL pos2+pos3 déplacé à BE (entry ±1pip)
+  - TP2 → SL pos3 déplacé à TP1 (lock-in)
+  - TP3 → dernier 1/3 fermé → trade terminé
 
-Break Even (BE) : quand TP1 est touché, le SL est déplacé au prix d'entrée.
-Cela rend les targets TP2 et TP3 SANS RISQUE.
+Break Even (BE) : quand TP1 est touché, le SL est déplacé à entry ±1pip.
 """
 
 from loguru import logger
 from config import (
     RISK_PER_TRADE,
-    ATR_SL_MULTIPLIER,
     MAX_OPEN_TRADES,
     DAILY_DRAWDOWN_LIMIT,
 )
 
-# Ratios des TP par rapport à la distance SL
-# 50% WR × 2:1 R:R = EV neutre (seuil de rentabilité)
-# Au-dessus de 50% WR = rentable
-TP1_RATIO = 2.0   # TP1 = SL × 2.0  (1:2 R:R) — relèvé de 1.5 à 2.0
-TP2_RATIO = 4.0   # TP2 = SL × 4.0  (1:4 R:R)
-TP3_RATIO = 6.0   # TP3 = SL × 6.0  (1:6 R:R) — runner
-
-# Fraction de la position fermée à chaque TP
-TP_FRACTIONS = [0.5, 0.5, 1.0]  # 50% au TP1, 50% du reste au TP2, tout au TP3
-# EV math : 50%WR × (50%×2.0 + 50%×4.0)/2 = +0.75 vs perte -1.0 sur SL
-# Net EV avec 50%WR = 0.5×0.75 - 0.5×1.0 = -0.125 (quasi neutre vs -0.5 avant)
-
 
 class RiskManager:
-    """Calcule les paramètres de risque avec 3 niveaux de Take-Profit."""
+    """Contrôle d'accès au trading + compteurs de positions."""
 
     def __init__(self, initial_balance: float):
         self.initial_balance      = initial_balance
         self.daily_start_balance  = initial_balance
         self._open_trades_count   = 0
-        self._open_instruments: set = set()  # TASK-038 : 1 trade max par instrument
+        self._open_instruments: set = set()
 
     # ─── CONTRÔLE D'ACCÈS ────────────────────────────────────────────────────
 
@@ -47,7 +34,6 @@ class RiskManager:
             logger.warning(f"⛔ Max {MAX_OPEN_TRADES} trades simultanés atteint.")
             return False
 
-        # TASK-038 : max 1 trade par instrument (pas de double GOLD, double EURUSD…)
         if instrument and instrument in self._open_instruments:
             logger.warning(f"⛔ {instrument} : trade déjà ouvert sur cet instrument.")
             return False
@@ -58,124 +44,6 @@ class RiskManager:
             return False
 
         return True
-
-    # ─── CALCULS SL / 3 TP ───────────────────────────────────────────────────
-
-    def calculate_levels(
-        self, entry_price: float, atr: float, side: str
-    ) -> dict:
-        """
-        Calcule SL et les 3 niveaux de TP.
-
-        Returns:
-            dict avec sl, tp1, tp2, tp3, sl_distance
-        """
-        sl_distance = atr * ATR_SL_MULTIPLIER
-
-        if side == "BUY":
-            sl  = entry_price - sl_distance
-            tp1 = entry_price + sl_distance * TP1_RATIO
-            tp2 = entry_price + sl_distance * TP2_RATIO
-            tp3 = entry_price + sl_distance * TP3_RATIO
-        else:  # SELL
-            sl  = entry_price + sl_distance
-            tp1 = entry_price - sl_distance * TP1_RATIO
-            tp2 = entry_price - sl_distance * TP2_RATIO
-            tp3 = entry_price - sl_distance * TP3_RATIO
-
-        levels = {
-            "sl":          round(sl,  2),
-            "tp1":         round(tp1, 2),
-            "tp2":         round(tp2, 2),
-            "tp3":         round(tp3, 2),
-            "sl_distance": round(sl_distance, 2),
-            "be":          round(entry_price, 2),   # Break Even = entrée
-        }
-
-        logger.info(
-            f"📐 {side} @ {entry_price:.2f} | "
-            f"SL={levels['sl']:.2f} | "
-            f"TP1={levels['tp1']:.2f} | "
-            f"TP2={levels['tp2']:.2f} | "
-            f"TP3={levels['tp3']:.2f}"
-        )
-        return levels
-
-    def position_size(self, balance: float, entry_price: float, sl_price: float,
-                      signal_score: int = 0, max_score: int = 8) -> float:
-        """
-        #4 Position Sizing Dynamique.
-        Taille de la position modulée par la confiance du signal :
-          score 1/3 → 0.5% du capital (entrée prudente)
-          score 2/3 → 1.0% du capital (standard)
-          score 3/3 → 1.5% du capital (confiant)
-        """
-        # Calcul du risk dynamique selon le score
-        if signal_score >= max_score:
-            dynamic_risk = RISK_PER_TRADE * 2.0    # max 2x
-        elif signal_score >= max_score - 1:
-            dynamic_risk = RISK_PER_TRADE * 1.5
-        elif signal_score >= max_score - 2:
-            dynamic_risk = RISK_PER_TRADE * 1.0    # standard
-        else:
-            dynamic_risk = RISK_PER_TRADE * 0.5    # prudent
-
-        capital_at_risk = balance * dynamic_risk
-        sl_distance     = abs(entry_price - sl_price)
-
-        if sl_distance == 0:
-            logger.error("❌ Distance SL = 0.")
-            return 0.0
-
-        size = capital_at_risk / sl_distance
-        logger.info(
-            f"📦 Position : {size:.6f} | Score {signal_score}/{max_score} "
-            f"→ Risk {dynamic_risk:.1%} | Capital risqué : {capital_at_risk:.2f} €"
-        )
-        return size
-
-    def kelly_position_size(
-        self, balance: float, entry_price: float, sl_price: float,
-        win_rate: float = 0.55, rr_ratio: float = 2.0,
-        sentiment_scale: float = 1.0,
-    ) -> float:
-        """
-        #6 Kelly Criterion — Taille de position optimale mathématiquement.
-
-        Formule : f* = WR - (1 - WR) / RR
-        - WR = taux de réussite historique (ex: 0.55 = 55%)
-        - RR = ratio Risk/Reward (ex: 2.0 = TP 2× le SL)
-
-        Limites :
-          - Minimum 0.5% du capital (prudence)
-          - Maximum 3.0% du capital (pas de sur-levier)
-          - Multiplié par sentiment_scale (Fear&Greed : 0.5→1.0)
-        """
-        # Kelly fraction (fraction du capital à risquer)
-        kelly_f = win_rate - (1.0 - win_rate) / rr_ratio
-
-        # Half-Kelly pour sécurité (standard en trading pro)
-        half_kelly = kelly_f * 0.5
-
-        # Clamp entre 0.5% et 3%
-        clamped = max(0.005, min(0.03, half_kelly))
-
-        # Ajustement sentiment de marché
-        adjusted = clamped * sentiment_scale
-
-        sl_distance = abs(entry_price - sl_price)
-        if sl_distance == 0:
-            logger.error("❌ Distance SL = 0 (Kelly).")
-            return 0.0
-
-        capital_at_risk = balance * adjusted
-        size = capital_at_risk / sl_distance
-
-        logger.info(
-            f"🧮 Kelly : f*={kelly_f:.2%} → Half={half_kelly:.2%} "
-            f"→ Ajusté={adjusted:.2%} | Capital risqué={capital_at_risk:.2f} €"
-        )
-        return size
 
     # ─── COMPTEURS ───────────────────────────────────────────────────────────
 

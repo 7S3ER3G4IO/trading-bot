@@ -144,6 +144,14 @@ class Database:
         )
         """)
 
+        # C-4: Bot state persistence (dd_paused, daily_start_balance, etc.)
+        self._execute(f"""
+        CREATE TABLE IF NOT EXISTS bot_state (
+            key    {text} PRIMARY KEY,
+            value  {text}
+        )
+        """)
+
         # Migration colonnes SQLite
         if not self._pg:
             for col in ["sl_order_id TEXT", "tp1_order_id TEXT", "tp2_order_id TEXT"]:
@@ -337,3 +345,37 @@ class Database:
             )
         except Exception as e:
             logger.error(f"❌ DB close_capital_trade {instrument}: {e}")
+
+    # ─── C-4: Bot state persistence ──────────────────────────────────────
+
+    def save_bot_state(self, key: str, value: str):
+        """Persiste une valeur de state du bot (survit aux redéploiements)."""
+        ph = "%s" if self._pg else "?"
+        try:
+            if self._pg:
+                self._execute(
+                    f"INSERT INTO bot_state (key, value) VALUES ({ph}, {ph}) "
+                    f"ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                    (key, value)
+                )
+            else:
+                self._execute(
+                    f"INSERT OR REPLACE INTO bot_state (key, value) VALUES ({ph}, {ph})",
+                    (key, value)
+                )
+        except Exception as e:
+            logger.debug(f"save_bot_state {key}: {e}")
+
+    def load_bot_state(self, key: str, default: str = "") -> str:
+        """Charge une valeur de state du bot."""
+        ph = "%s" if self._pg else "?"
+        try:
+            cur = self._execute(
+                f"SELECT value FROM bot_state WHERE key={ph}",
+                (key,), fetch=True
+            )
+            row = cur.fetchone()
+            return row[0] if row else default
+        except Exception as e:
+            logger.debug(f"load_bot_state {key}: {e}")
+            return default

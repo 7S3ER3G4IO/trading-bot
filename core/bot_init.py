@@ -68,6 +68,7 @@ class BotInitMixin:
         # ─── État Capital.com ─────────────────────────────────────────────
         self.capital_trades: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
         self._capital_closed_today: list = []
+        self._capital_closed_month: list = []  # F-6: monthly leaderboard data
         self._london_tracker = SessionTracker()
         self._ny_tracker     = SessionTracker()
         self._last_dashboard_day: Optional[date] = None
@@ -199,3 +200,18 @@ class BotInitMixin:
                 logger.info(f"🔄 Trade Capital.com restauré : {instrument} {t_dict['direction']} @ {t_dict['entry']}")
             except Exception as e:
                 logger.error(f"❌ Restauration trade Capital.com {instrument} : {e}")
+
+        # C-4: Restore dd_paused state
+        try:
+            dd_state = self.db.load_bot_state("dd_paused", "0")
+            dd_date  = self.db.load_bot_state("dd_paused_date", "")
+            today_str = datetime.now(timezone.utc).date().isoformat()
+            if dd_state == "1" and dd_date == today_str:
+                self._dd_paused = True
+                logger.warning("🚨 DD pause restaurée depuis Supabase — trading suspendu")
+            elif dd_state == "1":
+                # Previous day → clear
+                self.db.save_bot_state("dd_paused", "0")
+                logger.info("🟢 DD pause expirée (jour précédent) — trading actif")
+        except Exception:
+            pass

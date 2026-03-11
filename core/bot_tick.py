@@ -162,6 +162,11 @@ class BotTickMixin:
             self._last_reset_day = today
             self._capital_closed_today.clear()
             self._dd_paused = False
+            # C-4: Clear persisted dd_paused on new day
+            try:
+                self.db.save_bot_state("dd_paused", "0")
+            except Exception:
+                pass
             self.reporter.reset_for_new_day()  # remet rapport à zéro
             # BUG FIX #2 : met à jour le solde de début de journée pour le DD journalier
             if self.capital.available:
@@ -175,6 +180,7 @@ class BotTickMixin:
                 self._last_reset_month      = cur_month
                 self._monthly_dd_paused     = False
                 self._monthly_start_balance = self.capital.get_balance() or self._monthly_start_balance
+                self._capital_closed_month.clear()  # F-6: Reset monthly list on new month
                 logger.info("📅 Reset mensuel — drawdown mensuel remis à zéro")
             else:
                 # Vérification DD mensuel (toujours dans le même mois)
@@ -241,20 +247,9 @@ class BotTickMixin:
             if self._last_hyperopt_week != cur_week:
                 self._last_hyperopt_week = cur_week
                 logger.info(f"⚙️  Auto-Optimisation hebdo S{cur_week} — lancement...")
-                if self.telegram.router:
-                    self.telegram.router.send_performance(
-                        f"⚙️ <b>Auto-Optimisation S{cur_week}</b>\n"
-                        f"Optuna en cours (30 trials × {len(CAPITAL_INSTRUMENTS)} instruments)...\n"
-                        f"Résultats dans ~10 minutes."
-                    )
+                # F-5: Only LSTM training and AB weekly report are active.
                 import threading
-                def _run_optimizer():
-                    try:
-                        logger.info("⚙️ Auto-optimisation: optimizer supprimé — AB Tester actif à la place.")
-                        # LSTM training seulement
-                    except Exception as _opt_e:
-                        logger.error(f"❌ Optimizer: {_opt_e}")
-
+                def _run_weekly_tasks():
                     # Feature P : Entraîner le LSTM sur chaque instrument
                     try:
                         for _inst in CAPITAL_INSTRUMENTS:
@@ -278,7 +273,7 @@ class BotTickMixin:
                     except Exception as _ab_e:
                         logger.debug(f"AB weekly: {_ab_e}")
 
-                threading.Thread(target=_run_optimizer, daemon=True).start()
+                threading.Thread(target=_run_weekly_tasks, daemon=True).start()
 
 
         # ── Auto-push Telegram : ouverture de session ─────────────────────────
@@ -334,7 +329,7 @@ class BotTickMixin:
             self._last_leaderboard_day = today
             try:
                 lb = self.telegram.gamification.build_monthly_leaderboard(
-                    trades_this_month=self._capital_closed_today,
+                    trades_this_month=self._capital_closed_month,  # F-6: use monthly data
                 )
                 if self.telegram.router:
                     self.telegram.router.send_stats(lb, silent=False)
@@ -349,6 +344,12 @@ class BotTickMixin:
                 dd_pct = (self._daily_start_balance - cur_bal) / self._daily_start_balance * 100
                 if dd_pct >= self.DAILY_DD_LIMIT:
                     self._dd_paused = True
+                    # C-4: Persist across Railway redeploys
+                    try:
+                        self.db.save_bot_state("dd_paused", "1")
+                        self.db.save_bot_state("dd_paused_date", today.isoformat())
+                    except Exception:
+                        pass
                     if self.telegram.router:
                         self.telegram.router.send_risk(
                             f"🚨 <b>DRAWDOWN JOURNALIER ATTEINT</b>\n"
@@ -408,9 +409,14 @@ class BotTickMixin:
                 gain_pct = ((bal_eod - self.initial_balance) / self.initial_balance * 100) if self.initial_balance > 0 else 0
                 trend = "📈" if pnl_eod >= 0 else "📉"
 
-                from nemesis_ui.renderer import NemesisRenderer as _R
+                # R-4: Fallback if renderer module absent
+                try:
+                    from nemesis_ui.renderer import NemesisRenderer as _R
+                    header = _R.box_header('🌙 FIN DE JOURNÉE')
+                except Exception:
+                    header = '🌙 <b>FIN DE JOURNÉE</b>'
                 eod_text = (
-                    f"{_R.box_header('🌙 FIN DE JOURNÉE')}\n\n"
+                    f"{header}\n\n"
                     f"💰 Capital : <b>{bal_eod:,.2f}€</b>  ({gain_pct:+.2f}%)\n"
                     f"{trend} PnL du jour : <b>{pnl_eod:+.2f}€</b>\n"
                     f"📋 Trades : {nb_trades}  ·  WR : <b>{wr_eod:.0f}%</b>\n\n"
@@ -458,7 +464,7 @@ class BotTickMixin:
             logger.warning("⚠️  Balance = 0 ou inaccessible — skip ce tick")
             return
 
-        per_instrument = balance / len(CAPITAL_INSTRUMENTS)
+        # F-4: per_instrument removed (was calculated but never used)
 
         # ── Heartbeat visible : confirme que la boucle tourne ──────────────────
         logger.info(

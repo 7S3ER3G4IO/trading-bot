@@ -287,6 +287,7 @@ class BotSignalsMixin:
             "tp2":       tp2,
             "tp3":       tp3,
             "direction": direction,
+            "size":      size1,  # F-2: stored for PnL calculation
             "tp1_hit":   _partial_tp1_failed,  # EC-1: auto-BE if TP1 order failed
             "tp2_hit":   False,
             "score":      score,
