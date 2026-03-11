@@ -11,7 +11,7 @@ SYMBOLS = CAPITAL_INSTRUMENTS   # alias legacy
 RISK_PER_TRADE       = 0.005   # 0.5% du capital par trade (haute fréquence)
 ATR_SL_MULTIPLIER    = 1.0     # SL = 1.0 ATR
 MAX_OPEN_TRADES      = 20      # Capital.com CFD : max 20 positions simultanées (V8 HF)
-DAILY_DRAWDOWN_LIMIT = -0.05   # -5% → pause
+DAILY_DRAWDOWN_LIMIT = -0.10   # -10% → pause (was -5%, caused false triggers on redeploy)
 
 # Sessions de trading actives (heures UTC) — plage globale pour heartbeat/dashboard
 # Le filtrage fin par catégorie d'actif est dans strategy.py (SESSION_WINDOWS)

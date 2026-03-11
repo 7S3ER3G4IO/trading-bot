@@ -228,6 +228,7 @@ class BotSignalsMixin:
                 tp3 = entry - sl_dist * rr_tp3
 
         # ── HMM Regime Switching (block only, no size reduction) ──
+        regime_result = {"name": "RANGING", "regime": 0, "confidence": 0.5}
         try:
             regime_result = self.hmm.detect_regime(df, symbol=instrument)
             regime_name   = regime_result["name"]

@@ -130,7 +130,9 @@ class BotTickMixin:
             self._equity_reset_done = True
             self.equity.reset_history(keep_last=1)
             self._dd_paused = False
-            logger.info("🔄 Equity curve nettoyée (fresh deploy)")
+            # Reset risk manager daily balance to current balance on fresh deploy
+            self.risk.reset_daily(balance)
+            logger.info("🔄 Equity curve + risk manager nettoyés (fresh deploy)")
 
         if balance > 0:
             self.equity.record(balance)
