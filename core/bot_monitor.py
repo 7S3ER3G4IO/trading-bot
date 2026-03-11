@@ -2,6 +2,7 @@
 bot_monitor.py — Surveillance des positions ouvertes + callbacks WebSocket
 """
 from .imports import *
+from brokers.capital_client import ASSET_PROFILES
 
 
 class BotMonitorMixin:
@@ -93,10 +94,8 @@ class BotMonitorMixin:
                 open_time = state.get("open_time")
                 if open_time:
                     age_minutes = (datetime.now(timezone.utc) - open_time).total_seconds() / 60
-                    # Use max_hold from profile (hours), default 12h = 720min
-                    from brokers.capital_client import ASSET_PROFILES
                     _prof = ASSET_PROFILES.get(instrument, {})
-                    max_hold_min = _prof.get("max_hold", 12) * 60  # hours → minutes
+                    max_hold_min = _prof.get("max_hold", 12) * 60
                     if age_minutes > max_hold_min:
                         name_ts = CAPITAL_NAMES.get(instrument, instrument)
                         logger.warning(
@@ -158,10 +157,13 @@ class BotMonitorMixin:
                                 direction = state.get("direction", "BUY")
                                 if direction == "BUY":
                                     new_trail_sl = round(mid - atr * 1.5, 5)
-                                    new_trail_sl = max(new_trail_sl, entry)
+                                    # Minimum = BE price (entry + 1pip), never below
+                                    be_floor = entry + pip
+                                    new_trail_sl = max(new_trail_sl, be_floor)
                                 else:
                                     new_trail_sl = round(mid + atr * 1.5, 5)
-                                    new_trail_sl = min(new_trail_sl, entry)
+                                    be_floor = entry - pip
+                                    new_trail_sl = min(new_trail_sl, be_floor)
 
                                 for ref in [refs[1], refs[2]]:
                                     if ref and ref in open_refs:

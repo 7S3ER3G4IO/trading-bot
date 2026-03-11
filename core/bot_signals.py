@@ -262,6 +262,11 @@ class BotSignalsMixin:
             logger.warning(f"⛔ {instrument} — tous les ordres rejetés (marché fermé ou erreur)")
             return
 
+        # EC-1: If TP1 order (ref1) was rejected but ref2/ref3 succeeded,
+        # TP1 poll detection will never fire (refs[0] is None).
+        # → Immediately mark tp1_hit and log the partial failure.
+        _partial_tp1_failed = (ref1 is None and any([ref2, ref3]))
+
         # ─── WebSocket monitoring BE temps réel ───
         self.capital_ws.watch(
             instrument=instrument,
@@ -282,7 +287,7 @@ class BotSignalsMixin:
             "tp2":       tp2,
             "tp3":       tp3,
             "direction": direction,
-            "tp1_hit":   False,
+            "tp1_hit":   _partial_tp1_failed,  # EC-1: auto-BE if TP1 order failed
             "tp2_hit":   False,
             "score":      score,
             "confirmations": confirmations,
@@ -292,6 +297,11 @@ class BotSignalsMixin:
             "adx_at_entry": adx_now,
             "open_time":  datetime.now(timezone.utc),
         }
+        if _partial_tp1_failed:
+            logger.warning(
+                f"⚠️ {instrument} — ref1 (TP1) rejeté, tp1_hit=True auto — "
+                f"BE immédiat sur pos2/pos3"
+            )
         name    = CAPITAL_NAMES.get(instrument, instrument)
         hour    = datetime.now(timezone.utc).hour
         minute  = datetime.now(timezone.utc).minute

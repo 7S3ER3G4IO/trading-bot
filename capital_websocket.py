@@ -22,6 +22,7 @@ import time
 import threading
 from typing import Dict, Optional, List, Callable
 from loguru import logger
+from brokers.capital_client import CAPITAL_PIP
 
 try:
     import websocket   # pip install websocket-client
@@ -310,7 +311,6 @@ class CapitalWebSocket:
             if ref:
                 # BE at entry + 1 pip (covers spread)
                 long_trade = state["tp1"] > entry
-                from brokers.capital_client import CAPITAL_PIP
                 pip = CAPITAL_PIP.get(epic, 0.0001)
                 be_price = entry + pip if long_trade else entry - pip
                 success = self._client.modify_position_stop(ref, be_price)
