@@ -418,8 +418,8 @@ class BotTickMixin:
 
         # ── Limite corrélation (max 3 CFD simultanées) ───────────────────────
         active_count = sum(1 for s in self.capital_trades.values() if s is not None)
-        if active_count >= 3:
-            logger.debug(f"🔒 Positions max atteint ({active_count}/3) — skip ce tick")
+        if active_count >= 10:
+            logger.debug(f"🔒 Positions max atteint ({active_count}/10) — skip ce tick")
             return  # Plafond atteint — on surveille mais on n'ouvre rien
 
         # ── Scan des instruments Capital.com ─────────────────────────────────
@@ -440,7 +440,7 @@ class BotTickMixin:
         signals_found = 0
         for instrument in CAPITAL_INSTRUMENTS:
             # Ne pas ouvrir si limite atteinte entre deux itérations
-            if sum(1 for s in self.capital_trades.values() if s is not None) >= 3:
+            if sum(1 for s in self.capital_trades.values() if s is not None) >= 10:
                 break
             try:
                 _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
@@ -450,6 +450,7 @@ class BotTickMixin:
                     signals_found += 1
             except Exception as e:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
+            time.sleep(0.3)  # Rate limiting Capital.com API (max ~3 req/s)
 
         # ── Alerte Telegram "scan sans signal" toutes les 10 minutes ──────────
         if signals_found == 0:

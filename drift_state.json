@@ -3,13 +3,13 @@
   "reference_wr": null,
   "trade_results": [
     {
-      "ts": 1773144169.447082,
+      "ts": 1773171215.358722,
       "pnl": 100.0,
       "win": true,
       "symbol": "GOLD"
     },
     {
-      "ts": 1773144169.44744,
+      "ts": 1773171215.35895,
       "pnl": -30.0,
       "win": false,
       "symbol": "USDJPY"
