@@ -27,10 +27,20 @@ DAILY_REPORT_HOUR_UTC = 20    # 21h CET = 20h UTC
 # ─── BOUCLE DU BOT ───────────────────────────────────────────────────────────
 LOOP_INTERVAL_SECONDS = 30    # Scan toutes les 30s (12 paires = besoin plus rapide)
 
-# ─── TELEGRAM CHANNELS ──────────────────────────────────────────────────────
-# Groupe Telegram créé pour les stats wallet en temps réel
-WALLET_CHANNEL_URL = "https://t.me/+kXWR58eDOGYxZDNk"  # Nemesis Wallet group
-WALLET_CHAT_ID     = "-5200613208"                       # Chat ID du groupe wallet
+# ─── TELEGRAM CHANNELS ──────────────────────────────────────────────────
+# Ancien canal wallet (legacy)
+WALLET_CHANNEL_URL = "https://t.me/+kXWR58eDOGYxZDNk"
+WALLET_CHAT_ID     = "-5200613208"
+
+# Canaux Nemesis dédiés (multi-channel architecture)
+CHANNELS = {
+    "dashboard":   {"id": "-1003710848841", "url": "https://t.me/NemesisDashboard",      "name": "📊 Dashboard"},
+    "trades":      {"id": "-1003754130921", "url": "https://t.me/Nemesis_Trades",         "name": "📋 Trades"},
+    "performance": {"id": "-1003742483066", "url": "https://t.me/Nemesis_Performance",    "name": "📈 Performance"},
+    "briefing":    {"id": "-1003876226636", "url": "https://t.me/Nemesis_Briefing",       "name": "☀️ Briefing"},
+    "risk":        {"id": "-1003852577520", "url": "https://t.me/Nemesis_Risk",           "name": "🛡️ Risk"},
+    "stats":       {"id": "-1003818313045", "url": "https://t.me/Nemesis_Stats",          "name": "🏆 Stats"},
+}
 
 # ─── LOGS ────────────────────────────────────────────────────────────────────
 LOG_DIR   = "logs"

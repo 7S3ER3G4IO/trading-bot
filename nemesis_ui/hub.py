@@ -1,29 +1,25 @@
 """
-hub.py — Nemesis Command Center Hub
-Manages the single pinned hub message with inline keyboard navigation.
-Uses Telegram editMessageText to update in-place (zero spam).
+hub.py — Nemesis Command Center Hub (Multi-Channel Edition)
+Sends the main Hub message with URL buttons linking to dedicated channels.
+No callbacks needed — each button is a direct link to the channel.
 """
 import json
 import os
 from typing import Optional
 from loguru import logger
-import requests
 
 try:
-    from telegram import InlineKeyboardMarkup
+    import requests
 except ImportError:
-    InlineKeyboardMarkup = None
+    requests = None
 
-from .pages import PageBuilder
+from config import CHANNELS
 
 
 class NemesisHub:
     """
-    Manages the persistent Hub message in Telegram.
-    - send_hub() : sends initial hub message and pins it
-    - refresh_hub() : edits the hub message in-place with fresh data
-    - navigate_to() : edits the hub message to show a specific page
-    - back_to_hub() : returns to the main hub view
+    Manages the Hub message in the main bot chat.
+    Buttons are URL buttons pointing to dedicated channels (no callbacks).
     """
 
     def __init__(self, token: str, chat_id: str):
@@ -31,65 +27,82 @@ class NemesisHub:
         self._chat_id = chat_id
         self._api = f"https://api.telegram.org/bot{token}" if token else ""
         self._hub_message_id: Optional[int] = None
-        self._current_page: str = "hub"
         self._load_state()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def send_hub(self, balance: float = 0.0, pnl_today: float = 0.0) -> Optional[int]:
-        """Send the main Hub message and pin it. Returns message_id."""
-        text, markup = PageBuilder.build_hub(balance, pnl_today)
+        """Send the main Hub message with URL buttons and pin it."""
+        text = self._build_hub_text(balance, pnl_today)
+        markup = self._build_url_keyboard()
         msg_id = self._send_message(text, markup)
         if msg_id:
             self._hub_message_id = msg_id
-            self._current_page = "hub"
             self._pin_message(msg_id)
             self._save_state()
-            logger.info(f"📌 Hub message envoyé et épinglé (ID: {msg_id})")
+            logger.info(f"📌 Hub envoyé et épinglé (ID: {msg_id})")
         return msg_id
 
     def refresh_hub(self, balance: float = 0.0, pnl_today: float = 0.0):
-        """Edit the hub message in-place with fresh data. Zero spam."""
+        """Edit the Hub message in-place with fresh data."""
         if not self._hub_message_id:
             self.send_hub(balance, pnl_today)
             return
-
-        if self._current_page != "hub":
-            return  # Don't override a page the user is viewing
-
-        text, markup = PageBuilder.build_hub(balance, pnl_today)
+        text = self._build_hub_text(balance, pnl_today)
+        markup = self._build_url_keyboard()
         self._edit_message(self._hub_message_id, text, markup)
-
-    def navigate_to(self, page: str, text: str, markup=None):
-        """Navigate to a specific page by editing the hub message."""
-        if not self._hub_message_id:
-            # Fallback : send as new message
-            self._send_message(text, markup)
-            return
-
-        self._current_page = page
-        self._edit_message(self._hub_message_id, text, markup)
-
-    def back_to_hub(self, balance: float = 0.0, pnl_today: float = 0.0):
-        """Return to the main hub view."""
-        self._current_page = "hub"
-        if self._hub_message_id:
-            text, markup = PageBuilder.build_hub(balance, pnl_today)
-            self._edit_message(self._hub_message_id, text, markup)
 
     @property
     def hub_message_id(self) -> Optional[int]:
         return self._hub_message_id
 
-    @property
-    def current_page(self) -> str:
-        return self._current_page
+    # ── Hub Content ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_hub_text(balance: float = 0.0, pnl_today: float = 0.0) -> str:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        pnl_sign = "+" if pnl_today >= 0 else ""
+        pnl_emoji = "📈" if pnl_today >= 0 else "📉"
+
+        return (
+            "┌─────────────────────────────┐\n"
+            "│  ⚡ NEMESIS COMMAND CENTER   │\n"
+            "└─────────────────────────────┘\n"
+            "\n"
+            f"🟢 ONLINE  ·  {now}\n"
+            "\n"
+            f"💰 {balance:,.2f}€  ·  {pnl_emoji} {pnl_sign}{pnl_today:,.2f}€ aujourd'hui\n"
+            "\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "👇 Accède à tes canaux dédiés :\n"
+        )
+
+    @staticmethod
+    def _build_url_keyboard() -> dict:
+        """Build InlineKeyboardMarkup with URL buttons to each channel."""
+        buttons = []
+        # Row 1: Dashboard + Trades
+        buttons.append([
+            {"text": CHANNELS["dashboard"]["name"], "url": CHANNELS["dashboard"]["url"]},
+            {"text": CHANNELS["trades"]["name"],    "url": CHANNELS["trades"]["url"]},
+        ])
+        # Row 2: Performance + Briefing
+        buttons.append([
+            {"text": CHANNELS["performance"]["name"], "url": CHANNELS["performance"]["url"]},
+            {"text": CHANNELS["briefing"]["name"],     "url": CHANNELS["briefing"]["url"]},
+        ])
+        # Row 3: Risk + Stats
+        buttons.append([
+            {"text": CHANNELS["risk"]["name"],  "url": CHANNELS["risk"]["url"]},
+            {"text": CHANNELS["stats"]["name"], "url": CHANNELS["stats"]["url"]},
+        ])
+        return {"inline_keyboard": buttons}
 
     # ── Telegram REST API ─────────────────────────────────────────────────────
 
-    def _send_message(self, text: str, markup=None) -> Optional[int]:
-        """Send a new message. Returns message_id."""
-        if not self._api or not self._chat_id:
+    def _send_message(self, text: str, markup: dict = None) -> Optional[int]:
+        if not self._api or not requests:
             return None
         try:
             payload = {
@@ -98,20 +111,18 @@ class NemesisHub:
                 "parse_mode": "HTML",
             }
             if markup:
-                payload["reply_markup"] = self._serialize_markup(markup)
+                payload["reply_markup"] = markup
             r = requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
             if r.ok:
-                data = r.json()
-                return data.get("result", {}).get("message_id")
+                return r.json().get("result", {}).get("message_id")
             else:
                 logger.warning(f"⚠️ Hub send: {r.status_code} {r.text[:80]}")
         except Exception as e:
             logger.error(f"❌ Hub send: {e}")
         return None
 
-    def _edit_message(self, message_id: int, text: str, markup=None):
-        """Edit an existing message in-place."""
-        if not self._api or not self._chat_id:
+    def _edit_message(self, message_id: int, text: str, markup: dict = None):
+        if not self._api or not requests:
             return
         try:
             payload = {
@@ -121,46 +132,26 @@ class NemesisHub:
                 "parse_mode": "HTML",
             }
             if markup:
-                payload["reply_markup"] = self._serialize_markup(markup)
+                payload["reply_markup"] = markup
             r = requests.post(f"{self._api}/editMessageText", json=payload, timeout=10)
             if not r.ok:
-                error_desc = r.json().get("description", "")
-                # "message is not modified" is normal when nothing changed
-                if "not modified" not in error_desc:
-                    logger.warning(f"⚠️ Hub edit: {r.status_code} {error_desc[:80]}")
+                desc = r.json().get("description", "")
+                if "not modified" not in desc:
+                    logger.warning(f"⚠️ Hub edit: {r.status_code} {desc[:80]}")
         except Exception as e:
             logger.error(f"❌ Hub edit: {e}")
 
     def _pin_message(self, message_id: int):
-        """Pin a message in the chat."""
-        if not self._api or not self._chat_id:
+        if not self._api or not requests:
             return
         try:
             requests.post(
                 f"{self._api}/pinChatMessage",
-                json={
-                    "chat_id": self._chat_id,
-                    "message_id": message_id,
-                    "disable_notification": True,
-                },
+                json={"chat_id": self._chat_id, "message_id": message_id, "disable_notification": True},
                 timeout=10,
             )
         except Exception as e:
             logger.debug(f"Hub pin: {e}")
-
-    @staticmethod
-    def _serialize_markup(markup):
-        """Serialize markup to dict for the API (requests.post json= auto-serializes)."""
-        if markup is None:
-            return None
-        try:
-            return markup.to_dict()
-        except AttributeError:
-            try:
-                import json
-                return json.loads(markup.to_json())
-            except (AttributeError, Exception):
-                return None
 
     # ── State Persistence ─────────────────────────────────────────────────────
 

@@ -135,24 +135,9 @@ class BotInitMixin:
 
         # ─── Callbacks Telegram ───────────────────────────────────────────
         self.handler.register_callbacks(
-            get_status   = self._status_text,
-            get_trades   = self._trades_text,
-            close_trade  = self._force_close,
-            force_be     = self._force_be,
             pause        = self._do_pause,
             resume       = self._do_resume,
-            send_brief   = self._do_brief,
-            send_backtest= self._do_backtest,
-            # Sprint 3 — commandes premium
-            get_best_pair= self._cmd_best_pair,
-            get_risk     = self._cmd_risk,
-            get_regime   = self._cmd_regime,
-            # Hub pages v3.0
-            get_dashboard  = self._hub_dashboard_page,
-            get_risk_page  = self._hub_risk_page,
-            get_regime_page= self._hub_regime_page,
-            get_stats_page = self._hub_stats_page,
-            get_hub_data   = self._hub_data,
+            get_hub_data = self._hub_data,
         )
 
         self.handler.start_polling()
