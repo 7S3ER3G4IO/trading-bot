@@ -72,7 +72,7 @@ def _bar_in_presession(h: int, m: int) -> int:
 class Strategy:
 
     def compute_indicators(self, df: pd.DataFrame, df_htf: pd.DataFrame = None) -> pd.DataFrame:
-        """Calcule les indicateurs : ATR, ADX, Volume MA, EMA200."""
+        """Calcule les indicateurs : ATR, ADX, Volume MA, EMA, RSI, BB, MACD."""
         close  = df["close"]
         high   = df["high"]
         low    = df["low"]
@@ -91,6 +91,20 @@ class Strategy:
         df["ema9"]         = ta.trend.EMAIndicator(close, window=9).ema_indicator()
         df["ema21"]        = ta.trend.EMAIndicator(close, window=21).ema_indicator()
         df["rsi"]          = ta.momentum.RSIIndicator(close, window=14).rsi()
+
+        # ── V6+V7: Bollinger Bands, MACD, EMAs pour MR+TF ──
+        df["ema20"]  = ta.trend.EMAIndicator(close, window=20).ema_indicator()
+        df["ema50"]  = ta.trend.EMAIndicator(close, window=50).ema_indicator()
+        bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
+        df["bb_up"]  = bb.bollinger_hband()
+        df["bb_lo"]  = bb.bollinger_lband()
+        df["bb_mid"] = bb.bollinger_mavg()
+        macd_ind = ta.trend.MACD(close, window_slow=26, window_fast=12, window_sign=9)
+        df["macd"]   = macd_ind.macd()
+        df["macd_s"] = macd_ind.macd_signal()
+        # Weekly bias (approximation via long EMAs)
+        df["ema100"] = ta.trend.EMAIndicator(close, window=100).ema_indicator()
+        df["ema250"] = ta.trend.EMAIndicator(close, window=250).ema_indicator()
 
         return df.dropna()
 
@@ -172,17 +186,25 @@ class Strategy:
         symbol: str = None,
         min_score_override: int = None,
         futures_mode: bool = False,
+        asset_profile: dict = None,
     ) -> tuple:
         """
-        Signal breakout London/NY.
-        - futures_mode=True  → skip filtre session (permet le backtest 24h)
-        - futures_mode=False → vérifie is_session_ok() en live
+        Signal multi-stratégie V6+V7.
+        strat = BK (Breakout) | MR (Mean Reversion) | TF (Trend Following)
         """
         req_score = min_score_override if min_score_override is not None else MIN_SCORE
 
         if len(df) < 30:
             return SIGNAL_HOLD, 0, []
 
+        # Routing par stratégie
+        strat_type = asset_profile.get("strat", "BK") if asset_profile else "BK"
+        if strat_type == "MR":
+            return self._signal_mr(df, symbol, asset_profile)
+        if strat_type == "TF":
+            return self._signal_tf(df, symbol, asset_profile)
+
+        # ═══ BREAKOUT (BK) — logique originale ═══
         # Filtre session (skip en futures_mode pour backtests)
         if not futures_mode and not self.is_session_ok():
             return SIGNAL_HOLD, 0, []
@@ -208,7 +230,8 @@ class Strategy:
 
         # ── Détection du breakout ────────────────────────────────────────────
         # Le prix doit clôturer AU-DELÀ du range (pas seulement le toucher)
-        BREAKOUT_MARGIN = range_size * 0.1  # Doit casser de 10% du range
+        _bk_margin = asset_profile.get("bk_margin", 0.10) if asset_profile else 0.10
+        BREAKOUT_MARGIN = range_size * _bk_margin
         broke_up   = last_close > high_r + BREAKOUT_MARGIN
         broke_down = last_close < low_r  - BREAKOUT_MARGIN
 
@@ -222,7 +245,8 @@ class Strategy:
 
         # C1 — ADX (force de tendance en formation)
         adx_val = float(curr.get("adx", 0))
-        if adx_val > ADX_MIN:
+        _adx_min = asset_profile.get("adx_min", ADX_MIN) if asset_profile else ADX_MIN
+        if adx_val > _adx_min:
             confirmations.append(f"ADX {adx_val:.0f}")
 
         # C2 — Volume > MA20
@@ -340,3 +364,107 @@ class Strategy:
         if "atr" in df.columns and len(df) > 0:
             return float(df.iloc[-1]["atr"])
         return 0.0
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MEAN REVERSION (MR) — RSI survendu/surachetÃ© + Bollinger Bands
+    # ═══════════════════════════════════════════════════════════════════════
+    def _signal_mr(self, df, symbol, profile):
+        curr = df.iloc[-1]
+        c = float(curr["close"])
+        rsi = float(curr.get("rsi", 50))
+        bb_lo = float(curr.get("bb_lo", c))
+        bb_up = float(curr.get("bb_up", c))
+        atr = float(curr.get("atr", 0))
+        if atr <= 0:
+            return SIGNAL_HOLD, 0, []
+
+        rsi_lo = profile.get("rsi_lo", 30)
+        rsi_hi = profile.get("rsi_hi", 70)
+
+        if rsi <= rsi_lo and c <= bb_lo * 1.005:
+            sig = SIGNAL_BUY
+        elif rsi >= rsi_hi and c >= bb_up * 0.995:
+            sig = SIGNAL_SELL
+        else:
+            return SIGNAL_HOLD, 0, []
+
+        confirmations = []
+        adx_val = float(curr.get("adx", 0))
+        if adx_val < 25:
+            confirmations.append(f"ADX_low {adx_val:.0f}")
+        candle_body = abs(c - float(curr["open"]))
+        candle_range = float(curr["high"]) - float(curr["low"])
+        if candle_range > 0 and candle_body / candle_range >= 0.35:
+            confirmations.append("Body\u2713")
+        vol = float(curr.get("volume", 0))
+        vol_ma = float(curr.get("vol_ma", vol + 1))
+        if vol > vol_ma * 0.8:
+            confirmations.append("Volume\u2713")
+        ema50 = float(curr.get("ema50", c))
+        if c > 0 and abs(c - ema50) / c < 0.03:
+            confirmations.append("EMA50_near\u2713")
+
+        score = len(confirmations)
+        if score < 1:
+            return SIGNAL_HOLD, score, confirmations
+
+        info = f"[MR] RSI={rsi:.0f} | BB={'lo' if sig == SIGNAL_BUY else 'hi'}"
+        icon = "🟢" if sig == SIGNAL_BUY else "🔴"
+        logger.info(f"{icon} MEAN REV {sig} {symbol} | {info} | Score {score} | {confirmations}")
+        return sig, score, [info] + confirmations
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # TREND FOLLOWING (TF) — EMA crossover + MACD + ADX
+    # ═══════════════════════════════════════════════════════════════════════
+    def _signal_tf(self, df, symbol, profile):
+        curr = df.iloc[-1]
+        c = float(curr["close"])
+        ema20 = float(curr.get("ema20", 0))
+        ema50 = float(curr.get("ema50", 0))
+        macd = float(curr.get("macd", 0))
+        macd_s = float(curr.get("macd_s", 0))
+        adx_val = float(curr.get("adx", 0))
+
+        if ema20 <= 0 or ema50 <= 0:
+            return SIGNAL_HOLD, 0, []
+
+        if ema20 > ema50 and macd > macd_s and adx_val > 18:
+            sig = SIGNAL_BUY
+        elif ema20 < ema50 and macd < macd_s and adx_val > 18:
+            sig = SIGNAL_SELL
+        else:
+            return SIGNAL_HOLD, 0, []
+
+        # Weekly filter
+        ema100 = float(curr.get("ema100", 0))
+        ema250 = float(curr.get("ema250", 0))
+        if ema100 > 0 and ema250 > 0:
+            if sig == SIGNAL_BUY and ema100 < ema250:
+                return SIGNAL_HOLD, 0, []
+            if sig == SIGNAL_SELL and ema100 > ema250:
+                return SIGNAL_HOLD, 0, []
+
+        confirmations = []
+        if adx_val > 25:
+            confirmations.append(f"ADX {adx_val:.0f}")
+        rsi = float(curr.get("rsi", 50))
+        if (sig == SIGNAL_BUY and 40 < rsi < 70) or (sig == SIGNAL_SELL and 30 < rsi < 60):
+            confirmations.append(f"RSI\u2713 {rsi:.0f}")
+        vol = float(curr.get("volume", 0))
+        vol_ma = float(curr.get("vol_ma", vol + 1))
+        if vol > vol_ma * 0.9:
+            confirmations.append("Volume\u2713")
+        mom3 = float(curr.get("close", 0)) / float(df.iloc[-4]["close"]) - 1 if len(df) > 4 else 0
+        if (mom3 > 0.005 and sig == SIGNAL_BUY) or (mom3 < -0.005 and sig == SIGNAL_SELL):
+            confirmations.append("Mom3\u2713")
+
+        score = len(confirmations)
+        if score < 1:
+            return SIGNAL_HOLD, score, confirmations
+
+        arrow = '↑' if macd > macd_s else '↓'
+        cmp = '>' if sig == SIGNAL_BUY else '<'
+        info = f"[TF] EMA20{cmp}EMA50 | MACD {arrow} | ADX={adx_val:.0f}"
+        icon = "🟢" if sig == SIGNAL_BUY else "🔴"
+        logger.info(f"{icon} TREND {sig} {symbol} | {info} | Score {score} | {confirmations}")
+        return sig, score, [info] + confirmations

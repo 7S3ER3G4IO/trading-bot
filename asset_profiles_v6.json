@@ -1,0 +1,996 @@
+{
+  "v": "v6",
+  "generated": "2026-03-10T22:47:28.833954",
+  "capital": 11000.0,
+  "risk_pct": 0.0125,
+  "n_profitable": 39,
+  "n_tested": 55,
+  "total_pnl": 2295299.0,
+  "equity_final": 2306299.0,
+  "n_trades": 1186,
+  "wr": 56.8,
+  "pf": 2.16,
+  "bk": 14,
+  "mr": 21,
+  "tf": 4,
+  "assets": {
+    "GBPUSD": {
+      "name": "GBP/USD",
+      "cat": "forex",
+      "spread": 0.012,
+      "ticker": "GBPUSD=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 26,
+        "wr": 65.4,
+        "pf": 3.93,
+        "pnl": 3662.0,
+        "avg_rr": 2.08
+      }
+    },
+    "AUDUSD": {
+      "name": "AUD/USD",
+      "cat": "forex",
+      "spread": 0.01,
+      "ticker": "AUDUSD=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 30,
+        "wr": 50.0,
+        "pf": 2.35,
+        "pnl": 2808.0,
+        "avg_rr": 2.35
+      }
+    },
+    "NZDUSD": {
+      "name": "NZD/USD",
+      "cat": "forex",
+      "spread": 0.015,
+      "ticker": "NZDUSD=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 3.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 38,
+        "wr": 60.5,
+        "pf": 2.82,
+        "pnl": 3785.0,
+        "avg_rr": 1.84
+      }
+    },
+    "USDCHF": {
+      "name": "USD/CHF",
+      "cat": "forex",
+      "spread": 0.012,
+      "ticker": "CHF=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 20,
+        "wr": 75.0,
+        "pf": 4.74,
+        "pnl": 2581.0,
+        "avg_rr": 1.58
+      }
+    },
+    "EURGBP": {
+      "name": "EUR/GBP",
+      "cat": "forex",
+      "spread": 0.01,
+      "ticker": "EURGBP=X",
+      "strat": "BK",
+      "params": {
+        "tp1": 1.0,
+        "tp2": 2.0,
+        "tp3": 3.0,
+        "slb": 0.1,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 3
+      },
+      "metrics": {
+        "n": 27,
+        "wr": 59.3,
+        "pf": 2.24,
+        "pnl": 887.0,
+        "avg_rr": 1.54
+      }
+    },
+    "EURAUD": {
+      "name": "EUR/AUD",
+      "cat": "forex",
+      "spread": 0.02,
+      "ticker": "EURAUD=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 73,
+        "wr": 45.2,
+        "pf": 1.37,
+        "pnl": 2026.0,
+        "avg_rr": 1.66
+      }
+    },
+    "GBPAUD": {
+      "name": "GBP/AUD",
+      "cat": "forex",
+      "spread": 0.025,
+      "ticker": "GBPAUD=X",
+      "strat": "TF",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.5,
+        "tp3": 5.5,
+        "slb": 2.0,
+        "max_hold": 15,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 50,
+        "wr": 46.0,
+        "pf": 1.38,
+        "pnl": 1138.0,
+        "avg_rr": 1.62
+      }
+    },
+    "AUDCAD": {
+      "name": "AUD/CAD",
+      "cat": "forex",
+      "spread": 0.015,
+      "ticker": "AUDCAD=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 37,
+        "wr": 48.6,
+        "pf": 1.86,
+        "pnl": 2277.0,
+        "avg_rr": 1.97
+      }
+    },
+    "AUDNZD": {
+      "name": "AUD/NZD",
+      "cat": "forex",
+      "spread": 0.015,
+      "ticker": "AUDNZD=X",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 34,
+        "wr": 55.9,
+        "pf": 2.39,
+        "pnl": 2180.0,
+        "avg_rr": 1.89
+      }
+    },
+    "AUDJPY": {
+      "name": "AUD/JPY",
+      "cat": "forex",
+      "spread": 0.02,
+      "ticker": "AUDJPY=X",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.08,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 44,
+        "wr": 54.5,
+        "pf": 2.43,
+        "pnl": 2791.0,
+        "avg_rr": 2.03
+      }
+    },
+    "NZDJPY": {
+      "name": "NZD/JPY",
+      "cat": "forex",
+      "spread": 0.02,
+      "ticker": "NZDJPY=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 3.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 53,
+        "wr": 49.1,
+        "pf": 1.63,
+        "pnl": 2352.0,
+        "avg_rr": 1.69
+      }
+    },
+    "EURCHF": {
+      "name": "EUR/CHF",
+      "cat": "forex",
+      "spread": 0.015,
+      "ticker": "EURCHF=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 55,
+        "wr": 50.9,
+        "pf": 1.56,
+        "pnl": 2119.0,
+        "avg_rr": 1.51
+      }
+    },
+    "GBPCAD": {
+      "name": "GBP/CAD",
+      "cat": "forex",
+      "spread": 0.025,
+      "ticker": "GBPCAD=X",
+      "strat": "BK",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.12,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.1,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 40,
+        "wr": 60.0,
+        "pf": 2.28,
+        "pnl": 2143.0,
+        "avg_rr": 1.52
+      }
+    },
+    "GBPCHF": {
+      "name": "GBP/CHF",
+      "cat": "forex",
+      "spread": 0.025,
+      "ticker": "GBPCHF=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 58,
+        "wr": 55.2,
+        "pf": 1.9,
+        "pnl": 3288.0,
+        "avg_rr": 1.54
+      }
+    },
+    "CADCHF": {
+      "name": "CAD/CHF",
+      "cat": "forex",
+      "spread": 0.02,
+      "ticker": "CADCHF=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 39,
+        "wr": 53.8,
+        "pf": 1.9,
+        "pnl": 2257.0,
+        "avg_rr": 1.63
+      }
+    },
+    "NZDCAD": {
+      "name": "NZD/CAD",
+      "cat": "forex",
+      "spread": 0.02,
+      "ticker": "NZDCAD=X",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 40,
+        "wr": 65.0,
+        "pf": 3.01,
+        "pnl": 3935.0,
+        "avg_rr": 1.62
+      }
+    },
+    "CHFJPY": {
+      "name": "CHF/JPY",
+      "cat": "forex",
+      "spread": 0.02,
+      "ticker": "CHFJPY=X",
+      "strat": "TF",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 1.5,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 68,
+        "wr": 50.0,
+        "pf": 1.53,
+        "pnl": 1766.0,
+        "avg_rr": 1.53
+      }
+    },
+    "GOLD": {
+      "name": "Gold",
+      "cat": "commodity",
+      "spread": 0.025,
+      "ticker": "GC=F",
+      "strat": "BK",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 4.0,
+        "slb": 0.1,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 141,
+        "wr": 69.5,
+        "pf": 3.48,
+        "pnl": 10628.0,
+        "avg_rr": 1.53
+      }
+    },
+    "SILVER": {
+      "name": "Silver",
+      "cat": "commodity",
+      "spread": 0.035,
+      "ticker": "SI=F",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 114,
+        "wr": 60.5,
+        "pf": 3.42,
+        "pnl": 12294.0,
+        "avg_rr": 2.23
+      }
+    },
+    "OIL_WTI": {
+      "name": "WTI",
+      "cat": "commodity",
+      "spread": 0.035,
+      "ticker": "CL=F",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 3.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 22,
+        "wr": 45.5,
+        "pf": 1.32,
+        "pnl": 533.0,
+        "avg_rr": 1.59
+      }
+    },
+    "OIL_BRENT": {
+      "name": "Brent",
+      "cat": "commodity",
+      "spread": 0.035,
+      "ticker": "BZ=F",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 5
+      },
+      "metrics": {
+        "n": 45,
+        "wr": 51.1,
+        "pf": 1.59,
+        "pnl": 784.0,
+        "avg_rr": 1.52
+      }
+    },
+    "COPPER": {
+      "name": "Copper",
+      "cat": "commodity",
+      "spread": 0.04,
+      "ticker": "HG=F",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 93,
+        "wr": 53.8,
+        "pf": 2.02,
+        "pnl": 4671.0,
+        "avg_rr": 1.74
+      }
+    },
+    "US500": {
+      "name": "S&P 500",
+      "cat": "index",
+      "spread": 0.035,
+      "ticker": "^GSPC",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 3.0,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 22,
+        "wr": 45.5,
+        "pf": 1.26,
+        "pnl": 440.0,
+        "avg_rr": 1.51
+      }
+    },
+    "US100": {
+      "name": "NASDAQ",
+      "cat": "index",
+      "spread": 0.045,
+      "ticker": "^NDX",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 17,
+        "wr": 52.9,
+        "pf": 2.0,
+        "pnl": 1122.0,
+        "avg_rr": 1.78
+      }
+    },
+    "US30": {
+      "name": "Dow Jones",
+      "cat": "index",
+      "spread": 0.035,
+      "ticker": "^DJI",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 3.0,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 12,
+        "wr": 83.3,
+        "pf": 7.78,
+        "pnl": 1896.0,
+        "avg_rr": 1.56
+      }
+    },
+    "DE40": {
+      "name": "DAX 40",
+      "cat": "index",
+      "spread": 0.045,
+      "ticker": "^GDAXI",
+      "strat": "BK",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.12,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 118,
+        "wr": 60.2,
+        "pf": 2.27,
+        "pnl": 5341.0,
+        "avg_rr": 1.5
+      }
+    },
+    "FRA40": {
+      "name": "CAC 40",
+      "cat": "index",
+      "spread": 0.045,
+      "ticker": "^FCHI",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 17,
+        "wr": 47.1,
+        "pf": 1.66,
+        "pnl": 832.0,
+        "avg_rr": 1.87
+      }
+    },
+    "UK100": {
+      "name": "FTSE 100",
+      "cat": "index",
+      "spread": 0.035,
+      "ticker": "^FTSE",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.1,
+        "range_lb": 3
+      },
+      "metrics": {
+        "n": 71,
+        "wr": 57.7,
+        "pf": 2.05,
+        "pnl": 2771.0,
+        "avg_rr": 1.5
+      }
+    },
+    "JP225": {
+      "name": "Nikkei",
+      "cat": "index",
+      "spread": 0.055,
+      "ticker": "^N225",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 39,
+        "wr": 53.8,
+        "pf": 2.2,
+        "pnl": 3035.0,
+        "avg_rr": 1.88
+      }
+    },
+    "AUS200": {
+      "name": "ASX 200",
+      "cat": "index",
+      "spread": 0.045,
+      "ticker": "^AXJO",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 22,
+        "wr": 45.5,
+        "pf": 1.48,
+        "pnl": 805.0,
+        "avg_rr": 1.77
+      }
+    },
+    "BNBUSD": {
+      "name": "BNB",
+      "cat": "crypto",
+      "spread": 0.12,
+      "ticker": "BNB-USD",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.08,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 101,
+        "wr": 46.5,
+        "pf": 1.54,
+        "pnl": 3025.0,
+        "avg_rr": 1.77
+      }
+    },
+    "XRPUSD": {
+      "name": "XRP",
+      "cat": "crypto",
+      "spread": 0.15,
+      "ticker": "XRP-USD",
+      "strat": "TF",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 4.0,
+        "tp3": 6.0,
+        "slb": 2.0,
+        "max_hold": 15,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 65,
+        "wr": 49.2,
+        "pf": 1.68,
+        "pnl": 2878.0,
+        "avg_rr": 1.73
+      }
+    },
+    "AVAXUSD": {
+      "name": "Avalanche",
+      "cat": "crypto",
+      "spread": 0.15,
+      "ticker": "AVAX-USD",
+      "strat": "MR",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 4.0,
+        "slb": 0.6,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 30,
+        "wr": 50.0,
+        "pf": 1.57,
+        "pnl": 1184.0,
+        "avg_rr": 1.57
+      }
+    },
+    "AAPL": {
+      "name": "Apple",
+      "cat": "stock",
+      "spread": 0.05,
+      "ticker": "AAPL",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 76,
+        "wr": 48.7,
+        "pf": 1.53,
+        "pnl": 2246.0,
+        "avg_rr": 1.61
+      }
+    },
+    "TSLA": {
+      "name": "Tesla",
+      "cat": "stock",
+      "spread": 0.08,
+      "ticker": "TSLA",
+      "strat": "TF",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 4.0,
+        "slb": 1.0,
+        "max_hold": 8,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 88,
+        "wr": 58.0,
+        "pf": 2.19,
+        "pnl": 6082.0,
+        "avg_rr": 1.59
+      }
+    },
+    "NVDA": {
+      "name": "Nvidia",
+      "cat": "stock",
+      "spread": 0.08,
+      "ticker": "NVDA",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.0,
+        "tp3": 3.5,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 30,
+        "rsi_hi": 70
+      },
+      "metrics": {
+        "n": 20,
+        "wr": 50.0,
+        "pf": 1.76,
+        "pnl": 1061.0,
+        "avg_rr": 1.76
+      }
+    },
+    "MSFT": {
+      "name": "Microsoft",
+      "cat": "stock",
+      "spread": 0.05,
+      "ticker": "MSFT",
+      "strat": "MR",
+      "params": {
+        "tp1": 1.5,
+        "tp2": 2.5,
+        "tp3": 3.0,
+        "slb": 0.5,
+        "max_hold": 5,
+        "adx_min": 10,
+        "bk_margin": 0.05,
+        "range_lb": 2,
+        "rsi_lo": 25,
+        "rsi_hi": 75
+      },
+      "metrics": {
+        "n": 22,
+        "wr": 50.0,
+        "pf": 1.5,
+        "pnl": 769.0,
+        "avg_rr": 1.5
+      }
+    },
+    "META": {
+      "name": "Meta",
+      "cat": "stock",
+      "spread": 0.06,
+      "ticker": "META",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.08,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 69,
+        "wr": 47.8,
+        "pf": 1.81,
+        "pnl": 3076.0,
+        "avg_rr": 1.97
+      }
+    },
+    "GOOGL": {
+      "name": "Google",
+      "cat": "stock",
+      "spread": 0.05,
+      "ticker": "GOOGL",
+      "strat": "BK",
+      "params": {
+        "tp1": 2.0,
+        "tp2": 3.0,
+        "tp3": 5.0,
+        "slb": 0.15,
+        "max_hold": 10,
+        "adx_min": 10,
+        "bk_margin": 0.03,
+        "range_lb": 2
+      },
+      "metrics": {
+        "n": 81,
+        "wr": 53.1,
+        "pf": 1.8,
+        "pnl": 3462.0,
+        "avg_rr": 1.59
+      }
+    }
+  }
+}

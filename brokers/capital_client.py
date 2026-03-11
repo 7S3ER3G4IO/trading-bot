@@ -54,37 +54,117 @@ TF_MAP = {
     "1d":  "DAY",
 }
 
-# Instruments Capital.com (epics)
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEMESIS V6+V7 Hybride — 39 actifs | 3 stratégies | Dual Timeframe
+# V7 4H: 29 actifs volatils (BK+TF)  |  V6 Daily: 10 forex MR low-vol
+# ═══════════════════════════════════════════════════════════════════════════════
 CAPITAL_INSTRUMENTS = [
-    "GOLD",      # Or (XAU/USD)    — trend fort, ATR élevé
-    "EURUSD",    # EUR/USD         — Forex liquide
-    "GBPUSD",    # GBP/USD         — breakout puissant
-    "USDJPY",    # USD/JPY         — tendances longues
-    "US500",     # S&P 500         — trending NY open
-    "US100",     # NASDAQ 100      — technologie, volatil
-    "DE40",      # DAX 40          — London open
-    "OIL_BRENT", # Brent Oil       — gros moves
+    # ── V7 4H — Forex volatils (7) ──
+    "GBPUSD",   "USDCHF",   "AUDNZD",   "AUDJPY",   "NZDJPY",   "EURCHF",   "CHFJPY",
+    # ── V7 4H — Commodités (5) ──
+    "GOLD",     "SILVER",   "OIL_WTI",  "OIL_BRENT","COPPER",
+    # ── V7 4H — Indices (8) ──
+    "US500",    "US100",    "US30",     "DE40",     "FRA40",    "UK100",    "JP225",    "AUS200",
+    # ── V7 4H — Crypto (3) ──
+    "BNBUSD",   "XRPUSD",  "AVAXUSD",
+    # ── V7 4H — Stocks (6) ──
+    "AAPL",     "TSLA",     "NVDA",     "MSFT",     "META",     "GOOGL",
+    # ── V6 Daily — Forex MR low-vol (10) ──
+    "AUDUSD",   "NZDUSD",   "EURGBP",   "EURAUD",   "GBPAUD",
+    "AUDCAD",   "GBPCAD",   "GBPCHF",   "CADCHF",   "NZDCAD",
 ]
 
-# Noms lisibles
 INSTRUMENT_NAMES = {
-    "GOLD":      "Or (XAU/USD)",
-    "EURUSD":    "EUR/USD",
-    "GBPUSD":    "GBP/USD",
-    "USDJPY":    "USD/JPY",
-    "US500":     "S&P 500",
-    "US100":     "NASDAQ 100",
-    "DE40":      "DAX 40",
-    "OIL_BRENT": "Brent Oil",
+    "GBPUSD":"GBP/USD","USDCHF":"USD/CHF","AUDNZD":"AUD/NZD","AUDJPY":"AUD/JPY",
+    "NZDJPY":"NZD/JPY","EURCHF":"EUR/CHF","CHFJPY":"CHF/JPY",
+    "GOLD":"Gold","SILVER":"Silver","OIL_WTI":"WTI Crude","OIL_BRENT":"Brent","COPPER":"Copper",
+    "US500":"S&P 500","US100":"NASDAQ","US30":"Dow Jones","DE40":"DAX 40",
+    "FRA40":"CAC 40","UK100":"FTSE 100","JP225":"Nikkei","AUS200":"ASX 200",
+    "BNBUSD":"BNB/USD","XRPUSD":"XRP/USD","AVAXUSD":"AVAX/USD",
+    "AAPL":"Apple","TSLA":"Tesla","NVDA":"Nvidia","MSFT":"Microsoft","META":"Meta","GOOGL":"Google",
+    "AUDUSD":"AUD/USD","NZDUSD":"NZD/USD","EURGBP":"EUR/GBP","EURAUD":"EUR/AUD",
+    "GBPAUD":"GBP/AUD","AUDCAD":"AUD/CAD","GBPCAD":"GBP/CAD","GBPCHF":"GBP/CHF",
+    "CADCHF":"CAD/CHF","NZDCAD":"NZD/CAD",
 }
 
-# Valeur d'un pip par instrument (pour affichage)
 PIP_FACTOR = {
-    "GOLD":      0.01,
-    "EURUSD":    0.0001, "GBPUSD": 0.0001, "USDJPY": 0.01,
-    "US500":     1.0,    "US100":  1.0,    "DE40":   1.0,
-    "OIL_BRENT": 0.01,
+    "GBPUSD":0.0001,"USDCHF":0.0001,"AUDNZD":0.0001,"AUDJPY":0.01,
+    "NZDJPY":0.01,"EURCHF":0.0001,"CHFJPY":0.01,
+    "GOLD":0.01,"SILVER":0.001,"OIL_WTI":0.01,"OIL_BRENT":0.01,"COPPER":0.0001,
+    "US500":0.1,"US100":0.1,"US30":1.0,"DE40":1.0,
+    "FRA40":1.0,"UK100":1.0,"JP225":1.0,"AUS200":1.0,
+    "BNBUSD":0.01,"XRPUSD":0.0001,"AVAXUSD":0.01,
+    "AAPL":0.01,"TSLA":0.01,"NVDA":0.01,"MSFT":0.01,"META":0.01,"GOOGL":0.01,
+    "AUDUSD":0.0001,"NZDUSD":0.0001,"EURGBP":0.0001,"EURAUD":0.0001,
+    "GBPAUD":0.0001,"AUDCAD":0.0001,"GBPCAD":0.0001,"GBPCHF":0.0001,
+    "CADCHF":0.0001,"NZDCAD":0.0001,
 }
+
+MIN_SIZE = {
+    "GOLD":0.01,"SILVER":1,"COPPER":1,"OIL_WTI":0.1,"OIL_BRENT":0.1,
+    "US500":0.1,"US100":0.1,"US30":0.1,"DE40":0.1,"FRA40":0.1,
+    "UK100":0.1,"JP225":1,"AUS200":0.1,
+    "AAPL":1,"TSLA":1,"NVDA":1,"MSFT":1,"META":1,"GOOGL":1,
+    "BNBUSD":0.01,"XRPUSD":1,"AVAXUSD":1,
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSET_PROFILES — V6+V7 hybride optimisé
+#   strat: "BK" (Breakout) | "MR" (Mean Reversion) | "TF" (Trend Following)
+#   tf:    "4h" (V7) | "1d" (V6 daily)
+#   tp1/tp2/tp3: en multiples du SL distance
+#   sl_buffer (slb): multiplicateur ATR pour SL (MR/TF) ou % range (BK)
+#   rsi_lo/rsi_hi: seuils RSI pour Mean Reversion uniquement
+# ═══════════════════════════════════════════════════════════════════════════════
+ASSET_PROFILES = {
+    # ── V7 4H — Forex volatils ──
+    "GBPUSD":  {"strat":"TF","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":1.0, "max_hold":30,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    "USDCHF":  {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":18},
+    "AUDNZD":  {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "AUDJPY":  {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    "NZDJPY":  {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":18},
+    "EURCHF":  {"strat":"BK","tf":"4h","tp1":1.0,"tp2":2.0,"tp3":3.0,"sl_buffer":0.12,"max_hold":30,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "CHFJPY":  {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    # ── V7 4H — Commodités ──
+    "GOLD":    {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "SILVER":  {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "OIL_WTI": {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    "OIL_BRENT":{"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.08,"range_lb":18},
+    "COPPER":  {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    # ── V7 4H — Indices ──
+    "US500":   {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    "US100":   {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "US30":    {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "DE40":    {"strat":"TF","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":1.0, "max_hold":30,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "FRA40":   {"strat":"MR","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.5, "max_hold":18,"adx_min":12,"bk_margin":0.05,"range_lb":6,"rsi_lo":30,"rsi_hi":70},
+    "UK100":   {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    "JP225":   {"strat":"TF","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":1.0, "max_hold":30,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "AUS200":  {"strat":"MR","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.5, "max_hold":18,"adx_min":12,"bk_margin":0.05,"range_lb":6,"rsi_lo":25,"rsi_hi":75},
+    # ── V7 4H — Crypto ──
+    "BNBUSD":  {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.08,"range_lb":18},
+    "XRPUSD":  {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "AVAXUSD": {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":18},
+    # ── V7 4H — Stocks ──
+    "AAPL":    {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "TSLA":    {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "NVDA":    {"strat":"TF","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":1.0, "max_hold":30,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "MSFT":    {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.08,"range_lb":6},
+    "META":    {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":6},
+    "GOOGL":   {"strat":"TF","tf":"4h","tp1":1.5,"tp2":2.5,"tp3":4.0,"sl_buffer":1.0, "max_hold":30,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    # ── V6 Daily — Forex MR low-vol ──
+    "AUDUSD":  {"strat":"MR","tf":"1d","tp1":2.0,"tp2":3.0,"tp3":4.0,"sl_buffer":0.6, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":25,"rsi_hi":75},
+    "NZDUSD":  {"strat":"MR","tf":"1d","tp1":1.5,"tp2":2.5,"tp3":3.0,"sl_buffer":0.6, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
+    "EURGBP":  {"strat":"BK","tf":"1d","tp1":1.0,"tp2":2.0,"tp3":3.0,"sl_buffer":0.10,"max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5},
+    "EURAUD":  {"strat":"MR","tf":"1d","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.5, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
+    "GBPAUD":  {"strat":"TF","tf":"1d","tp1":2.0,"tp2":3.5,"tp3":5.5,"sl_buffer":2.0, "max_hold":15,"adx_min":10,"bk_margin":0.05,"range_lb":5},
+    "AUDCAD":  {"strat":"MR","tf":"1d","tp1":2.0,"tp2":3.0,"tp3":4.0,"sl_buffer":0.6, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":25,"rsi_hi":75},
+    "GBPCAD":  {"strat":"BK","tf":"1d","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5},
+    "GBPCHF":  {"strat":"MR","tf":"1d","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.5, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
+    "CADCHF":  {"strat":"MR","tf":"1d","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.5, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
+    "NZDCAD":  {"strat":"MR","tf":"1d","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.5, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
+}
+
+
 
 
 class CapitalClient:
@@ -345,6 +425,17 @@ class CapitalClient:
                 json=data,
                 timeout=15,
             )
+            if r.status_code >= 400:
+                # Log le body de la réponse pour diagnostic
+                try:
+                    err_body = r.json()
+                except Exception:
+                    err_body = r.text[:300]
+                logger.error(
+                    f"❌ Capital.com place_order {epic}: HTTP {r.status_code} | "
+                    f"Body: {err_body} | Payload: {data}"
+                )
+                return None
             r.raise_for_status()
             resp     = r.json()
             deal_ref = resp.get("dealReference")
@@ -432,8 +523,10 @@ class CapitalClient:
         # Indices (minimum 1 contrat)
         "US500":      1.0,    # S&P 500
         "US100":      1.0,    # NASDAQ 100
+        "US30":       1.0,    # Dow Jones 30
         "DE40":       1.0,    # DAX 40
-    }  # Forex : 0.01 (par défaut)
+        "FRA40":      1.0,    # CAC 40
+    }  # Forex (AUDJPY, GBPCHF, EURGBP, etc.) : 0.01 (par défaut)
 
     # ─── Calcul taille de position ────────────────────────────────────────────
 
