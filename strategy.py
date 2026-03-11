@@ -70,21 +70,20 @@ def _bar_in_presession(h: int, m: int) -> int:
 # Sessions élargies par catégorie d'actif (heures UTC : [(debut_h, debut_m), (fin_h, fin_m)])
 # Chaque entrée est une liste de tuples (start, end) en minutes depuis minuit
 SESSION_WINDOWS = {
-    # Crypto : 06h-22h UTC (16h) — marchés actifs globalement
-    "crypto":      [(6 * 60, 22 * 60)],
-    # Forex BK/TF : London élargi + NY élargi (8h)
+    # Crypto : 24/7 — marchés ouverts en permanence
+    "crypto":      [(0, 24 * 60)],
+    # Forex BK/TF : London élargi + NY élargi (besoin de volume pour breakout)
     "forex":       [(7 * 60, 10 * 60 + 30),
                     (12 * 60, 16 * 60 + 30)],
-    # Forex MR : 07h-20h UTC (13h) — MR ne dépend pas du timing de breakout
-    "forex_mr":    [(7 * 60, 20 * 60)],
-    # Indices : London marchés + NY + after-hours (10h)
+    # Forex MR : 24/7 — Mean Reversion fonctionne H24 (RSI/BB ne dépendent pas de session)
+    "forex_mr":    [(0, 24 * 60)],
+    # Indices : London marchés + NY + after-hours
     "indices":     [(7 * 60, 10 * 60 + 30),
                     (13 * 60, 20 * 60)],
-    # Stocks US : NY étendu (7h)
+    # Stocks US : NY étendu
     "stocks":      [(13 * 60, 20 * 60)],
-    # Commodités : London + NY élargi (8h)
-    "commodities": [(7 * 60, 10 * 60 + 30),
-                    (13 * 60, 16 * 60 + 30)],
+    # Commodités : élargi 06h-22h UTC (pétrole, or actifs sur large plage)
+    "commodities": [(6 * 60, 22 * 60)],
 }
 
 
