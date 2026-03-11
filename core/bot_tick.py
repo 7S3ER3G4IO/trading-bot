@@ -132,11 +132,17 @@ class BotTickMixin:
             self._dd_paused = False
             # Reset risk manager daily balance to current balance on fresh deploy
             self.risk.reset_daily(balance)
-            logger.info("🔄 Equity curve + risk manager nettoyés (fresh deploy)")
+            self._daily_start_balance = balance  # Also reset the tick-level DD check
+            self._equity_warmup_ticks = 0  # Skip equity circuit breaker for first 5 ticks
+            logger.info(f"🔄 Equity curve + risk manager nettoyés (fresh deploy) — daily_start={balance:.2f}")
 
         if balance > 0:
             self.equity.record(balance)
-            if self.equity.is_below_ma(ma_period=20) and not self._dd_paused:
+            # Skip equity circuit breaker for first 5 ticks after deploy (data polluted)
+            warmup = getattr(self, '_equity_warmup_ticks', 0)
+            if warmup < 5:
+                self._equity_warmup_ticks = warmup + 1
+            elif self.equity.is_below_ma(ma_period=20) and not self._dd_paused:
                 logger.warning("⏸️  EquityCurve sous MA20 — circuit breaker déclenché")
                 self._dd_paused = True
                 pnl_pct = self.equity.total_pnl_pct()

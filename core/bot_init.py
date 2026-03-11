@@ -54,7 +54,7 @@ class BotInitMixin:
         self.initial_balance      = bal or 10_000.0
         self._daily_start_balance = self.initial_balance
         self._dd_paused           = False
-        self.DAILY_DD_LIMIT       = float(os.getenv("DAILY_DD_LIMIT", "3.0"))
+        self.DAILY_DD_LIMIT       = float(os.getenv("DAILY_DD_LIMIT", "10.0"))  # 10% (was 3% — too tight)
         # ── Drawdown Mensuel (circuit breaker long terme) ─────────────────────
         self._monthly_start_balance = self.initial_balance
         self._monthly_dd_paused     = False
