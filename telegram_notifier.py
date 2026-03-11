@@ -121,7 +121,7 @@ class TelegramNotifier:
         nb = len(symbols) if symbols else 8
         session = R.session_name()
 
-        # 2) Welcome message dans chaque canal dédié
+        # 2) Welcome message dans chaque canal dédié (épinglés)
         self.router.send_dashboard(
             f"{R.box_header('📊 NEMESIS DASHBOARD')}\n\n"
             f"💰 Capital : <b>{balance:,.2f}€</b>  {mode}\n"
@@ -129,38 +129,44 @@ class TelegramNotifier:
             f"📡 {nb} instruments en surveillance\n\n"
             f"📅 Session : {session}\n"
             f"🟢 Tous systèmes opérationnels ✅\n\n"
-            f"<i>Ce canal affiche : balance, positions, heartbeat</i>"
+            f"<i>📌 Ce canal affiche : balance, sessions, heartbeat</i>",
+            silent=False, pin=True,
         )
 
         self.router.send_trade(
             f"{R.box_header('📋 NEMESIS TRADES')}\n\n"
             f"🟢 Bot connecté — {mode}\n"
             f"📡 {nb} instruments surveillés\n\n"
-            f"<i>Ce canal affiche : ouvertures, TP, SL, break-even, signals</i>"
+            f"<i>📌 Ce canal affiche : ouvertures, TP, SL, break-even, suivi</i>",
+            silent=False,
         )
 
         self.router.send_performance(
             f"{R.box_header('📈 NEMESIS PERFORMANCE')}\n\n"
             f"🟢 Suivi actif\n\n"
-            f"<i>Ce canal affiche : rapports daily/weekly, stats session, equity</i>"
+            f"<i>📌 Ce canal affiche : rapports daily/weekly, stats session</i>",
+            silent=False,
         )
 
         self.router.send_briefing(
             f"{R.box_header('☀️ NEMESIS BRIEFING')}\n\n"
             f"🟢 Analyse matinale programmée\n\n"
-            f"<i>Ce canal affiche : morning briefs, analyses assets, calendrier éco</i>"
+            f"<i>📌 Ce canal affiche : morning briefs, analyses, calendrier éco</i>",
+            silent=False,
         )
 
         self.router.send_risk(
             f"{R.box_header('🛡️ NEMESIS RISK')}\n\n"
             f"🟢 Surveillance active\n\n"
-            f"<i>Ce canal affiche : alertes drawdown, erreurs, circuit breaker, news</i>"
+            f"<i>📌 Ce canal affiche : drawdown, erreurs, circuit breaker, news</i>",
+            silent=False,
         )
 
         self.router.send_stats(
             f"{R.box_header('🏆 NEMESIS STATS')}\n\n"
             f"🟢 Gamification active\n\n"
-            f"<i>Ce canal affiche : achievements, streaks, badges, stats globales</i>"
+            f"<i>📌 Ce canal affiche : achievements, streaks, badges</i>",
+            silent=False,
         )
 
     def notify_trade_open(

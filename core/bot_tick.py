@@ -301,10 +301,14 @@ class BotTickMixin:
             try:
                 bal_hb = self.capital.get_balance() if self.capital.available else 0.0
                 pnl_today_hb = sum(t.get("pnl", 0) for t in self._capital_closed_today)
+                open_count = sum(1 for s in self.capital_trades.values() if s is not None)
+                equity_vals = [e["v"] for e in self._equity_history[-12:]] if hasattr(self, '_equity_history') and self._equity_history else []
                 if self.telegram.hub:
                     self.telegram.hub.refresh_hub(
                         balance=bal_hb,
                         pnl_today=round(pnl_today_hb, 2),
+                        open_positions=open_count,
+                        equity_data=equity_vals,
                     )
             except Exception as _e:
                 logger.debug(f"Hub refresh heartbeat : {_e}")
@@ -363,6 +367,33 @@ class BotTickMixin:
                 threading.Thread(target=self._send_daily_report, daemon=True).start()
             except Exception as _rp_e:
                 logger.debug(f"Daily report: {_rp_e}")
+
+        # ── Résumé fin de journée → Dashboard (22h UTC) ──────────────────
+        if h_utc == 22 and today != getattr(self, '_last_eod_summary_day', ''):
+            self._last_eod_summary_day = today
+            try:
+                bal_eod = self.capital.get_balance() if self.capital.available else 0.0
+                pnl_eod = sum(t.get("pnl", 0) for t in self._capital_closed_today)
+                nb_trades = len(self._capital_closed_today)
+                wins_eod = sum(1 for t in self._capital_closed_today if t.get("pnl", 0) > 0)
+                wr_eod = (wins_eod / nb_trades * 100) if nb_trades > 0 else 0
+                gain_pct = ((bal_eod - self.initial_balance) / self.initial_balance * 100) if self.initial_balance > 0 else 0
+                trend = "📈" if pnl_eod >= 0 else "📉"
+
+                from nemesis_ui.renderer import NemesisRenderer as _R
+                eod_text = (
+                    f"{_R.box_header('🌙 FIN DE JOURNÉE')}\n\n"
+                    f"💰 Capital : <b>{bal_eod:,.2f}€</b>  ({gain_pct:+.2f}%)\n"
+                    f"{trend} PnL du jour : <b>{pnl_eod:+.2f}€</b>\n"
+                    f"📋 Trades : {nb_trades}  ·  WR : <b>{wr_eod:.0f}%</b>\n\n"
+                    f"🟢 Bot en veille — reprise London 08h UTC 🇬🇧\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"<i>Bonne nuit ! 🌙</i>"
+                )
+                if self.telegram.router:
+                    self.telegram.router.send_dashboard(eod_text, silent=False)
+            except Exception as _eod_e:
+                logger.debug(f"EOD summary: {_eod_e}")
 
 
         # ─── Moteur de trading Capital.com ───────────────────────────────────

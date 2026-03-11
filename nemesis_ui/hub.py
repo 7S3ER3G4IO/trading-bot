@@ -31,9 +31,10 @@ class NemesisHub:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def send_hub(self, balance: float = 0.0, pnl_today: float = 0.0) -> Optional[int]:
+    def send_hub(self, balance: float = 0.0, pnl_today: float = 0.0,
+                 open_positions: int = 0, equity_data: list = None) -> Optional[int]:
         """Send the main Hub message with URL buttons and pin it."""
-        text = self._build_hub_text(balance, pnl_today)
+        text = self._build_hub_text(balance, pnl_today, open_positions, equity_data)
         markup = self._build_url_keyboard()
         msg_id = self._send_message(text, markup)
         if msg_id:
@@ -43,12 +44,13 @@ class NemesisHub:
             logger.info(f"📌 Hub envoyé et épinglé (ID: {msg_id})")
         return msg_id
 
-    def refresh_hub(self, balance: float = 0.0, pnl_today: float = 0.0):
+    def refresh_hub(self, balance: float = 0.0, pnl_today: float = 0.0,
+                    open_positions: int = 0, equity_data: list = None):
         """Edit the Hub message in-place with fresh data."""
         if not self._hub_message_id:
-            self.send_hub(balance, pnl_today)
+            self.send_hub(balance, pnl_today, open_positions, equity_data)
             return
-        text = self._build_hub_text(balance, pnl_today)
+        text = self._build_hub_text(balance, pnl_today, open_positions, equity_data)
         markup = self._build_url_keyboard()
         self._edit_message(self._hub_message_id, text, markup)
 
@@ -59,20 +61,48 @@ class NemesisHub:
     # ── Hub Content ───────────────────────────────────────────────────────────
 
     @staticmethod
-    def _build_hub_text(balance: float = 0.0, pnl_today: float = 0.0) -> str:
+    def _build_hub_text(balance: float = 0.0, pnl_today: float = 0.0,
+                        open_positions: int = 0, equity_data: list = None) -> str:
         from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        now = datetime.now(timezone.utc)
+        time_str = now.strftime("%H:%M UTC")
         pnl_sign = "+" if pnl_today >= 0 else ""
         pnl_emoji = "📈" if pnl_today >= 0 else "📉"
+
+        # Equity sparkline
+        sparkline = ""
+        if equity_data and len(equity_data) >= 3:
+            chars = "▁▂▃▄▅▆▇█"
+            mn, mx = min(equity_data), max(equity_data)
+            rng = mx - mn if mx > mn else 1
+            sparkline = "".join(chars[min(int((v - mn) / rng * 7), 7)] for v in equity_data[-12:])
+            sparkline = f"\n📊 {sparkline}"
+
+        # Next session
+        h = now.hour
+        if h < 8:
+            next_sess = "🇬🇧 London 08h UTC"
+        elif h < 13:
+            next_sess = "🗽 NY Open 13h UTC"
+        elif h < 22:
+            next_sess = "🌙 Clôture 22h UTC"
+        else:
+            next_sess = "🇬🇧 London 08h UTC"
+
+        # Positions
+        pos_line = f"📋 {open_positions} position{'s' if open_positions != 1 else ''} ouverte{'s' if open_positions != 1 else ''}" if open_positions > 0 else "📋 Aucune position"
 
         return (
             "┌─────────────────────────────┐\n"
             "│  ⚡ NEMESIS COMMAND CENTER   │\n"
             "└─────────────────────────────┘\n"
             "\n"
-            f"🟢 ONLINE  ·  {now}\n"
+            f"🟢 ONLINE  ·  {time_str}\n"
             "\n"
-            f"💰 {balance:,.2f}€  ·  {pnl_emoji} {pnl_sign}{pnl_today:,.2f}€ aujourd'hui\n"
+            f"💰 {balance:,.2f}€  ·  {pnl_emoji} {pnl_sign}{pnl_today:,.2f}€\n"
+            f"{pos_line}\n"
+            f"⏭ {next_sess}"
+            f"{sparkline}\n"
             "\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "👇 Accède à tes canaux dédiés :\n"
