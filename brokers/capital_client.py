@@ -381,7 +381,7 @@ class CapitalClient:
             return None
 
     def get_balance(self) -> float:
-        """Retourne le solde disponible du compte."""
+        """Retourne la valeur totale du compte (equity, pas margin disponible)."""
         if not self.available:
             return 0.0
         try:
@@ -390,9 +390,12 @@ class CapitalClient:
             accounts = r.json().get("accounts", [])
             for acc in accounts:
                 if acc.get("preferred"):
-                    return float(acc["balance"]["available"])
+                    # Use 'balance' (total equity) NOT 'available' (equity - margin)
+                    bal = acc["balance"]
+                    return float(bal.get("balance", bal.get("available", 0)))
             if accounts:
-                return float(accounts[0]["balance"]["available"])
+                bal = accounts[0]["balance"]
+                return float(bal.get("balance", bal.get("available", 0)))
             return 0.0
         except Exception as e:
             logger.error(f"❌ Capital.com get_balance: {e}")
