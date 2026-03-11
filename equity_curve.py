@@ -56,6 +56,15 @@ class EquityCurve:
         self._history.append({"ts": time.time(), "balance": balance})
         self._save()
 
+    def reset_history(self, keep_last: int = 1):
+        """Reset l'historique en gardant les N derniers points."""
+        if self._history and keep_last > 0:
+            self._history = self._history[-keep_last:]
+        else:
+            self._history = []
+        self._save()
+        logger.info(f"🔄 Equity curve réinitialisée ({keep_last} points conservés)")
+
     def _balances(self) -> np.ndarray:
         return np.array([h["balance"] for h in self._history]) if self._history else np.array([self.initial_balance])
 
@@ -63,9 +72,10 @@ class EquityCurve:
         """
         Détecte si la courbe d'équité est sous sa MA.
         Circuit breaker : auto-pause si True.
+        Requires at least ma_period + 5 points for stability.
         """
         bals = self._balances()
-        if len(bals) < ma_period:
+        if len(bals) < ma_period + 5:
             return False
         ma  = np.convolve(bals, np.ones(ma_period)/ma_period, mode="valid")
         return float(bals[-1]) < float(ma[-1])

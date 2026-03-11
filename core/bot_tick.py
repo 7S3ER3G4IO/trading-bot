@@ -125,6 +125,13 @@ class BotTickMixin:
 
 
         # ── EquityCurve : enregistrement + circuit breaker ────────────────────
+        # Reset polluted equity data once after fresh deploy
+        if not getattr(self, '_equity_reset_done', False):
+            self._equity_reset_done = True
+            self.equity.reset_history(keep_last=1)
+            self._dd_paused = False
+            logger.info("🔄 Equity curve nettoyée (fresh deploy)")
+
         if balance > 0:
             self.equity.record(balance)
             if self.equity.is_below_ma(ma_period=20) and not self._dd_paused:
