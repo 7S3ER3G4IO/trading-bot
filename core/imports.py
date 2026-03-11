@@ -28,6 +28,7 @@ from brokers.capital_client import (
     INSTRUMENT_NAMES as CAPITAL_NAMES,
     PIP_FACTOR as CAPITAL_PIP,
     ASSET_PROFILES,
+    MICRO_TF_PROFILES,
     PRICE_DECIMALS,
 )
 import telegram_capital as tgc

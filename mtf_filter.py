@@ -1,25 +1,22 @@
 """
-mtf_filter.py — Multi-Timeframe Confluence Filter
+mtf_filter.py — S-2: Multi-Timeframe Confluence Scoring
 
-Confirme la direction d'un signal 5m en vérifiant l'alignement
-des tendances sur 1h et 4h avant d'entrer.
+Au lieu de BLOQUER les signaux contradictoires HTF, retourne un BONUS de score:
+- Triple confluence (signal == 1h == 4h) : +0.15
+- Double confluence (signal == 1h OR 4h)  : +0.08
+- Neutre (HTF neutre)                     : +0.0
+- Contre-signal (signal contradictoire)   : -0.10 (pénalité)
 
-Règle :
-  BUY  valide si EMA9 > EMA21 sur 1h ET EMA9 > EMA21 sur 4h
-  SELL valide si EMA9 < EMA21 sur 1h ET EMA9 < EMA21 sur 4h
-  Sinon → SIGNAL REJETÉ (timeframes contradictoires)
-
-Impact : filtre ~60-80% des faux signaux en range market.
+Utilise le cache OHLCV pour les données 4H au lieu de faire des requêtes REST séparées.
 """
-import sys, time, warnings
-warnings.filterwarnings("ignore")
-sys.path.insert(0, ".")
 
+import time
 import pandas as pd
 import ta
 from loguru import logger
 
-CACHE_TTL = 300   # 5 minutes
+
+CACHE_TTL = 300  # 5 minutes
 
 
 class MTFFilter:
@@ -37,7 +34,7 @@ class MTFFilter:
         return self._client
 
     def _fetch_tf(self, symbol: str, timeframe: str, limit: int = 50) -> pd.DataFrame:
-        """Fetch recent candles from Capital.com for a given timeframe."""
+        """Fetch recent candles for a given timeframe with caching."""
         key = f"{symbol}_{timeframe}"
         now = time.time()
         if key in self._cache and (now - self._cache_ts.get(key, 0)) < CACHE_TTL:
@@ -49,7 +46,6 @@ class MTFFilter:
             if df is None or df.empty:
                 return pd.DataFrame()
 
-            # Compute EMAs
             df["ema9"]  = ta.trend.EMAIndicator(df["close"], window=9).ema_indicator()
             df["ema21"] = ta.trend.EMAIndicator(df["close"], window=21).ema_indicator()
             df["ema200"]= ta.trend.EMAIndicator(df["close"], window=200).ema_indicator()
@@ -70,7 +66,7 @@ class MTFFilter:
         ema9  = last.get("ema9",  0)
         ema21 = last.get("ema21", 0)
         close = last.get("close", 0)
-        ema200= last.get("ema200",0)
+        ema200= last.get("ema200", 0)
 
         bull = (ema9 > ema21) and (close > ema200)
         bear = (ema9 < ema21) and (close < ema200)
@@ -79,35 +75,58 @@ class MTFFilter:
         if bear:   return "BEAR"
         return "NEUTRAL"
 
-    def validate_signal(self, symbol: str, signal: str) -> bool:
-        """
-        Valide un signal 5m en vérifiant la confluence MTF (1h + 4h).
+    # ═══════════════════════════════════════════════════════════════════════
+    #  S-2: SCORING MODE (replaces blocking mode)
+    # ═══════════════════════════════════════════════════════════════════════
 
+    def score_confluence(self, symbol: str, signal: str) -> float:
+        """
+        S-2: Retourne un bonus/pénalité de score basé sur la confluence MTF.
+        
         Returns:
-            True  → signal confirmé par les HTF, trade autorisé
-            False → contradiction, trade rejeté
+            +0.15 : triple confluence (signal aligns with 1h AND 4h)
+            +0.08 : partial confluence (signal aligns with 1h OR 4h)
+             0.00 : neutral (HTF neutral)
+            -0.10 : contra-signal (HTF contradicts signal)
         """
         if signal == "HOLD":
-            return False
+            return 0.0
 
         bias_1h = self._tf_bias(self._fetch_tf(symbol, "1h", 60))
         bias_4h = self._tf_bias(self._fetch_tf(symbol, "4h", 60))
 
-        if signal == "BUY":
-            ok = (bias_1h in ("BULL", "NEUTRAL")) and (bias_4h in ("BULL", "NEUTRAL"))
-            if bias_1h == "BULL" and bias_4h == "BULL":
-                logger.info(f"✅ MTF {symbol} BUY confirmé | 1h={bias_1h} 4h={bias_4h}")
-            elif not ok:
-                logger.warning(f"❌ MTF {symbol} BUY rejeté | 1h={bias_1h} 4h={bias_4h} (bearish HTF)")
-            return ok
+        expected_bias = "BULL" if signal == "BUY" else "BEAR"
+        opposite_bias = "BEAR" if signal == "BUY" else "BULL"
 
-        else:  # SELL
-            ok = (bias_1h in ("BEAR", "NEUTRAL")) and (bias_4h in ("BEAR", "NEUTRAL"))
-            if not ok:
-                logger.warning(f"❌ MTF {symbol} SELL rejeté | 1h={bias_1h} 4h={bias_4h} (bullish HTF)")
-            else:
-                logger.info(f"✅ MTF {symbol} SELL confirmé | 1h={bias_1h} 4h={bias_4h}")
-            return ok
+        match_1h = bias_1h == expected_bias
+        match_4h = bias_4h == expected_bias
+        contra_1h = bias_1h == opposite_bias
+        contra_4h = bias_4h == opposite_bias
+
+        if match_1h and match_4h:
+            logger.debug(f"✅ MTF {symbol} {signal} triple confluence: 1h={bias_1h} 4h={bias_4h} → +0.15")
+            return 0.15
+        elif match_1h or match_4h:
+            logger.debug(f"⚡ MTF {symbol} {signal} partial: 1h={bias_1h} 4h={bias_4h} → +0.08")
+            return 0.08
+        elif contra_1h and contra_4h:
+            logger.debug(f"❌ MTF {symbol} {signal} contra: 1h={bias_1h} 4h={bias_4h} → -0.10")
+            return -0.10
+        elif contra_1h or contra_4h:
+            logger.debug(f"⚠️ MTF {symbol} {signal} mixed: 1h={bias_1h} 4h={bias_4h} → -0.05")
+            return -0.05
+        else:
+            return 0.0
+
+    def validate_signal(self, symbol: str, signal: str) -> bool:
+        """
+        Legacy compatibility: returns True if MTF score >= -0.05.
+        Hard-blocks only when BOTH HTF contradict the signal.
+        """
+        if signal == "HOLD":
+            return False
+        bonus = self.score_confluence(symbol, signal)
+        return bonus >= -0.05  # Block only on full contradiction (-0.10)
 
     def get_htf_context(self, symbol: str) -> dict:
         """Retourne le contexte complet des timeframes supérieurs."""
@@ -121,15 +140,3 @@ class MTFFilter:
             "1d":  self._tf_bias(df_1d),
             "aligned": self._tf_bias(df_1h) == self._tf_bias(df_4h),
         }
-
-
-if __name__ == "__main__":
-    from brokers.capital_client import CAPITAL_INSTRUMENTS
-    mtf = MTFFilter()
-    print(f"\n📊 Multi-Timeframe Confluence — Nemesis Capital.com\n")
-    for sym in CAPITAL_INSTRUMENTS:
-        ctx = mtf.get_htf_context(sym)
-        aligned = "✅ Aligné" if ctx["aligned"] else "⚠️  Contradictoire"
-        print(f"  {aligned}  {sym:<12} | 1h={ctx['1h']:<8} 4h={ctx['4h']:<8} 1D={ctx['1d']}")
-    print()
-

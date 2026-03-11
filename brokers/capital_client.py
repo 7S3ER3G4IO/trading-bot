@@ -190,6 +190,26 @@ ASSET_PROFILES = {
     "CADCHF":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":1.0, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
 }
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# S-3: Micro-Timeframe Profiles (5m MR + 15m BK)
+# These are scanned ADDITIONALLY to the main 1H TF on the most liquid instruments.
+# Key: instrument name with _5M or _15M suffix (for tracking/dedup only)
+# The actual API instrument name is the same (e.g., EURUSD).
+# ═══════════════════════════════════════════════════════════════════════════════
+MICRO_TF_PROFILES = {
+    # 5m Mean Reversion — ultra-liquid, tight spreads
+    "EURUSD_5M":  {"epic":"EURUSD","strat":"MR","tf":"5m","cat":"forex_mr","tp1":1.0,"tp2":1.5,"tp3":2.0,"sl_buffer":0.8,"max_hold":60,"adx_min":8,"rsi_lo":25,"rsi_hi":75,"range_lb":12,"bk_margin":0.02,"max_per_hour":3},
+    "GOLD_5M":    {"epic":"GOLD",  "strat":"MR","tf":"5m","cat":"commodities","tp1":1.0,"tp2":1.5,"tp3":2.0,"sl_buffer":0.8,"max_hold":60,"adx_min":8,"rsi_lo":25,"rsi_hi":75,"range_lb":12,"bk_margin":0.02,"max_per_hour":3},
+    "BTCUSD_5M":  {"epic":"BTCUSD","strat":"MR","tf":"5m","cat":"crypto","tp1":1.0,"tp2":1.5,"tp3":2.0,"sl_buffer":0.8,"max_hold":60,"adx_min":8,"rsi_lo":25,"rsi_hi":75,"range_lb":12,"bk_margin":0.02,"max_per_hour":3},
+    "US500_5M":   {"epic":"US500", "strat":"MR","tf":"5m","cat":"indices","tp1":1.0,"tp2":1.5,"tp3":2.0,"sl_buffer":0.8,"max_hold":60,"adx_min":8,"rsi_lo":25,"rsi_hi":75,"range_lb":12,"bk_margin":0.02,"max_per_hour":3},
+    # 15m Breakout — indices with tighter ranges
+    "US500_15M":  {"epic":"US500", "strat":"BK","tf":"15m","cat":"indices","tp1":1.2,"tp2":2.0,"tp3":3.0,"sl_buffer":0.10,"max_hold":120,"adx_min":10,"bk_margin":0.02,"range_lb":8,"max_per_hour":2},
+    "US100_15M":  {"epic":"US100", "strat":"BK","tf":"15m","cat":"indices","tp1":1.2,"tp2":2.0,"tp3":3.0,"sl_buffer":0.10,"max_hold":120,"adx_min":10,"bk_margin":0.02,"range_lb":8,"max_per_hour":2},
+    "DE40_15M":   {"epic":"DE40",  "strat":"BK","tf":"15m","cat":"indices","tp1":1.2,"tp2":2.0,"tp3":3.0,"sl_buffer":0.10,"max_hold":120,"adx_min":10,"bk_margin":0.02,"range_lb":8,"max_per_hour":2},
+    "GBPUSD_5M":  {"epic":"GBPUSD","strat":"MR","tf":"5m","cat":"forex_mr","tp1":1.0,"tp2":1.5,"tp3":2.0,"sl_buffer":0.8,"max_hold":60,"adx_min":8,"rsi_lo":25,"rsi_hi":75,"range_lb":12,"bk_margin":0.02,"max_per_hour":3},
+}
+
+
 
 
 

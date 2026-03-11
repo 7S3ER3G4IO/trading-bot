@@ -514,7 +514,42 @@ class BotTickMixin:
                     signals_found += 1
             except Exception as e:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
-            time.sleep(0.3)  # Rate limiting Capital.com API (max ~3 req/s)
+            time.sleep(0.3)
+
+        # ── S-3: Micro-Timeframe Scan (5m/15m — additional signals) ──────
+        if MICRO_TF_PROFILES and not self._dd_paused and not self._manual_pause:
+            for micro_key, micro_profile in MICRO_TF_PROFILES.items():
+                if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
+                    break
+                epic = micro_profile.get("epic", micro_key.split("_")[0])
+                _cat = micro_profile.get("cat", "forex")
+                if not self.strategy.is_session_ok_for(epic, _cat):
+                    continue
+                # Rate-limit per micro-TF instrument
+                _max_per_h = micro_profile.get("max_per_hour", 3)
+                _micro_key_count = sum(
+                    1 for t in self._capital_closed_today
+                    if t.get("instrument") == epic
+                    and t.get("micro_tf") == micro_profile.get("tf")
+                )
+                if _micro_key_count >= _max_per_h:
+                    continue
+                try:
+                    # Fetch micro-TF data directly (not from main cache)
+                    _mtf = micro_profile.get("tf", "5m")
+                    _count = {"5m": 300, "15m": 250}.get(_mtf, 200)
+                    df_micro = self.capital.fetch_ohlcv(epic, timeframe=_mtf, count=_count)
+                    if df_micro is not None and len(df_micro) >= 50:
+                        df_micro = self.strategy.compute_indicators(df_micro)
+                        # Use micro profile for signal generation
+                        _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
+                        self._process_micro_signal(epic, micro_key, df_micro, micro_profile, balance)
+                        _open_after = sum(1 for s in self.capital_trades.values() if s is not None)
+                        if _open_after > _open_before:
+                            signals_found += 1
+                except Exception as e:
+                    logger.debug(f"Micro-TF {micro_key}: {e}")
+                time.sleep(0.2)
 
         # ── Alerte "scan sans signal" — supprimée en v3.0 (visible via Dashboard) ──
         # Si aucun signal trouvé, on l'enregistre dans les logs uniquement

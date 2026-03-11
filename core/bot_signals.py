@@ -128,26 +128,15 @@ class BotSignalsMixin:
         if self.protection.is_blocked(instrument):
             return
 
-        # MTFFilter : confluence 1h + 4h avant d'entrer
-        if not self.mtf.validate_signal(instrument, sig):
+        # S-2: MTF Confluence Scoring (replace binary blocking)
+        mtf_bonus = self.mtf.score_confluence(instrument, sig)
+        score = score + mtf_bonus  # Adjust score with MTF bonus/penalty
+        if mtf_bonus < -0.05:
+            logger.info(f"⛔ MTF contra-signal {instrument} {sig} — bonus={mtf_bonus:+.2f} → skip")
             return
-
-        # ── UPGRADE : Filtre Corrélation (évite surexposition USD) ────────────
-        USD_PAIRS = {"EURUSD", "GBPUSD", "USDJPY"}
-        if instrument in USD_PAIRS:
-            same_dir_usd = sum(
-                1 for ep, st in self.capital_trades.items()
-                if st is not None
-                and ep in USD_PAIRS
-                and ep != instrument
-                and st.get("direction") == ("BUY" if sig == "BUY" else "SELL")
-            )
-            if same_dir_usd >= 2:
-                logger.info(
-                    f"⛔ Corrélation USD bloquée {instrument} — "
-                    f"{same_dir_usd} paires USD déjà ouvertes même direction"
-                )
-                return
+        elif mtf_bonus > 0:
+            confirmations.append(f"MTF{'+' if mtf_bonus > 0 else ''}{mtf_bonus:.2f}")
+            logger.debug(f"✅ MTF bonus {instrument} {sig}: {mtf_bonus:+.2f}")
 
         # ═══ SL / TP dynamiques par stratégie et actif ══════════════════════════════
         _sl_buf = _profile.get("sl_buffer", 0.10)
@@ -398,3 +387,124 @@ class BotSignalsMixin:
                       side=direction, entry=entry, qty=size1)
         except Exception:
             pass
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  S-3: MICRO-TIMEFRAME SIGNAL PROCESSING (5m / 15m)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _process_micro_signal(self, epic: str, micro_key: str, df, profile: dict, balance: float):
+        """
+        Process a micro-TF signal using the adapted profile parameters.
+        Uses the same signal generation pipeline but with micro-TF profiles.
+        """
+        # Skip if main TF already has an open trade on this instrument
+        if self.capital_trades.get(epic) is not None:
+            return
+
+        _strat = profile.get("strat", "MR")
+
+        # Generate signal with micro-TF profile
+        sig, score, confirmations = self.strategy.get_signal(
+            df, epic, asset_profile=profile
+        )
+
+        if sig == "HOLD" or score < 0.40:
+            return
+
+        logger.info(f"⚡ MICRO-TF {micro_key} [{_strat}] {sig} score={score:.2f}")
+
+        # Risk and position checks
+        balance_for_risk = self.capital.get_balance() or balance
+        _cat = profile.get("cat", "forex")
+        if not self.risk.can_open_trade(balance_for_risk, instrument=epic, category=_cat):
+            return
+        if not self.risk.check_currency_exposure(epic, sig, self.capital_trades):
+            return
+        if self.protection.is_blocked(epic):
+            return
+
+        # SL / TP with micro-TF parameters
+        _sl_buf = profile.get("sl_buffer", 0.8)
+        _tp1_r  = profile.get("tp1", 1.0)
+        _tp2_r  = profile.get("tp2", 1.5)
+        _tp3_r  = profile.get("tp3", 2.0)
+        entry   = float(df.iloc[-1]["close"])
+        atr_val = self.strategy.get_atr(df)
+
+        if atr_val <= 0:
+            return
+
+        # Always ATR-based SL/TP for micro-TF
+        sl_dist = atr_val * _sl_buf
+        if sig == "BUY":
+            sl  = entry - sl_dist
+            tp1 = entry + sl_dist * _tp1_r
+            tp2 = entry + sl_dist * _tp2_r
+            tp3 = entry + sl_dist * _tp3_r
+        else:
+            sl  = entry + sl_dist
+            tp1 = entry - sl_dist * _tp1_r
+            tp2 = entry - sl_dist * _tp2_r
+            tp3 = entry - sl_dist * _tp3_r
+
+        # R:R guard
+        tp1_dist = abs(tp1 - entry)
+        sl_dist_real = abs(sl - entry)
+        if sl_dist_real > 0 and tp1_dist / sl_dist_real < 1.0:
+            return
+
+        # S-5: Spread filter
+        try:
+            px = self.capital.get_current_price(epic)
+            if px:
+                _spread = abs(float(px.get("ask", 0)) - float(px.get("bid", 0)))
+                if _spread > 0 and tp1_dist > 0 and (_spread / tp1_dist) > 0.25:
+                    logger.info(f"⛔ S-5 Micro-TF {micro_key}: spread {_spread:.5f} > 25% TP1 {tp1_dist:.5f}")
+                    return
+        except Exception:
+            pass
+
+        # Reduced sizing for micro-TF (half of normal)
+        dynamic_risk = self.risk.compute_risk_pct(
+            instrument=epic, score=score,
+            current_atr=atr_val,
+            avg_atr=float(df["atr"].tail(20).mean()) if "atr" in df.columns else atr_val
+        )
+        total_size = self.capital.position_size(
+            balance=balance, risk_pct=dynamic_risk * 0.5, entry=entry, sl=sl, epic=epic
+        )
+        from brokers.capital_client import CapitalClient
+        min_sz = CapitalClient.MIN_SIZE.get(epic.upper(), 1.0)
+        size1 = max(min_sz, round(total_size / 3, 2))
+
+        if size1 <= 0:
+            return
+
+        # Round SL/TP
+        dec = PRICE_DECIMALS.get(epic, 5)
+        sl  = round(sl,  dec)
+        tp1 = round(tp1, dec)
+        tp2 = round(tp2, dec)
+        tp3 = round(tp3, dec)
+
+        direction = "BUY" if sig == "BUY" else "SELL"
+        logger.info(
+            f"🔥 MICRO-TF ORDER {micro_key} | {direction} {epic} | "
+            f"Entry={entry:.5f} SL={sl:.5f} TP1={tp1:.5f} | Size={size1}"
+        )
+
+        refs = self.capital.place_market_order(
+            epic=epic, direction=direction, size=size1,
+            sl=sl, tp_levels=[tp1, tp2, tp3]
+        )
+        if refs:
+            self.capital_trades[epic] = {
+                "direction": direction, "entry": entry, "sl": sl,
+                "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                "refs": refs, "size": size1,
+                "open_time": datetime.now(timezone.utc),
+                "micro_tf": profile.get("tf"),
+            }
+            self.risk.on_trade_opened(instrument=epic)
+            logger.info(f"✅ MICRO-TF {micro_key} ouvert | refs={refs}")
+
