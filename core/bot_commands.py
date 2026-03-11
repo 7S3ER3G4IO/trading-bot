@@ -99,9 +99,8 @@ class BotCommandsMixin:
         )
         winner = ranked[0]
         return (
-            f"🏆 <b>Meilleur Instrument — {winner[0]}</b>\n"
-            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{lines}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+            f"🏆 <b>Meilleur Instrument — {winner[0]}</b>\n\n"
+            f"<code>{lines}</code>"
         )
 
     def _cmd_risk(self) -> str:
@@ -116,14 +115,12 @@ class BotCommandsMixin:
             monthly_dd = (self._monthly_start_balance - balance) / self._monthly_start_balance * 100
         paused_str = "⏸️ PAUSED" if self._dd_paused or self._manual_pause else "🟢 ACTIF"
         return (
-            f"🛡️ <b>Risk Summary</b>\n"
-            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🛡️ <b>Risk Summary</b>\n\n"
             f"  Statut       : {paused_str}\n"
             f"  Balance      : {balance:,.2f}€\n"
             f"  Positions    : {open_count}/{MAX_OPEN_TRADES}\n"
             f"  DD Journalier: {daily_dd:+.2f}% (limite {self.DAILY_DD_LIMIT:.0f}%)\n"
-            f"  DD Mensuel   : {monthly_dd:+.2f}% (10%=48h | 15%=stop)\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+            f"  DD Mensuel   : {monthly_dd:+.2f}% (10%=48h | 15%=stop)"
         )
 
     def _cmd_regime(self) -> str:

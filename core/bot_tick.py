@@ -282,12 +282,10 @@ class BotTickMixin:
                 session_icon = "🇬🇧" if current_session == "London" else "🇺🇸"
                 if self.telegram.router:
                     self.telegram.router.send_dashboard(
-                        f"{session_icon} <b>Session {current_session} ouverte</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"{session_icon} <b>Session {current_session} ouverte</b>\n\n"
                         f"💰 Balance : <b>{bal_push:,.2f}€</b>\n"
                         f"📊 PnL total : <b>{pnl_push:+.2f}€ ({pnl_pct_push:+.1f}%)</b>\n"
-                        f"🤖 Bot : 🟢 ACTIF — scanning {len(CAPITAL_INSTRUMENTS)} instruments\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━━"
+                        f"🤖 Bot : 🟢 ACTIF — scanning {len(CAPITAL_INSTRUMENTS)} instruments"
                     )
                 logger.info(f"{session_icon} Session {current_session} ouverte — alerte Telegram envoyée")
             except Exception as _e:
@@ -401,7 +399,6 @@ class BotTickMixin:
                     f"{trend} PnL du jour : <b>{pnl_eod:+.2f}€</b>\n"
                     f"📋 Trades : {nb_trades}  ·  WR : <b>{wr_eod:.0f}%</b>\n\n"
                     f"🟢 Bot en veille — reprise London 08h UTC 🇬🇧\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"<i>Bonne nuit ! 🌙</i>"
                 )
                 if self.telegram.router:

@@ -193,7 +193,7 @@ class ABTester:
 
     def weekly_report(self) -> str:
         """Génère un rapport hebdomadaire A/B pour Telegram."""
-        lines = ["📊 <b>Rapport A/B Testing</b>", "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━"]
+        lines = ["📊 <b>Rapport A/B Testing</b>", ""]
         for inst, data in sorted(self._state.items()):
             v    = data["variant"]
             sa   = data["stats"]["A"]
@@ -205,7 +205,6 @@ class ABTester:
             lines.append(
                 f"  {inst}: ★{v}  A={pf_a}({n_a}tr) B={pf_b}({n_b}tr)"
             )
-        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>")
         return "\n".join(lines)
 
     def global_winner(self) -> str:

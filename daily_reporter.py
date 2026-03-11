@@ -107,14 +107,12 @@ class DailyReporter:
         pct   = f"{wins / len(self._trades) * 100:.0f}%"
 
         rpt = (
-            f"📊 <b>BILAN DU JOUR — {date_label}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>BILAN DU JOUR — {date_label}</b>\n\n"
         )
         for l in lines:
             rpt += l + "\n"
         rpt += (
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🏆 BILAN TRADES : <b>{score}</b> | <b>{pct}</b>\n"
+            f"\n🏆 BILAN TRADES : <b>{score}</b> | <b>{pct}</b>\n"
             f"💵 PnL brut : <code>{total_gross:+.2f} €</code>\n"
             f"💸 Frais CFD : <code>-{total_fees:.2f} €</code>\n"
             f"✅ <b>PnL net : <code>{total_net:+.2f} €</code></b>"
@@ -171,13 +169,10 @@ class DailyReporter:
         pct   = f"{wins / len(trades) * 100:.0f}%"
 
         return (
-            f"📅 <b>BILAN DE LA SEMAINE</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 <b>BILAN DE LA SEMAINE</b>\n\n"
             f"🏆 Trades : <b>{score}</b> | Win rate : <b>{pct}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 PnL net : <code>{total_net:+.2f} €</code>\n"
-            f"💸 Frais cumulés : <code>-{total_fees:.2f} €</code>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💸 Frais cumulés : <code>-{total_fees:.2f} €</code>\n\n"
             f"🌟 Meilleur trade : <code>{best.symbol}</code> <code>{best.pnl_net:+.2f} €</code>\n"
             f"📉 Pire trade : <code>{worst.symbol}</code> <code>{worst.pnl_net:+.2f} €</code>"
         )
