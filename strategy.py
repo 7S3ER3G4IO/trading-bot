@@ -135,7 +135,12 @@ class Strategy:
         df["ema100"] = ta.trend.EMAIndicator(close, window=100).ema_indicator()
         df["ema250"] = ta.trend.EMAIndicator(close, window=250).ema_indicator()
 
-        return df.dropna()
+        # Don't dropna() on ALL columns — ema100/ema250 need 100-250 bars
+        # and may not all be available with limited fetch. Only require cores.
+        core_cols = ["atr", "adx", "ema20", "ema50", "rsi", "macd", "macd_s",
+                     "bb_up", "bb_lo"]
+        available = [c for c in core_cols if c in df.columns]
+        return df.dropna(subset=available)
 
     def is_session_ok(self) -> bool:
         """Retourne True si on est dans une fenêtre de trading quelconque (fallback global)."""
