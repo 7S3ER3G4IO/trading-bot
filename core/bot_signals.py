@@ -76,6 +76,17 @@ class BotSignalsMixin:
             sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument, asset_profile=_profile)
             if sig == "HOLD":
                 logger.info(f"📊 {instrument} [{_strat}] → HOLD | score={score} | {confirmations[:2] if confirmations else '∅'}")
+                # ── Pre-signal check: detect setup forming ────────────────
+                try:
+                    pre = self.strategy.check_pre_signal(df, symbol=instrument, asset_profile=_profile)
+                    if pre:
+                        import threading
+                        threading.Thread(
+                            target=lambda: tgc.notify_pre_signal_alert(pre),
+                            daemon=True,
+                        ).start()
+                except Exception as _ps_e:
+                    logger.debug(f"Pre-signal check: {_ps_e}")
                 return
 
             # Retest uniquement pour BK (MR/TF entrent directement)

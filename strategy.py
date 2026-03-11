@@ -39,7 +39,7 @@ PRE_SESSIONS_UTC = [
 ]
 
 MIN_RANGE_PCT    = 0.03   # Range min = 0.03% du prix (adapté 1H — ranges plus petits)
-MAX_RANGE_PCT    = 4.0    # Range max = 4.0% du prix (adapté 1H)
+MAX_RANGE_PCT    = 25.0   # Range max = 25% (1H: crypto 5-15%, stocks 5-10%, forex 0.5-3%)
 MIN_SCORE        = 1      # Score minimum sur 7 (assoupli : 1 confirmation suffit)
 ADX_MIN          = 15     # ADX assoupli de 18 à 15 (capte plus de tendances)
 ATR_PERIOD       = 14
@@ -412,6 +412,149 @@ class Strategy:
         if "atr" in df.columns and len(df) > 0:
             return float(df.iloc[-1]["atr"])
         return 0.0
+
+    def check_pre_signal(
+        self, df: pd.DataFrame, symbol: str = None,
+        asset_profile: dict = None,
+    ) -> dict:
+        """
+        Detect if a trade setup is forming (price approaching breakout).
+        Returns dict with pre-signal info, or None if no setup.
+        Used for "⏳ SETUP EN FORMATION" alerts.
+        """
+        if len(df) < 30:
+            return None
+
+        strat_type = asset_profile.get("strat", "BK") if asset_profile else "BK"
+
+        # --- BK (Breakout) pre-signal ---
+        if strat_type == "BK":
+            curr = df.iloc[-1]
+            _range_lb = asset_profile.get("range_lb", 6) if asset_profile else 6
+            sr = self.compute_session_range(df, range_lookback=_range_lb)
+            range_size = sr["size"]
+            range_pct = sr["pct"]
+
+            if range_pct < MIN_RANGE_PCT or range_pct > MAX_RANGE_PCT:
+                return None
+
+            last_close = float(curr["close"])
+            high_r = sr["high"]
+            low_r = sr["low"]
+
+            _bk_margin = asset_profile.get("bk_margin", 0.10) if asset_profile else 0.10
+            margin = range_size * _bk_margin
+            breakout_up = high_r + margin
+            breakout_dn = low_r - margin
+
+            # Check proximity: within 50% of margin to breakout
+            dist_up = breakout_up - last_close
+            dist_dn = last_close - breakout_dn
+
+            # Already broken out → not a pre-signal
+            if last_close > breakout_up or last_close < breakout_dn:
+                return None
+
+            near_up = dist_up <= margin * 1.5 and dist_up > 0
+            near_dn = dist_dn <= margin * 1.5 and dist_dn > 0
+
+            if not near_up and not near_dn:
+                return None
+
+            # Determine potential direction
+            if near_up and near_dn:
+                # Very tight range, could go either way — skip
+                return None
+            direction = "BUY" if near_up else "SELL"
+
+            # Check how many confirmations would be met
+            confirmations_met = []
+            adx_val = float(curr.get("adx", 0))
+            _adx_min = asset_profile.get("adx_min", ADX_MIN) if asset_profile else ADX_MIN
+            if adx_val > _adx_min:
+                confirmations_met.append(f"ADX {adx_val:.0f}")
+
+            vol = float(curr.get("volume", 0))
+            vol_ma = float(curr.get("vol_ma", vol + 1))
+            if vol > vol_ma:
+                confirmations_met.append("Volume✓")
+
+            atr_val = float(curr.get("atr", range_size or 1))
+            candle_body = abs(float(curr["close"]) - float(curr["open"]))
+            if atr_val > 0 and candle_body >= 0.4 * atr_val:
+                confirmations_met.append("Momentum↗")
+
+            # Need at least 1 confirmation forming to be worth alerting
+            if len(confirmations_met) < 1:
+                return None
+
+            # Compute estimated entry, SL, TPs
+            entry_est = breakout_up if direction == "BUY" else breakout_dn
+            if direction == "BUY":
+                sl_est = low_r - range_size * 0.1
+                tp1_est = entry_est + range_size * 0.8
+                tp2_est = entry_est + range_size * 1.8
+            else:
+                sl_est = high_r + range_size * 0.1
+                tp1_est = entry_est - range_size * 0.8
+                tp2_est = entry_est - range_size * 1.8
+
+            proximity_pct = (1 - (dist_up if near_up else dist_dn) / (margin * 1.5)) * 100
+
+            return {
+                "direction": direction,
+                "symbol": symbol,
+                "entry_est": round(entry_est, 5),
+                "sl_est": round(sl_est, 5),
+                "tp1_est": round(tp1_est, 5),
+                "tp2_est": round(tp2_est, 5),
+                "current_price": round(last_close, 5),
+                "proximity_pct": round(proximity_pct, 0),
+                "confirmations": confirmations_met,
+                "range_pct": round(range_pct, 2),
+                "missing": "Breakout candle",
+            }
+
+        # MR / TF pre-signal: check RSI extremes approaching
+        if strat_type == "MR":
+            curr = df.iloc[-1]
+            rsi = float(curr.get("rsi", 50))
+            rsi_lo = asset_profile.get("rsi_lo", 30) if asset_profile else 30
+            rsi_hi = asset_profile.get("rsi_hi", 70) if asset_profile else 70
+            c = float(curr["close"])
+            bb_lo = float(curr.get("bb_lo", c))
+            bb_up = float(curr.get("bb_up", c))
+
+            if rsi <= rsi_lo + 5 and c <= bb_lo * 1.03:
+                return {
+                    "direction": "BUY",
+                    "symbol": symbol,
+                    "entry_est": round(c, 5),
+                    "sl_est": round(bb_lo * 0.99, 5),
+                    "tp1_est": round(float(curr.get("bb_mid", c)), 5),
+                    "tp2_est": round(bb_up, 5),
+                    "current_price": round(c, 5),
+                    "proximity_pct": round((rsi_lo + 5 - rsi) / 5 * 100, 0),
+                    "confirmations": [f"RSI {rsi:.0f}"],
+                    "range_pct": 0,
+                    "missing": f"RSI ≤ {rsi_lo}",
+                }
+            elif rsi >= rsi_hi - 5 and c >= bb_up * 0.97:
+                return {
+                    "direction": "SELL",
+                    "symbol": symbol,
+                    "entry_est": round(c, 5),
+                    "sl_est": round(bb_up * 1.01, 5),
+                    "tp1_est": round(float(curr.get("bb_mid", c)), 5),
+                    "tp2_est": round(bb_lo, 5),
+                    "current_price": round(c, 5),
+                    "proximity_pct": round((rsi - (rsi_hi - 5)) / 5 * 100, 0),
+                    "confirmations": [f"RSI {rsi:.0f}"],
+                    "range_pct": 0,
+                    "missing": f"RSI ≥ {rsi_hi}",
+                }
+
+        return None
 
     # ═══════════════════════════════════════════════════════════════════════
     # MEAN REVERSION (MR) — RSI survendu/surachetÃ© + Bollinger Bands

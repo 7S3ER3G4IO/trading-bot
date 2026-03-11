@@ -68,6 +68,69 @@ def _send_to_channel(channel: str, text: str):
         _router.send_to(channel, text)
 
 
+# Pre-signal dedup cache: avoid spamming same setup
+_pre_signal_cache: dict = {}
+
+
+def notify_pre_signal_alert(pre: dict):
+    """
+    Send rich pre-signal alert to Trades channel.
+    pre: dict from Strategy.check_pre_signal()
+    """
+    if not pre or not _router:
+        return
+
+    symbol = pre.get("symbol", "?")
+
+    # Dedup: skip if we already alerted this symbol in the same direction recently
+    cache_key = f"{symbol}_{pre['direction']}"
+    import time
+    now = time.time()
+    last_alert = _pre_signal_cache.get(cache_key, 0)
+    if now - last_alert < 900:  # 15 min cooldown
+        return
+    _pre_signal_cache[cache_key] = now
+
+    direction = pre["direction"]
+    dir_emoji = "📈 LONG" if direction == "BUY" else "📉 SHORT"
+    entry = pre["entry_est"]
+    sl = pre["sl_est"]
+    tp1 = pre["tp1_est"]
+    tp2 = pre["tp2_est"]
+    prox = int(pre.get("proximity_pct", 0))
+    confs = pre.get("confirmations", [])
+    missing = pre.get("missing", "?")
+    current = pre.get("current_price", entry)
+
+    # Proximity bar
+    filled = min(prox // 10, 10)
+    prox_bar = "█" * filled + "░" * (10 - filled)
+
+    # R:R estimate
+    risk = abs(entry - sl)
+    rr_est = abs(tp2 - entry) / risk if risk > 0 else 0
+
+    from config import CAPITAL_NAMES
+    name = CAPITAL_NAMES.get(symbol, symbol)
+
+    header = R.box_header(f"⏳ SETUP EN FORMATION — {name}")
+    _send_to_channel("trades",
+        f"{header}\n\n"
+        f"{dir_emoji}  ·  Proximité : {prox_bar} <b>{prox}%</b>\n\n"
+        f"╭── NIVEAUX ESTIMÉS ─────────╮\n"
+        f"│ 📍 Entrée  <code>{entry:.5f}</code>\n"
+        f"│ 🛑 SL      <code>{sl:.5f}</code>\n"
+        f"│ 🎯 TP1     <code>{tp1:.5f}</code>\n"
+        f"│ 🎯 TP2     <code>{tp2:.5f}</code>\n"
+        f"╰────────────────────────────╯\n\n"
+        f"📍 Prix actuel : <code>{current:.5f}</code>\n"
+        f"📐 R:R estimé : <b>{rr_est:.1f}x</b>\n\n"
+        f"✅ Confirmé : {' · '.join(confs) if confs else '—'}\n"
+        f"⏳ Manque : <b>{missing}</b>\n\n"
+        f"<i>Le bot ouvrira automatiquement si la dernière condition est remplie ✅</i>"
+    )
+
+
 def _send_photo_to_channel(channel: str, image_bytes: bytes, caption: str):
     """Send photo to a dedicated channel."""
     if not _API or not image_bytes:
