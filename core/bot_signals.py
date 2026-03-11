@@ -195,12 +195,19 @@ class BotSignalsMixin:
             )
             return
 
-        # Taille totale puis split en 3 (1% du capital total)
+        # Taille totale puis split en 3 (0.5% du capital total)
         total_size = self.capital.position_size(
-            balance=balance, risk_pct=0.01, entry=entry, sl=sl, epic=instrument
+            balance=balance, risk_pct=0.005, entry=entry, sl=sl, epic=instrument
         )
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 1.0)
         size1 = max(min_sz, round(total_size / 3, 2))
+
+        # Cap max: chaque position ≤ 5% du balance en margin (levier 20:1)
+        max_margin_per_pos = balance * 0.05
+        max_size = max_margin_per_pos * 20 / max(entry, 0.01)
+        if size1 > max_size:
+            logger.info(f"📏 {instrument} size capped: {size1:.0f} → {max_size:.0f} (5% margin max)")
+            size1 = round(max_size, 2)
 
         # Sprint 4 : Drift size reduction (50% si drift actif — safety net)
         if self._drift_size_reduced and self._drift_reduced_until and datetime.now(timezone.utc) < self._drift_reduced_until:
@@ -279,7 +286,7 @@ class BotSignalsMixin:
             "confirmations": confirmations,
             "regime":    regime_result.get("name", "RANGING"),
             "fear_greed": self.context._fg_value,
-            "in_overlap": in_overlap,
+            "in_overlap": False,
             "adx_at_entry": adx_now,
             "open_time":  datetime.now(timezone.utc),
         }
