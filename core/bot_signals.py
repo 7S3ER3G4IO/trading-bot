@@ -113,10 +113,11 @@ class BotSignalsMixin:
             logger.info(f"⚡ Entrée directe {instrument} [{_strat}] {sig} score={score:.2f}")
 
 
-        # BUG FIX #5 : Vérification RiskManager avant d'ouvrir
+        # BUG FIX #5 : Vérification RiskManager + Kill-Switches (R-3/R-4)
         balance_for_risk = self.capital.get_balance() or balance
-        if not self.risk.can_open_trade(balance_for_risk, instrument=instrument):
-            logger.info(f"⛔ {instrument} bloqué par RiskManager (DD, MAX_TRADES ou déjà ouvert)")
+        _cat = _profile.get("cat", "forex")
+        if not self.risk.can_open_trade(balance_for_risk, instrument=instrument, category=_cat):
+            logger.info(f"⛔ {instrument} bloqué par RiskManager (DD/Kill-Switch/catégorie)")
             return
 
         # Protection Model : blacklist après 3 SL consécutifs

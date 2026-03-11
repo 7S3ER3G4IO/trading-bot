@@ -342,13 +342,30 @@ class BotTickMixin:
             except Exception as _lb_e:
                 logger.debug(f"Monthly leaderboard: {_lb_e}")
 
-        # ── Vérification drawdown journalier ─────────────────────────────
+        # ── R-4: Update VIX synthetic from cached ATR values ──────────────
+        try:
+            atr_values = {}
+            for instr in CAPITAL_INSTRUMENTS:
+                cache_entry = self.ohlcv_cache._store.get(instr)
+                if cache_entry and cache_entry.get("df") is not None:
+                    _df = cache_entry["df"]
+                    if "atr" in _df.columns and len(_df) > 0:
+                        atr_val = float(_df.iloc[-1]["atr"])
+                        close_val = float(_df.iloc[-1]["close"])
+                        if atr_val > 0 and close_val > 0:
+                            atr_values[instr] = (atr_val, close_val)
+            if atr_values:
+                self.risk.update_vix_synthetic(atr_values)
+        except Exception as _vix_e:
+            logger.debug(f"VIX synthetic update: {_vix_e}")
+
+        # ── Vérification drawdown journalier (R-4: dynamic limit) ─────────
         if not self._dd_paused and self.capital.available:
             cur_bal = self.capital.get_balance()
-            # BUG FIX #2 : utilise _daily_start_balance (solde début de jour) et non initial_balance (lancement bot)
             if cur_bal > 0 and self._daily_start_balance > 0:
                 dd_pct = (self._daily_start_balance - cur_bal) / self._daily_start_balance * 100
-                if dd_pct >= self.DAILY_DD_LIMIT:
+                _dd_limit = self.risk.dynamic_dd_limit
+                if dd_pct >= _dd_limit:
                     self._dd_paused = True
                     # C-4: Persist across Railway redeploys
                     try:
@@ -360,10 +377,11 @@ class BotTickMixin:
                         self.telegram.router.send_risk(
                             f"🚨 <b>DRAWDOWN JOURNALIER ATTEINT</b>\n"
                             f"Balance : <code>{cur_bal:,.2f}€</code>\n"
-                            f"DD : <b>{dd_pct:.1f}%</b> (limite : {self.DAILY_DD_LIMIT:.1f}%)\n"
+                            f"DD : <b>{dd_pct:.1f}%</b> (limite dynamique : {_dd_limit:.1f}%)\n"
+                            f"VIX synth : {self.risk.vix_synthetic:.2f}%\n"
                             f"⏸️ Trading suspendu jusqu'à demain."
                         )
-                    logger.warning(f"🚨 DD journalier {dd_pct:.1f}% — trading suspendu")
+                    logger.warning(f"🚨 DD journalier {dd_pct:.1f}% ≥ {_dd_limit:.1f}% — trading suspendu")
 
         # ── Morning Brief (07h00 UTC) ─────────────────────────────────────────
         if self.context.should_send_brief():

@@ -202,6 +202,10 @@ class BotMonitorMixin:
                         "direction": state["direction"],
                         "symbol": name_close,
                     })
+                    # R-3: Record loss for kill-switch tracking
+                    if result == "LOSS":
+                        _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
+                        self.risk.record_loss(instrument, category=_cat)
                     # F-6: also track monthly for leaderboard
                     self._capital_closed_month.append({
                         "instrument": instrument,
