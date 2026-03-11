@@ -2,7 +2,6 @@
 bot_monitor.py — Surveillance des positions ouvertes + callbacks WebSocket
 """
 from .imports import *
-from brokers.capital_client import ASSET_PROFILES
 
 
 class BotMonitorMixin:
@@ -94,6 +93,7 @@ class BotMonitorMixin:
                 open_time = state.get("open_time")
                 if open_time:
                     age_minutes = (datetime.now(timezone.utc) - open_time).total_seconds() / 60
+                    from brokers.capital_client import ASSET_PROFILES
                     _prof = ASSET_PROFILES.get(instrument, {})
                     max_hold_min = _prof.get("max_hold", 12) * 60
                     if age_minutes > max_hold_min:
