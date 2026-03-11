@@ -517,14 +517,40 @@ class CapitalClient:
                     )
                     if r.status_code >= 400:
                         try:
-                            err_body = r.json()
+                            err_body2 = r.json()
                         except Exception:
-                            err_body = r.text[:300]
-                        logger.error(
-                            f"❌ Capital.com place_order {epic} (retry): HTTP {r.status_code} | "
-                            f"Body: {err_body} | Payload: {data}"
-                        )
-                        return None
+                            err_body2 = r.text[:300]
+                        err_code2 = err_body2.get("errorCode", "") if isinstance(err_body2, dict) else str(err_body2)
+
+                        # If SL rejected for min value, parse minimum and retry with wider SL
+                        import re
+                        sl_match = re.search(r'stoploss\.minvalue:\s*([\d.]+)', str(err_code2))
+                        if sl_match:
+                            min_sl = float(sl_match.group(1))
+                            logger.info(f"🔄 {epic}: SL minimum broker = {min_sl} — ajustement")
+                            data["stopLevel"] = round(min_sl, 5)
+                            r = self._session.post(
+                                f"{self._base_url}/positions",
+                                headers=self._headers(),
+                                json=data,
+                                timeout=15,
+                            )
+                            if r.status_code >= 400:
+                                try:
+                                    err_body3 = r.json()
+                                except Exception:
+                                    err_body3 = r.text[:300]
+                                logger.error(
+                                    f"❌ Capital.com place_order {epic} (SL adj): HTTP {r.status_code} | "
+                                    f"Body: {err_body3}"
+                                )
+                                return None
+                        else:
+                            logger.error(
+                                f"❌ Capital.com place_order {epic} (retry): HTTP {r.status_code} | "
+                                f"Body: {err_body2} | Payload: {data}"
+                            )
+                            return None
                 else:
                     logger.error(
                         f"❌ Capital.com place_order {epic}: HTTP {r.status_code} | "

@@ -110,8 +110,8 @@ def notify_pre_signal_alert(pre: dict):
     risk = abs(entry - sl)
     rr_est = abs(tp2 - entry) / risk if risk > 0 else 0
 
-    from config import CAPITAL_NAMES
-    name = CAPITAL_NAMES.get(symbol, symbol)
+    from brokers.capital_client import INSTRUMENT_NAMES
+    name = INSTRUMENT_NAMES.get(symbol, symbol)
 
     header = R.box_header(f"⏳ SETUP EN FORMATION — {name}")
     _send_to_channel("trades",
