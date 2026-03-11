@@ -151,6 +151,10 @@ class BotInitMixin:
         if self.capital.available:
             self.ohlcv_cache.warmup(CAPITAL_INSTRUMENTS, ASSET_PROFILES, strategy=self.strategy)
 
+        # ─── A-4: Register WS breakout callback ──────────────────────────
+        if hasattr(self, 'capital_ws') and self.capital_ws:
+            self.capital_ws.register_breakout_callback(self._on_ws_breakout)
+
         self.calendar.refresh()
         start_bal = self.capital.get_balance() if self.capital.available else 0.0
         self.telegram.notify_start(start_bal, CAPITAL_INSTRUMENTS)

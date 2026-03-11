@@ -65,6 +65,11 @@ class CapitalWebSocket:
         # Throttle : ne pas appeler plus d'1x/s par epic
         self._last_tick_call: dict = {}
 
+        # A-4: Breakout level tracking
+        # {epic: {"high": float, "low": float, "margin": float, "set_at": float, "triggered": set}}
+        self._breakout_levels: Dict[str, dict] = {}
+        self._on_breakout_signal: Optional[Callable] = None
+
         # Positions surveillées : {epic: {entry, tp1, refs, tp1_hit}}
         self._watched: Dict[str, dict] = {}
         self._lock = threading.Lock()
@@ -84,6 +89,41 @@ class CapitalWebSocket:
         """
         self._on_price_tick = on_price_tick
         logger.info("📡 WS Signal callback enregistré (Feature R — real-time trigger)")
+
+    def register_breakout_callback(self, on_breakout: Callable):
+        """
+        A-4: Register a callback for breakout detection.
+        
+        Signature:
+            on_breakout(epic: str, direction: str, price: float) -> None
+            direction = "BUY" (high breakout) or "SELL" (low breakout)
+        """
+        self._on_breakout_signal = on_breakout
+        logger.info("📡 WS Breakout callback enregistré (A-4 — instant breakout detection)")
+
+    def set_breakout_levels(self, epic: str, high: float, low: float, margin: float = 0.0):
+        """
+        A-4: Set breakout levels for an instrument.
+        When the WS price crosses high+margin (BUY) or low-margin (SELL),
+        the breakout callback is triggered immediately.
+        
+        margin: extra buffer above/below range to confirm breakout.
+        Levels expire after 2 hours.
+        """
+        with self._lock:
+            self._breakout_levels[epic] = {
+                "high": high,
+                "low": low,
+                "margin": margin,
+                "set_at": time.time(),
+                "triggered": set(),  # "BUY" or "SELL" once triggered
+            }
+        logger.debug(f"📊 A-4 Breakout levels {epic}: high={high:.5f} low={low:.5f} margin={margin:.5f}")
+
+    def clear_breakout_levels(self, epic: str):
+        """Clear breakout levels for an instrument."""
+        with self._lock:
+            self._breakout_levels.pop(epic, None)
 
     def watch(self, instrument: str, entry: float,
               tp1: float, tp2: float,
@@ -268,6 +308,32 @@ class CapitalWebSocket:
                         self._on_price_tick(epic, mid)
                     except Exception as _cb_e:
                         logger.debug(f"WS price_tick cb {epic}: {_cb_e}")
+
+            # A-4: Breakout detection — instant signal trigger
+            with self._lock:
+                bk_level = self._breakout_levels.get(epic)
+            if bk_level and self._on_breakout_signal:
+                # Expire after 2 hours
+                if time.time() - bk_level["set_at"] > 7200:
+                    with self._lock:
+                        self._breakout_levels.pop(epic, None)
+                else:
+                    high_bk = bk_level["high"] + bk_level["margin"]
+                    low_bk  = bk_level["low"] - bk_level["margin"]
+                    if mid >= high_bk and "BUY" not in bk_level["triggered"]:
+                        bk_level["triggered"].add("BUY")
+                        logger.info(f"🚀 A-4 BREAKOUT BUY {epic} @ {mid:.5f} (level={high_bk:.5f})")
+                        try:
+                            self._on_breakout_signal(epic, "BUY", mid)
+                        except Exception as _bk_e:
+                            logger.debug(f"Breakout callback {epic}: {_bk_e}")
+                    elif mid <= low_bk and "SELL" not in bk_level["triggered"]:
+                        bk_level["triggered"].add("SELL")
+                        logger.info(f"🚀 A-4 BREAKOUT SELL {epic} @ {mid:.5f} (level={low_bk:.5f})")
+                        try:
+                            self._on_breakout_signal(epic, "SELL", mid)
+                        except Exception as _bk_e:
+                            logger.debug(f"Breakout callback {epic}: {_bk_e}")
 
             with self._lock:
                 state = self._watched.get(epic)

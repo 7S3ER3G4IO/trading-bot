@@ -269,8 +269,8 @@ class BotSignalsMixin:
         except Exception as _sp_e:
             logger.debug(f"Spread check {instrument}: {_sp_e}")
 
-        # ─── E-1: ORDRES (1er = LIMIT pour économie spread, 2-3 = MARKET pour speed) ─
-        import time as _time
+        # ─── E-2: PARALLEL ORDER PLACEMENT (3 positions concurrently) ──────
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         def _place_limit(tp):
             return self.capital.place_limit_order(instrument, direction, size1, sl, tp, timeout_s=15)
@@ -278,11 +278,15 @@ class BotSignalsMixin:
         def _place_market(tp):
             return self.capital.place_market_order(instrument, direction, size1, sl, tp)
 
-        ref1 = _place_limit(tp1)   # E-1: Limit order (économie spread)
-        _time.sleep(0.3)
-        ref2 = _place_market(tp2)  # Market pour exécution rapide
-        _time.sleep(0.3)
-        ref3 = _place_market(tp3)
+        # E-2: Execute all 3 positions in parallel (~0.5s vs ~1.5s sequential)
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="E2_order") as pool:
+            f1 = pool.submit(_place_limit, tp1)   # E-1: Limit for TP1
+            f2 = pool.submit(_place_market, tp2)   # Market for TP2
+            f3 = pool.submit(_place_market, tp3)   # Market for TP3
+
+        ref1 = f1.result(timeout=30) if f1 else None
+        ref2 = f2.result(timeout=30) if f2 else None
+        ref3 = f3.result(timeout=30) if f3 else None
 
         if not any([ref1, ref2, ref3]):
             logger.warning(f"⛔ {instrument} — tous les ordres rejetés (marché fermé ou erreur)")

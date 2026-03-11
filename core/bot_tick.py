@@ -563,5 +563,50 @@ class BotTickMixin:
                     f"{len(CAPITAL_INSTRUMENTS)} instruments — surveillance continue…"
                 )
 
+        # ── A-4: Set breakout levels for WS instant detection ──────────
+        if hasattr(self, 'capital_ws') and self.capital_ws:
+            for instrument in CAPITAL_INSTRUMENTS:
+                if self.capital_trades.get(instrument) is not None:
+                    continue  # Already has a position
+                _profile = ASSET_PROFILES.get(instrument, {})
+                if _profile.get("strat") != "BK":
+                    continue  # Only BK strategy uses breakout levels
+                df = self.ohlcv_cache.get(instrument, strategy=self.strategy)
+                if df is None or len(df) < 10:
+                    continue
+                try:
+                    _range = self.strategy.compute_session_range(
+                        df, range_lookback=_profile.get("range_lb", 6)
+                    )
+                    _margin = _range["size"] * _profile.get("bk_margin", 0.03)
+                    self.capital_ws.set_breakout_levels(
+                        instrument, _range["high"], _range["low"], margin=_margin
+                    )
+                except Exception:
+                    pass
 
+    # ═══════════════════════════════════════════════════════════════════════
+    #  A-4: WS BREAKOUT CALLBACK
+    # ═══════════════════════════════════════════════════════════════════════
 
+    def _on_ws_breakout(self, epic: str, direction: str, price: float):
+        """
+        A-4: Called by WebSocket when a breakout is detected.
+        Triggers _process_capital_symbol immediately (latency <500ms).
+        """
+        if self._dd_paused or self._manual_pause:
+            return
+        if self.capital_trades.get(epic) is not None:
+            return  # Already has a position
+        if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
+            return
+
+        logger.info(f"🚀 A-4 WS BREAKOUT → trigger {epic} {direction} @ {price:.5f}")
+        balance = self.capital.get_balance() if self.capital.available else 0.0
+        if balance <= 0:
+            return
+
+        try:
+            self._process_capital_symbol(epic, balance)
+        except Exception as e:
+            logger.error(f"❌ WS breakout process {epic}: {e}")
