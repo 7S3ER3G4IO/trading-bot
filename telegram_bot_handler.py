@@ -116,7 +116,11 @@ class TelegramBotHandler:
         try:
             r = requests.get(
                 f"{self._base}/getUpdates",
-                params={"timeout": POLL_TIMEOUT, "offset": self._offset},
+                params={
+                    "timeout": POLL_TIMEOUT,
+                    "offset": self._offset,
+                    "allowed_updates": '["message","callback_query"]',
+                },
                 timeout=POLL_TIMEOUT + 5,
             )
             data = r.json()
@@ -128,6 +132,7 @@ class TelegramBotHandler:
         if "message" in upd:
             self._handle_message(upd["message"])
         elif "callback_query" in upd:
+            logger.debug(f"📱 Callback reçu : {upd['callback_query'].get('data', '?')}")
             self._handle_callback(upd["callback_query"])
 
     # ─── Message Handler ──────────────────────────────────────────────────────
