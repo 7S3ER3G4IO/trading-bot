@@ -269,16 +269,20 @@ class BotSignalsMixin:
         except Exception as _sp_e:
             logger.debug(f"Spread check {instrument}: {_sp_e}")
 
-        # ─── ORDRES SÉQUENTIELS (anti-throttling Capital.com) ────
+        # ─── E-1: ORDRES (1er = LIMIT pour économie spread, 2-3 = MARKET pour speed) ─
         import time as _time
-        def _place(tp):
+
+        def _place_limit(tp):
+            return self.capital.place_limit_order(instrument, direction, size1, sl, tp, timeout_s=15)
+
+        def _place_market(tp):
             return self.capital.place_market_order(instrument, direction, size1, sl, tp)
 
-        ref1 = _place(tp1)
-        _time.sleep(0.5)
-        ref2 = _place(tp2)
-        _time.sleep(0.5)
-        ref3 = _place(tp3)
+        ref1 = _place_limit(tp1)   # E-1: Limit order (économie spread)
+        _time.sleep(0.3)
+        ref2 = _place_market(tp2)  # Market pour exécution rapide
+        _time.sleep(0.3)
+        ref3 = _place_market(tp3)
 
         if not any([ref1, ref2, ref3]):
             logger.warning(f"⛔ {instrument} — tous les ordres rejetés (marché fermé ou erreur)")

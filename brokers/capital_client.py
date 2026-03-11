@@ -449,23 +449,51 @@ class CapitalClient:
             logger.error(f"❌ Capital.com get_price {epic}: {e}")
             return None
 
+    # ─── E-3: Request with Exponential Backoff ─────────────────────────────
+
+    def _request_safe(self, method: str, url: str, retries: int = 4, **kwargs):
+        """
+        E-3: Requête HTTP avec exponential backoff + Retry-After header.
+        Backoff: 0.5s → 1s → 2s → 4s (cap).
+        """
+        kwargs.setdefault("timeout", 15)
+        kwargs.setdefault("headers", self._headers())
+        for attempt in range(retries):
+            try:
+                r = getattr(self._session, method)(url, **kwargs)
+                if r.status_code == 429:
+                    # Parse Retry-After header
+                    retry_after = r.headers.get("Retry-After")
+                    if retry_after:
+                        wait = min(float(retry_after), 10)
+                    else:
+                        wait = min(0.5 * (2 ** attempt), 10)
+                    logger.warning(f"⏳ 429 Rate-limited — wait {wait:.1f}s (attempt {attempt+1})")
+                    time.sleep(wait)
+                    continue
+                return r
+            except Exception as e:
+                wait = min(0.5 * (2 ** attempt), 10)
+                logger.debug(f"Request error attempt {attempt+1}/{retries}: {e} — wait {wait:.1f}s")
+                time.sleep(wait)
+        return None
+
     # ─── Ordres ──────────────────────────────────────────────────────────────
 
-    def confirm_deal(self, deal_ref: str, retries: int = 3) -> Optional[str]:
+    def confirm_deal(self, deal_ref: str, retries: int = 4) -> Optional[str]:
         """
-        Échange un dealReference temporaire contre le dealId permanent.
-        Retry avec délai car Capital.com peut prendre quelques centaines de ms
-        à confirmer un ordre même après avoir retourné le dealReference.
+        E-3: Échange dealReference → dealId avec exponential backoff.
         """
         if not self.available or not deal_ref:
             return None
         for attempt in range(retries):
             try:
-                r = self._session.get(
-                    f"{self._base_url}/confirms/{deal_ref}",
-                    headers=self._headers(),
-                    timeout=10,
+                r = self._request_safe(
+                    "get", f"{self._base_url}/confirms/{deal_ref}", retries=1
                 )
+                if r is None:
+                    time.sleep(min(0.5 * (2 ** attempt), 4))
+                    continue
                 r.raise_for_status()
                 data     = r.json()
                 deal_id  = data.get("dealId")
@@ -477,12 +505,11 @@ class CapitalClient:
                     reject_reason = data.get('rejectReason', data.get('reason', 'unknown'))
                     logger.warning(f"⚠️  Capital.com ordre rejeté : {reject_reason} | {data}")
                     return None
-                # Status = PENDING / vide → retry
                 logger.debug(f"  ⏳ Confirm attempt {attempt+1}/{retries} status={status!r}")
-                time.sleep(0.5)
+                time.sleep(min(0.5 * (2 ** attempt), 4))
             except Exception as e:
-                logger.error(f"❌ Capital.com confirm_deal attempt {attempt+1}: {e}")
-                time.sleep(0.5)
+                logger.error(f"❌ confirm_deal attempt {attempt+1}: {e}")
+                time.sleep(min(0.5 * (2 ** attempt), 4))
         logger.error(f"❌ confirm_deal épuisé après {retries} essais — dealRef={deal_ref}")
         return None
 
@@ -603,6 +630,93 @@ class CapitalClient:
         except Exception as e:
             logger.error(f"❌ Capital.com place_order {epic}: {e}")
             return None
+
+    # ─── E-1: Limit Order with MARKET Fallback ────────────────────────────
+
+    def place_limit_order(
+        self,
+        epic: str,
+        direction: str,
+        size: float,
+        sl_price: float,
+        tp_price: float,
+        limit_price: float = 0,
+        timeout_s: float = 30,
+    ) -> Optional[str]:
+        """
+        E-1: Place un LIMIT order agressif (mid ± 1 pip).
+        Si pas fill en timeout_s secondes → fallback MARKET.
+        
+        Returns dealId ou None.
+        """
+        if not self.available:
+            return None
+
+        if CAPITAL_DEMO and self._base_url == LIVE_URL:
+            logger.error("⛔ BLOCAGE SÉCURITÉ : limite sur URL LIVE en mode DEMO !")
+            return None
+
+        # Calcul du prix limit si non fourni
+        if limit_price <= 0:
+            px = self.get_current_price(epic)
+            if not px:
+                logger.warning(f"⚠️ E-1 {epic}: prix indisponible → fallback MARKET")
+                return self.place_market_order(epic, direction, size, sl_price, tp_price)
+            pip = PIP_FACTOR.get(epic, 0.0001)
+            if direction == "BUY":
+                limit_price = px["mid"] + pip  # Slightly above mid for fast fill
+            else:
+                limit_price = px["mid"] - pip
+
+        dec = PRICE_DECIMALS.get(epic, 5)
+        limit_price = round(limit_price, dec)
+
+        try:
+            data = {
+                "epic":           epic,
+                "direction":      direction,
+                "size":           str(round(size, 2)),
+                "orderType":      "LIMIT",
+                "level":          limit_price,
+                "stopLevel":      round(sl_price, dec),
+                "profitLevel":    round(tp_price, dec),
+                "guaranteedStop": False,
+                "forceOpen":      True,
+                "timeInForce":    "GOOD_TILL_CANCELLED",
+            }
+            logger.info(f"📋 E-1 LIMIT {direction} {epic} @ {limit_price} size={size}")
+
+            r = self._request_safe("post", f"{self._base_url}/workingorders", json=data)
+            if r is None or r.status_code >= 400:
+                logger.warning(f"⚠️ E-1 LIMIT failed ({r.status_code if r else 'None'}) → fallback MARKET")
+                return self.place_market_order(epic, direction, size, sl_price, tp_price)
+
+            resp = r.json()
+            deal_ref = resp.get("dealReference")
+            if not deal_ref:
+                logger.warning(f"⚠️ E-1 {epic}: no dealRef → fallback MARKET")
+                return self.place_market_order(epic, direction, size, sl_price, tp_price)
+
+            # Wait for fill with timeout
+            start = time.time()
+            while time.time() - start < timeout_s:
+                deal_id = self.confirm_deal(deal_ref, retries=1)
+                if deal_id:
+                    logger.info(f"✅ E-1 LIMIT FILLED {epic} dealId={deal_id}")
+                    return deal_id
+                time.sleep(2)
+
+            # Timeout → cancel + MARKET fallback
+            logger.info(f"⏰ E-1 LIMIT timeout {timeout_s}s — cancel + MARKET fallback")
+            try:
+                self._request_safe("delete", f"{self._base_url}/workingorders/{deal_ref}")
+            except Exception:
+                pass
+            return self.place_market_order(epic, direction, size, sl_price, tp_price)
+
+        except Exception as e:
+            logger.error(f"❌ E-1 place_limit_order {epic}: {e} → MARKET fallback")
+            return self.place_market_order(epic, direction, size, sl_price, tp_price)
 
     def get_open_positions(self) -> List[dict]:
         """Retourne les positions ouvertes."""
