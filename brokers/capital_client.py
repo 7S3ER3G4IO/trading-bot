@@ -264,6 +264,58 @@ class CapitalClient:
     def available(self) -> bool:
         return self._ok
 
+    # ─── Recherche de marchés (debug) ────────────────────────────────────────
+
+    def search_markets(self, term: str, limit: int = 5) -> list:
+        """Recherche un marché par nom/epic sur Capital.com API."""
+        if not self.available:
+            return []
+        try:
+            r = self._session.get(
+                f"{self._base_url}/markets",
+                headers=self._headers(),
+                params={"searchTerm": term, "limit": limit},
+                timeout=10,
+            )
+            r.raise_for_status()
+            return [
+                {"epic": m.get("epic", ""), "name": m.get("instrumentName", "")}
+                for m in r.json().get("markets", [])
+            ]
+        except Exception as e:
+            logger.debug(f"search_markets({term}): {e}")
+            return []
+
+    def validate_epics(self):
+        """Vérifie au démarrage que chaque epic de CAPITAL_INSTRUMENTS est valide."""
+        if not self.available:
+            return
+        bad = []
+        for epic in CAPITAL_INSTRUMENTS:
+            try:
+                r = self._session.get(
+                    f"{self._base_url}/prices/{epic}",
+                    headers=self._headers(),
+                    params={"resolution": "HOUR", "max": 1, "pageSize": 1},
+                    timeout=10,
+                )
+                if r.status_code == 404:
+                    bad.append(epic)
+                    # Chercher le bon nom
+                    search_term = epic.replace("_", " ")
+                    results = self.search_markets(search_term, limit=3)
+                    suggestions = ", ".join([f"{r['epic']} ({r['name']})" for r in results])
+                    logger.warning(
+                        f"⚠️  Epic {epic} INVALIDE (404) — suggestions: {suggestions or 'aucune'}"
+                    )
+                time.sleep(0.3)
+            except Exception as e:
+                logger.debug(f"validate_epics {epic}: {e}")
+        if bad:
+            logger.error(f"❌ {len(bad)} epics invalides: {bad}")
+        else:
+            logger.info("✅ Tous les 39 epics validés sur Capital.com")
+
     # ─── Données de marché ────────────────────────────────────────────────────
 
     def fetch_ohlcv(self, epic: str, timeframe: str = "5m", count: int = 300) -> Optional[pd.DataFrame]:
