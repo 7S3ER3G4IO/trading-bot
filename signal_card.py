@@ -98,9 +98,8 @@ def generate_signal_card(
 
         hlines = dict(
             hlines=[entry, sl, tp1, tp2, tp3],
-            colors=[color_entry, color_sl, color_tp1, color_tp2, color_tp3],
-            linestyle=["--", "--", "-.", "-.", "-."],
-            linewidths=[1.5, 1.5, 1.0, 1.0, 1.0],
+            linestyle="--",
+            linewidths=1.0,
         )
 
         # ─── Générer la figure ─────────────────────────────────────────────────
@@ -117,6 +116,13 @@ def generate_signal_card(
         )
 
         ax_main = axes[0]
+
+        # ─── Colored horizontal lines (added manually for compatibility) ───
+        for price, color, lw in [
+            (entry, color_entry, 1.5), (sl, color_sl, 1.5),
+            (tp1, color_tp1, 1.0), (tp2, color_tp2, 1.0), (tp3, color_tp3, 1.0),
+        ]:
+            ax_main.axhline(y=price, color=color, linewidth=lw, linestyle="--", alpha=0.8)
 
         # ─── Annotations des niveaux ──────────────────────────────────────────
         price_decimals = 5 if entry < 10 else (2 if entry < 1000 else 0)

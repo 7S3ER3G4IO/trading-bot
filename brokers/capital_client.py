@@ -445,7 +445,8 @@ class CapitalClient:
                     logger.info(f"  ✅ Confirmé dealRef={deal_ref} → dealId={deal_id}")
                     return deal_id
                 if status == "REJECTED":
-                    logger.warning(f"⚠️  Capital.com ordre rejeté : {data.get('reason', '')}")
+                    reject_reason = data.get('rejectReason', data.get('reason', 'unknown'))
+                    logger.warning(f"⚠️  Capital.com ordre rejeté : {reject_reason} | {data}")
                     return None
                 # Status = PENDING / vide → retry
                 logger.debug(f"  ⏳ Confirm attempt {attempt+1}/{retries} status={status!r}")
