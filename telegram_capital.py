@@ -28,7 +28,7 @@ def _stars(score: int, max_score: int = 3) -> str:
     return "⭐" * score + "☆" * (max_score - score)
 
 
-def _progress_bar(current: float, entry: float, sl: float, tp: float,
+def _progress_bar(current: float, sl: float, tp: float,
                   width: int = 10) -> str:
     """
     Barre visuelle entre SL et TP avec position actuelle du prix.
@@ -144,18 +144,18 @@ def notify_capital_entry(
     # Génère et envoie le graphique
     if df is not None:
         try:
-            from chart_capital import generate_trade_chart
-            chart_bytes = generate_trade_chart(
-                df=df, instrument=instrument, sig=sig,  # instrument = epic (GOLD, EURUSD...)
+            from signal_card import generate_signal_card
+            chart_bytes = generate_signal_card(
+                df=df, instrument=instrument, direction="BUY" if sig == "BUY" else "SELL",
                 entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
-                range_high=range_high, range_low=range_low,
-                score=score, session=session,
+                score=score, confirmations=confirmations,
+                session=session,
             )
             if chart_bytes:
                 _send_photo(chart_bytes, caption, markup=buttons)
                 return
         except Exception as e:
-            logger.error(f"❌ chart: {e}")
+            logger.debug(f"Signal card: {e}")
 
     # Fallback texte seul si chart échoue
     _send(caption, markup=buttons)

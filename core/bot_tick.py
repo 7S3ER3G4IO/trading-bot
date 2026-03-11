@@ -132,10 +132,10 @@ class BotTickMixin:
                 self._dd_paused = True
                 pnl_pct = self.equity.total_pnl_pct()
                 try:
-                    self.notifier.notify_circuit_breaker(
-                        reason="Equity sous MA20 (20 derniers points)",
-                        balance=balance,
-                        pnl_pct=pnl_pct,
+                    self.telegram.send_message(
+                        f"⏸️ <b>Circuit Breaker</b>\n"
+                        f"Equity sous MA20 — trading en pause.\n"
+                        f"Balance: {balance:,.2f}€ | PnL: {pnl_pct:+.1f}%"
                     )
                 except Exception:
                     pass
@@ -229,22 +229,8 @@ class BotTickMixin:
                 import threading, subprocess, sys
                 def _run_optimizer():
                     try:
-                        result = subprocess.run(
-                            [sys.executable, "optimizer.py",
-                             "--trials", "30", "--days", "30"],
-                            cwd=os.path.dirname(os.path.abspath(__file__)),
-                            capture_output=True, text=True, timeout=600
-                        )
-                        if result.returncode == 0:
-                            logger.info("✅ Auto-Optimisation terminée")
-                            self.telegram.send_message(
-                                "✅ <b>Auto-Optimisation terminée</b>\n"
-                                "Nouveaux paramètres appliqués au prochain tick."
-                            )
-                        else:
-                            logger.warning(f"⚠️ Optimizer exit {result.returncode}: {result.stderr[:200]}")
-                    except subprocess.TimeoutExpired:
-                        logger.warning("⏱️ Optimizer timeout (>10min)")
+                        logger.info("⚙️ Auto-optimisation: optimizer supprimé — AB Tester actif à la place.")
+                        # LSTM training seulement
                     except Exception as _opt_e:
                         logger.error(f"❌ Optimizer: {_opt_e}")
 

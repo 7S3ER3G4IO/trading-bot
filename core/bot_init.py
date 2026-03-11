@@ -182,8 +182,17 @@ class BotInitMixin:
                     "tp2":       t_dict["tp2"],
                     "tp3":       t_dict["tp3"],
                     "direction": t_dict["direction"],
-                    "tp1_hit":   bool(t_dict["tp1_hit"]),
-                    "tp2_hit":   bool(t_dict["tp2_hit"]),
+                    "tp1_hit":   bool(t_dict.get("tp1_hit", False)),
+                    "tp2_hit":   bool(t_dict.get("tp2_hit", False)),
+                    # Champs requis par bot_monitor / bot_signals (defaults sûrs)
+                    "score":         t_dict.get("score", 0),
+                    "confirmations": t_dict.get("confirmations", []),
+                    "regime":        t_dict.get("regime", "RANGING"),
+                    "fear_greed":    t_dict.get("fear_greed"),
+                    "in_overlap":    t_dict.get("in_overlap", False),
+                    "adx_at_entry":  t_dict.get("adx_at_entry", 0),
+                    "open_time":     datetime.now(timezone.utc),  # approximatif post-restart
+                    "ab_variant":    t_dict.get("ab_variant", "A"),
                 }
                 # Relance la surveillance WebSocket
                 state = self.capital_trades[instrument]
