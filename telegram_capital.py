@@ -1,6 +1,6 @@
 """
-telegram_capital.py — Notifications Capital.com v3.0
-Intègre le design system Nemesis et les formatters premium.
+telegram_capital.py — Notifications Capital.com v3.0 Multi-Channel
+Routes all notifications to dedicated Nemesis channels.
 """
 import os
 import io
@@ -16,11 +16,15 @@ except ImportError:
 
 from nemesis_ui.renderer import NemesisRenderer as R
 from nemesis_ui.notifications import NotificationFormatter as NF
+from channels.router import ChannelRouter
 
 
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID",   "")
 _API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}" if TELEGRAM_TOKEN else ""
+
+# ── Channel Router (singleton-like) ──────────────────────────────────────────
+_router = ChannelRouter(TELEGRAM_TOKEN) if TELEGRAM_TOKEN else None
 
 
 # ─── Helpers internes ────────────────────────────────────────────────────────
@@ -33,57 +37,31 @@ def _progress_bar(current: float, sl: float, tp: float, width: int = 10) -> str:
     return R.progress_bar(current, sl, tp, width)
 
 
-def _send(text: str, markup=None):
-    """Envoi texte HTML."""
-    if not _API or not TELEGRAM_CHAT_ID:
+def _send_to_channel(channel: str, text: str):
+    """Route to the correct dedicated channel."""
+    if _router:
+        _router.send_to(channel, text)
+
+
+def _send_photo_to_channel(channel: str, image_bytes: bytes, caption: str):
+    """Send photo to a dedicated channel."""
+    if not _API or not image_bytes:
         return
-    try:
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
-        if markup:
-            try:
-                payload["reply_markup"] = markup.to_dict()
-            except AttributeError:
-                pass
-        r = requests.post(f"{_API}/sendMessage", json=payload, timeout=10)
-        if not r.ok:
-            logger.warning(f"⚠️ Telegram: {r.status_code} {r.text[:80]}")
-    except Exception as e:
-        logger.error(f"❌ Telegram send: {e}")
-
-
-def _send_photo(image_bytes: bytes, caption: str, markup=None):
-    """Envoi photo + légende."""
-    if not _API or not TELEGRAM_CHAT_ID or not image_bytes:
+    from config import CHANNELS
+    ch = CHANNELS.get(channel)
+    if not ch:
         return
     try:
         files = {"photo": ("chart.png", io.BytesIO(image_bytes), "image/png")}
-        data  = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "HTML"}
-        if markup:
-            import json
-            data["reply_markup"] = json.dumps(markup.to_dict())
+        data  = {"chat_id": ch["id"], "caption": caption, "parse_mode": "HTML"}
         r = requests.post(f"{_API}/sendPhoto", data=data, files=files, timeout=30)
         if not r.ok:
-            logger.warning(f"⚠️ Telegram photo: {r.status_code} {r.text[:80]}")
+            logger.warning(f"⚠️ Telegram photo ({channel}): {r.status_code} {r.text[:80]}")
     except Exception as e:
         logger.error(f"❌ Telegram send_photo: {e}")
 
 
-def _trade_buttons(instrument: str):
-    if not InlineKeyboardMarkup or not InlineKeyboardButton:
-        return None
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("❌ Fermer maintenant", callback_data=f"close:{instrument}"),
-            InlineKeyboardButton("🟡 Passer en BE",      callback_data=f"be:{instrument}"),
-        ],
-        [
-            InlineKeyboardButton("⏸ Pause bot",  callback_data="action:pause"),
-            InlineKeyboardButton("▶️ Reprendre",  callback_data="action:resume"),
-        ],
-    ])
-
-
-# ─── 1. Notification d'entrée complète (chart + texte + boutons) ───────────────
+# ─── 1. Notification d'entrée complète → canal TRADES ─────────────────────────
 
 def notify_capital_entry(
     instrument: str, name: str, sig: str,
@@ -92,13 +70,12 @@ def notify_capital_entry(
     range_pct: float, range_high: float, range_low: float,
     confirmations: list, df=None,
 ):
-    """Notification d'ouverture de trade premium avec graphique."""
+    """Notification d'ouverture de trade premium → TRADES channel."""
     from brokers.capital_client import PIP_FACTOR as PIP
     pip = PIP.get(instrument, 0.0001)
 
     def pips(a, b): return round(abs(a - b) / pip)
 
-    # Premium formatted caption
     rr = R.format_rr(entry, sl, tp2)
     score_bar = R.score_bar(score, 3)
 
@@ -117,8 +94,6 @@ def notify_capital_entry(
         f"🔬 {' · '.join(confirmations)}"
     )
 
-    buttons = _trade_buttons(instrument)
-
     if df is not None:
         try:
             from signal_card import generate_signal_card
@@ -130,20 +105,20 @@ def notify_capital_entry(
                 session=session,
             )
             if chart_bytes:
-                _send_photo(chart_bytes, caption, markup=buttons)
+                _send_photo_to_channel("trades", chart_bytes, caption)
                 return
         except Exception as e:
             logger.debug(f"Signal card: {e}")
 
-    _send(caption, markup=buttons)
+    _send_to_channel("trades", caption)
 
 
-# ─── 2. Alerte TP1 + activation Break-Even ────────────────────────────────────
+# ─── 2. Alerte TP1 + activation Break-Even → canal TRADES ─────────────────────
 
 def notify_tp1_be(name: str, instrument: str, entry: float,
                   pips_tp1: float, size: float):
     header = R.box_header(f"🎯 TP1 TOUCHÉ — {name}")
-    _send(
+    _send_to_channel("trades",
         f"{header}\n\n"
         f"✅ +{pips_tp1:.0f} pips | Position 1/3 fermée\n"
         f"🟡 <b>Break-Even activé</b> sur TP2 + TP3\n"
@@ -152,7 +127,7 @@ def notify_tp1_be(name: str, instrument: str, entry: float,
     )
 
 
-# ─── 3. Barre de progression (mise à jour prix) ────────────────────────────────
+# ─── 3. Barre de progression → canal TRADES ──────────────────────────────────
 
 def notify_capital_progress(
     name: str, instrument: str, current_price: float,
@@ -170,7 +145,7 @@ def notify_capital_progress(
     tp1_str = '✅' if tp1_hit else f'{tp1:.5f}'
 
     header = R.box_header(f"📊 {name} — Suivi")
-    _send(
+    _send_to_channel("trades",
         f"{header}\n\n"
         f"{bar}\n"
         f"📍 Prix : <code>{current_price:.5f}</code>  "
@@ -180,7 +155,7 @@ def notify_capital_progress(
     )
 
 
-# ─── 4. Résumé de session (fin London/NY) ──────────────────────────────────────
+# ─── 4. Résumé de session → canal PERFORMANCE ─────────────────────────────────
 
 class SessionTracker:
     """Suit les trades d'une session pour le résumé de fin."""
@@ -219,7 +194,7 @@ class SessionTracker:
         emoji_session = "🇬🇧" if session == "London" else "🗽"
 
         header = R.box_header(f"{emoji_session} Résumé {session}")
-        _send(
+        _send_to_channel("performance",
             f"{header}\n\n"
             f"{lines}\n"
             f"Trades : {total}  ·  WR : <b>{wr:.0f}%</b>\n"
@@ -229,7 +204,7 @@ class SessionTracker:
         self.trades.clear()
 
 
-# ─── 5. Dashboard quotidien ──────────────────────────────────────────────────
+# ─── 5. Dashboard quotidien → canal DASHBOARD ────────────────────────────────
 
 def send_daily_dashboard(
     balance: float, initial_balance: float,
@@ -254,7 +229,7 @@ def send_daily_dashboard(
 
     header = R.box_header(f"📊 DASHBOARD — {date_str}")
 
-    _send(
+    _send_to_channel("dashboard",
         f"{header}\n\n"
         f"💰 Capital : <b>{balance:,.2f}€</b>  ({gain_pct:+.2f}%)\n"
         f"{trend} PnL du jour : <b>{total_pnl:+.2f}€</b>\n"
@@ -264,13 +239,13 @@ def send_daily_dashboard(
     )
 
 
-# ─── 6. Alerte news économiques ────────────────────────────────────────────────
+# ─── 6. Alerte news économiques → canal RISK ──────────────────────────────────
 
 def notify_news_alert(event_name: str, currency: str, impact: str,
                       minutes_before: int):
     impact_emoji = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(impact.upper(), "⚪")
     header = R.box_header("⚠️ NEWS ÉCONOMIQUE")
-    _send(
+    _send_to_channel("risk",
         f"{header}\n\n"
         f"{impact_emoji} <b>{event_name}</b>\n"
         f"💱 Devise : {currency}\n"
@@ -280,18 +255,18 @@ def notify_news_alert(event_name: str, currency: str, impact: str,
 
 
 def notify_news_resume(event_name: str):
-    _send(
+    _send_to_channel("risk",
         f"▶️ <b>Trading repris</b> — {event_name} publié\n"
         f"Bot actif et en surveillance ✅"
     )
 
 
-# ─── 7. Notification macro ───────────────────────────────────────────────────
+# ─── 7. Notification macro → canal RISK ──────────────────────────────────────
 
 def notify_bot_paused(reason: str = ""):
     header = R.box_header("⏸ BOT EN PAUSE")
-    _send(f"{header}\n\n{reason}\nUtilisez /resume pour reprendre.")
+    _send_to_channel("risk", f"{header}\n\n{reason}\nUtilisez /resume pour reprendre.")
 
 
 def notify_bot_resumed():
-    _send("▶️ <b>BOT REPRIS</b> — Surveillance active ✅")
+    _send_to_channel("dashboard", "▶️ <b>BOT REPRIS</b> — Surveillance active ✅")

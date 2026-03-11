@@ -109,27 +109,59 @@ class TelegramNotifier:
     # ─── MESSAGES PREMIUM (routed to channels) ───────────────────────────────
 
     def notify_start(self, balance: float, symbols: list, futures_balance: float = 0.0):
-        """Démarrage — envoie le Hub + push startup au canal Dashboard."""
+        """Démarrage — Hub dans le chat principal + welcome messages dans chaque canal."""
+        # 1) Hub dans le chat principal (avec URL boutons)
         if self.hub:
             self.hub.send_hub(balance=balance, pnl_today=0.0)
 
+        if not self.router:
+            return
+
         mode = "🟡 DÉMO" if os.getenv("CAPITAL_DEMO", "true") == "true" else "🟢 LIVE"
         nb = len(symbols) if symbols else 8
-        header = R.box_header("⚡ NEMESIS v3.0 — EN LIGNE")
+        session = R.session_name()
 
-        text = (
-            f"{header}\n\n"
+        # 2) Welcome message dans chaque canal dédié
+        self.router.send_dashboard(
+            f"{R.box_header('📊 NEMESIS DASHBOARD')}\n\n"
             f"💰 Capital : <b>{balance:,.2f}€</b>  {mode}\n"
             f"🏦 Broker  : Capital.com\n"
             f"📡 {nb} instruments en surveillance\n\n"
-            f"📅 Session : {R.session_name()}\n"
-            f"🇬🇧 London : 09h–11h Paris\n"
-            f"🗽 NY Open : 14h30–17h Paris\n\n"
-            f"🟢 Tous systèmes opérationnels ✅"
+            f"📅 Session : {session}\n"
+            f"🟢 Tous systèmes opérationnels ✅\n\n"
+            f"<i>Ce canal affiche : balance, positions, heartbeat</i>"
         )
-        # Send to Dashboard channel
-        if self.router:
-            self.router.send_dashboard(text)
+
+        self.router.send_trade(
+            f"{R.box_header('📋 NEMESIS TRADES')}\n\n"
+            f"🟢 Bot connecté — {mode}\n"
+            f"📡 {nb} instruments surveillés\n\n"
+            f"<i>Ce canal affiche : ouvertures, TP, SL, break-even, signals</i>"
+        )
+
+        self.router.send_performance(
+            f"{R.box_header('📈 NEMESIS PERFORMANCE')}\n\n"
+            f"🟢 Suivi actif\n\n"
+            f"<i>Ce canal affiche : rapports daily/weekly, stats session, equity</i>"
+        )
+
+        self.router.send_briefing(
+            f"{R.box_header('☀️ NEMESIS BRIEFING')}\n\n"
+            f"🟢 Analyse matinale programmée\n\n"
+            f"<i>Ce canal affiche : morning briefs, analyses assets, calendrier éco</i>"
+        )
+
+        self.router.send_risk(
+            f"{R.box_header('🛡️ NEMESIS RISK')}\n\n"
+            f"🟢 Surveillance active\n\n"
+            f"<i>Ce canal affiche : alertes drawdown, erreurs, circuit breaker, news</i>"
+        )
+
+        self.router.send_stats(
+            f"{R.box_header('🏆 NEMESIS STATS')}\n\n"
+            f"🟢 Gamification active\n\n"
+            f"<i>Ce canal affiche : achievements, streaks, badges, stats globales</i>"
+        )
 
     def notify_trade_open(
         self, side, symbol, entry, tp1, tp2, tp3, sl,
