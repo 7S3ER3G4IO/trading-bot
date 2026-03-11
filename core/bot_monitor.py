@@ -54,11 +54,12 @@ class BotMonitorMixin:
             state["tp2_hit"] = True
             pips_tp2 = round(abs(state["entry"] - entry_or_sl) / pip)
             logger.info(f"⚡ WS TP2 trailing activé — {instrument} SL pos3 → {entry_or_sl:.5f}")
-            self.telegram.send_message(
-                f"🎯 <b>TP2 touché — {name}</b>\n"
-                f"SL pos3 déplacé à TP1 (<code>{entry_or_sl:.5f}</code>)\n"
-                f"🟢 Gains TP1 verrouillés sur position 3 !"
-            )
+            if self.telegram.router:
+                self.telegram.router.send_trade(
+                    f"🎯 <b>TP2 touché — {name}</b>\n"
+                    f"SL pos3 déplacé à TP1 (<code>{entry_or_sl:.5f}</code>)\n"
+                    f"🟢 Gains TP1 verrouillés sur position 3 !"
+                )
 
     def _monitor_capital_positions(self):
         """
@@ -103,11 +104,12 @@ class BotMonitorMixin:
                                     self.capital.close_position(ref)
                                 except Exception as _ts_e:
                                     logger.debug(f"Time-stop close {ref}: {_ts_e}")
-                        self.telegram.send_message(
-                            f"⏱️ <b>Time-Stop déclenché — {name_ts}</b>\n"
-                            f"Ouvert depuis <b>{age_minutes:.0f} min</b> sans atteindre TP1.\n"
-                            f"Fermeture de toutes les positions (trade zombie évité)."
-                        )
+                        if self.telegram.router:
+                            self.telegram.router.send_trade(
+                                f"⏱️ <b>Time-Stop déclenché — {name_ts}</b>\n"
+                                f"Ouvert depuis <b>{age_minutes:.0f} min</b> sans atteindre TP1.\n"
+                                f"Fermeture de toutes les positions (trade zombie évité)."
+                            )
                         self.capital_trades[instrument] = None
                         self._pending_retest[instrument] = None
                         continue

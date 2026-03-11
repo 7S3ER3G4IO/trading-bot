@@ -132,11 +132,12 @@ class BotTickMixin:
                 self._dd_paused = True
                 pnl_pct = self.equity.total_pnl_pct()
                 try:
-                    self.telegram.send_message(
-                        f"⏸️ <b>Circuit Breaker</b>\n"
-                        f"Equity sous MA20 — trading en pause.\n"
-                        f"Balance: {balance:,.2f}€ | PnL: {pnl_pct:+.1f}%"
-                    )
+                    if self.telegram.router:
+                        self.telegram.router.send_risk(
+                            f"⏸️ <b>Circuit Breaker</b>\n"
+                            f"Equity sous MA20 — trading en pause.\n"
+                            f"Balance: {balance:,.2f}€ | PnL: {pnl_pct:+.1f}%"
+                        )
                 except Exception:
                     pass
 
@@ -168,17 +169,19 @@ class BotTickMixin:
                         self._monthly_dd_paused = True
                         self._dd_paused = True
                         logger.critical(f"🚨 DD MENSUEL CRITIQUE {monthly_dd_pct:.1f}% ≥ 15% — pause totale")
-                        self.telegram.send_message(
-                            f"🚨 <b>DD MENSUEL CRITIQUE — {monthly_dd_pct:.1f}%</b>\n"
-                            f"Seuil 15% atteint. Bot en pause jusqu'au 1er du mois."
-                        )
+                        if self.telegram.router:
+                            self.telegram.router.send_risk(
+                                f"🚨 <b>DD MENSUEL CRITIQUE — {monthly_dd_pct:.1f}%</b>\n"
+                                f"Seuil 15% atteint. Bot en pause jusqu'au 1er du mois."
+                            )
                     elif monthly_dd_pct >= 10:
                         self._dd_paused = True
                         logger.warning(f"⚠️ DD mensuel {monthly_dd_pct:.1f}% ≥ 10% — pause 48h")
-                        self.telegram.send_message(
-                            f"⚠️ <b>DD Mensuel — {monthly_dd_pct:.1f}%</b>\n"
-                            f"Seuil 10% atteint. Pause trading 48h. Reprise demain."
-                        )
+                        if self.telegram.router:
+                            self.telegram.router.send_risk(
+                                f"⚠️ <b>DD Mensuel — {monthly_dd_pct:.1f}%</b>\n"
+                                f"Seuil 10% atteint. Pause trading 48h. Reprise demain."
+                            )
 
         # ── SPRINT 4 : Backup Supabase automatique (toutes les 5 min) ──────────
         # Survie au crash/redémarrage Railway sans perdre l'état des positions.
@@ -201,12 +204,13 @@ class BotTickMixin:
                 self._drift_size_reduced  = True
                 self._drift_reduced_until = now + timedelta(hours=48)
                 logger.warning("🔴 Drift détecté → taille réduite de 50% pour 48h")
-                self.telegram.send_message(
-                    "🔴 <b>Concept Drift détecté</b>\n"
-                    "La stratégie dérive par rapport au backtest.\n"
-                    "Taille des positions réduite de <b>50%</b> pour 48h.\n"
-                    "Optimisation auto planifiée dimanche prochain."
-                )
+                if self.telegram.router:
+                    self.telegram.router.send_risk(
+                        "🔴 <b>Concept Drift détecté</b>\n"
+                        "La stratégie dérive par rapport au backtest.\n"
+                        "Taille des positions réduite de <b>50%</b> pour 48h.\n"
+                        "Optimisation auto planifiée dimanche prochain."
+                    )
             elif self._drift_reduced_until and now > self._drift_reduced_until:
                 # Fin de la période de réduction
                 self._drift_size_reduced  = False
@@ -221,11 +225,12 @@ class BotTickMixin:
             if self._last_hyperopt_week != cur_week:
                 self._last_hyperopt_week = cur_week
                 logger.info(f"⚙️  Auto-Optimisation hebdo S{cur_week} — lancement...")
-                self.telegram.send_message(
-                    f"⚙️ <b>Auto-Optimisation S{cur_week}</b>\n"
-                    f"Optuna en cours (30 trials × {len(CAPITAL_INSTRUMENTS)} instruments)...\n"
-                    f"Résultats dans ~10 minutes."
-                )
+                if self.telegram.router:
+                    self.telegram.router.send_performance(
+                        f"⚙️ <b>Auto-Optimisation S{cur_week}</b>\n"
+                        f"Optuna en cours (30 trials × {len(CAPITAL_INSTRUMENTS)} instruments)...\n"
+                        f"Résultats dans ~10 minutes."
+                    )
                 import threading
                 def _run_optimizer():
                     try:
@@ -250,9 +255,10 @@ class BotTickMixin:
                     try:
                         report = self.ab.weekly_report()
                         winner = self.ab.global_winner()
-                        self.telegram.send_message(
-                            f"{report}\n🏆 Variante globale : <b>{winner}</b>"
-                        )
+                        if self.telegram.router:
+                            self.telegram.router.send_performance(
+                                f"{report}\n🏆 Variante globale : <b>{winner}</b>"
+                            )
                     except Exception as _ab_e:
                         logger.debug(f"AB weekly: {_ab_e}")
 
@@ -274,14 +280,15 @@ class BotTickMixin:
                 pnl_push = round(bal_push - self.initial_balance, 2) if bal_push > 0 else 0.0
                 pnl_pct_push = (pnl_push / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
                 session_icon = "🇬🇧" if current_session == "London" else "🇺🇸"
-                self.telegram.send_message(
-                    f"{session_icon} <b>Session {current_session} ouverte</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"💰 Balance : <b>{bal_push:,.2f}€</b>\n"
-                    f"📊 PnL total : <b>{pnl_push:+.2f}€ ({pnl_pct_push:+.1f}%)</b>\n"
-                    f"🤖 Bot : 🟢 ACTIF — scanning {len(CAPITAL_INSTRUMENTS)} instruments\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━"
-                )
+                if self.telegram.router:
+                    self.telegram.router.send_dashboard(
+                        f"{session_icon} <b>Session {current_session} ouverte</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"💰 Balance : <b>{bal_push:,.2f}€</b>\n"
+                        f"📊 PnL total : <b>{pnl_push:+.2f}€ ({pnl_pct_push:+.1f}%)</b>\n"
+                        f"🤖 Bot : 🟢 ACTIF — scanning {len(CAPITAL_INSTRUMENTS)} instruments\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━"
+                    )
                 logger.info(f"{session_icon} Session {current_session} ouverte — alerte Telegram envoyée")
             except Exception as _e:
                 logger.debug(f"Auto-push session : {_e}")
@@ -310,12 +317,13 @@ class BotTickMixin:
                 dd_pct = (self._daily_start_balance - cur_bal) / self._daily_start_balance * 100
                 if dd_pct >= self.DAILY_DD_LIMIT:
                     self._dd_paused = True
-                    self.telegram.send_message(
-                        f"🚨 <b>DRAWDOWN JOURNALIER ATTEINT</b>\n"
-                        f"Balance : <code>{cur_bal:,.2f}€</code>\n"
-                        f"DD : <b>{dd_pct:.1f}%</b> (limite : {self.DAILY_DD_LIMIT:.1f}%)\n"
-                        f"⏸️ Trading suspendu jusqu'à demain."
-                    )
+                    if self.telegram.router:
+                        self.telegram.router.send_risk(
+                            f"🚨 <b>DRAWDOWN JOURNALIER ATTEINT</b>\n"
+                            f"Balance : <code>{cur_bal:,.2f}€</code>\n"
+                            f"DD : <b>{dd_pct:.1f}%</b> (limite : {self.DAILY_DD_LIMIT:.1f}%)\n"
+                            f"⏸️ Trading suspendu jusqu'à demain."
+                        )
                     logger.warning(f"🚨 DD journalier {dd_pct:.1f}% — trading suspendu")
 
         # ── Morning Brief (07h00 UTC) ─────────────────────────────────────────
@@ -339,10 +347,12 @@ class BotTickMixin:
 
         # ── Rapport journalier (20h UTC) + hebdo (21h UTC) ───────────────
         if self.reporter.should_send_report():
-            self.telegram.send_message(self.reporter.build_report())
+            if self.telegram.router:
+                self.telegram.router.send_performance(self.reporter.build_report())
             self.reporter.mark_report_sent()
         if self.reporter.should_send_weekly():
-            self.telegram.send_message(self.reporter.build_weekly_report())
+            if self.telegram.router:
+                self.telegram.router.send_performance(self.reporter.build_weekly_report())
             self.reporter.mark_weekly_sent()
 
         # ── Sprint 5 : Rapport visuel PNG journalier (20h UTC) ────────────
