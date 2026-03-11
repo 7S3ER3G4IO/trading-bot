@@ -326,14 +326,14 @@ class BotSignalsMixin:
             )
             def _do_send_card():
                 img = generate_signal_card(**_card_args)
-                if img:
+                if img and self.telegram.router:
                     caption = (
                         f"📸 <b>{'🟢 BUY' if direction == 'BUY' else '🔴 SELL'} "
                         f"{name}</b>  |  Score {score}/7\n"
                         f"💰 Entry: {entry:.5f}  |  SL: {sl:.5f}\n"
                         f"🎯 TP1: {tp1:.5f}  TP2: {tp2:.5f}  TP3: {tp3:.5f}"
                     )
-                    self.telegram.send_photo(img, caption=caption)
+                    self.telegram.router.send_photo_to("trades", img, caption=caption)
             threading.Thread(target=_do_send_card, daemon=True).start()
         except Exception as _kex:
             logger.debug(f"Signal card: {_kex}")

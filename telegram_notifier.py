@@ -185,7 +185,7 @@ class TelegramNotifier:
         self, tp_num: int, symbol: str, price: float, entry: float,
         pnl_gross: float, fees: float, balance: float,
         remaining_qty: float, be_activated: bool = False,
-        markup=None,
+        markup=None, open_time=None, sl: float = 0.0,
     ):
         """Push premium → canal Trades."""
         name = self._ticker(symbol)
@@ -203,6 +203,21 @@ class TelegramNotifier:
             be_activated=be_activated,
             win_streak=self.gamification.win_streak, wr=wr,
         )
+        # Premium: duration + R:R
+        extras = []
+        if open_time:
+            from telegram_capital import _format_duration
+            dur = _format_duration(open_time)
+            if dur:
+                extras.append(dur)
+        if sl and sl != 0:
+            from telegram_capital import _calc_rr
+            rr = _calc_rr(entry, price, sl)
+            if rr:
+                extras.append(rr)
+        if extras:
+            text += "\n" + "  ·  ".join(extras)
+
         if self.router:
             self.router.send_trade(text)
 
@@ -212,7 +227,8 @@ class TelegramNotifier:
                 self.router.send_stats(NF.format_achievement_unlocked(ach["name"], ach["desc"]))
 
     def notify_tp3_closed(self, symbol: str, price: float, entry: float,
-                          pnl_gross: float, fees: float, balance: float):
+                          pnl_gross: float, fees: float, balance: float,
+                          open_time=None, sl: float = 0.0):
         """Push → canal Trades."""
         name = self._ticker(symbol)
         pnl_net = pnl_gross - fees
@@ -224,6 +240,21 @@ class TelegramNotifier:
             name=name, entry=entry, price=price,
             pnl_net=pnl_net, balance=balance,
         )
+        # Premium: duration + R:R
+        extras = []
+        if open_time:
+            from telegram_capital import _format_duration
+            dur = _format_duration(open_time)
+            if dur:
+                extras.append(dur)
+        if sl and sl != 0:
+            from telegram_capital import _calc_rr
+            rr = _calc_rr(entry, price, sl)
+            if rr:
+                extras.append(rr)
+        if extras:
+            text += "\n" + "  ·  ".join(extras)
+
         if self.router:
             self.router.send_trade(text)
 
@@ -233,7 +264,8 @@ class TelegramNotifier:
 
     def notify_sl_hit(
         self, symbol: str, price: float, entry: float,
-        is_be: bool, pnl_gross: float, fees: float, balance: float
+        is_be: bool, pnl_gross: float, fees: float, balance: float,
+        open_time=None, sl: float = 0.0,
     ):
         """Push → canal Trades."""
         name = self._ticker(symbol)
@@ -261,6 +293,13 @@ class TelegramNotifier:
                 if self.router:
                     self.router.send_stats(NF.format_achievement_unlocked(ach["name"], ach["desc"]))
 
+        # Premium: duration
+        if open_time:
+            from telegram_capital import _format_duration
+            dur = _format_duration(open_time)
+            if dur:
+                text += f"\n{dur}"
+
         if self.router:
             self.router.send_trade(text)
 
@@ -268,7 +307,8 @@ class TelegramNotifier:
         self, symbol: str, reason: str,
         total_pnl_gross: float, total_fees: float,
         balance: float, initial_balance: float,
-        entry: float, exit_price: float, daily_summary: str
+        entry: float, exit_price: float, daily_summary: str,
+        open_time=None, sl: float = 0.0,
     ):
         """Push → canal Trades."""
         name = self._ticker(symbol)
@@ -277,11 +317,25 @@ class TelegramNotifier:
         emoji = "✅" if net >= 0 else "❌"
 
         header = R.box_header(f"{emoji} TRADE CLÔTURÉ — {name}")
+        extras = []
+        if open_time:
+            from telegram_capital import _format_duration
+            dur = _format_duration(open_time)
+            if dur:
+                extras.append(dur)
+        if sl and sl != 0:
+            from telegram_capital import _calc_rr
+            rr = _calc_rr(entry, exit_price, sl)
+            if rr:
+                extras.append(rr)
+        extra_line = f"\n{'  ·  '.join(extras)}" if extras else ""
+
         text = (
             f"{header}\n\n"
             f"<code>{entry:,.5f}</code> ➜ <code>{exit_price:,.5f}</code>  ({pct_move:.2f}%)\n"
             f"📌 Raison : {reason}\n\n"
             f"💰 {R.format_pnl(net)}  ·  💼 {balance:,.2f}€"
+            f"{extra_line}"
         )
         if self.router:
             self.router.send_trade(text)

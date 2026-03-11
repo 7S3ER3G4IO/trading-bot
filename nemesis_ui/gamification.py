@@ -151,6 +151,113 @@ class GamificationTracker:
             lines.append(f"{status} {ach['name']} — {ach['desc']}")
         return "\n".join(lines)
 
+    def confidence_score(self) -> tuple:
+        """
+        Bot confidence score (0-100%) based on recent performance.
+        Returns (score, emoji, label).
+        """
+        if self.total_trades < 3:
+            return (50, "⚪", "En attente")
+
+        # WR component (0-40 pts)
+        wr = self.total_wins / self.total_trades * 100
+        wr_pts = min(wr * 0.4, 40)
+
+        # Streak component (0-30 pts)
+        if self.win_streak >= 5:
+            streak_pts = 30
+        elif self.win_streak >= 3:
+            streak_pts = 20
+        elif self.win_streak >= 1:
+            streak_pts = 10
+        else:
+            streak_pts = max(0, 10 - self.loss_streak * 5)
+
+        # Consistency component (0-30 pts)
+        consistency_pts = min(self.positive_days_streak * 6, 30)
+
+        score = int(wr_pts + streak_pts + consistency_pts)
+        score = max(0, min(100, score))
+
+        if score >= 80:
+            return (score, "🟢", "Excellent")
+        elif score >= 60:
+            return (score, "🟡", "Bon")
+        elif score >= 40:
+            return (score, "🟠", "Moyen")
+        else:
+            return (score, "🔴", "Prudence")
+
+    def build_monthly_leaderboard(self, trades_this_month: list = None) -> str:
+        """
+        Generates monthly leaderboard for Stats channel.
+        trades_this_month: list of dicts with {symbol, pnl, result, session}
+        """
+        from nemesis_ui.renderer import NemesisRenderer as _R
+
+        d = datetime.now(timezone.utc)
+        months = ["Janvier","Février","Mars","Avril","Mai","Juin",
+                  "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
+        month_name = months[d.month - 1]
+
+        header = _R.box_header(f"🏆 LEADERBOARD — {month_name}")
+
+        # Global stats
+        wr = (self.total_wins / self.total_trades * 100) if self.total_trades > 0 else 0
+        conf_score, conf_emoji, conf_label = self.confidence_score()
+
+        text = (
+            f"{header}\n\n"
+            f"📊 <b>Stats globales</b>\n"
+            f"  Trades : {self.total_trades}  ·  WR : <b>{wr:.0f}%</b>\n"
+            f"  💰 PnL total : <b>{self.total_pnl:+.2f}€</b>\n"
+            f"  🔥 Meilleur streak : {self.best_win_streak} wins\n"
+            f"  💎 Meilleur jour : {self.best_day_pnl:+.2f}€\n"
+            f"  {conf_emoji} Confiance : <b>{conf_score}%</b> ({conf_label})\n"
+        )
+
+        # Per-instrument stats if available
+        if trades_this_month:
+            instrument_stats = {}
+            for t in trades_this_month:
+                sym = t.get("symbol", "?")
+                pnl = t.get("pnl", 0)
+                won = pnl > 0
+                if sym not in instrument_stats:
+                    instrument_stats[sym] = {"trades": 0, "wins": 0, "pnl": 0.0}
+                instrument_stats[sym]["trades"] += 1
+                instrument_stats[sym]["pnl"] += pnl
+                if won:
+                    instrument_stats[sym]["wins"] += 1
+
+            # Sort by PnL
+            sorted_instrs = sorted(instrument_stats.items(), key=lambda x: x[1]["pnl"], reverse=True)
+
+            if sorted_instrs:
+                text += "\n📈 <b>Top instruments</b>\n"
+                medals = ["🥇", "🥈", "🥉"]
+                for idx, (sym, stats) in enumerate(sorted_instrs[:5]):
+                    medal = medals[idx] if idx < 3 else f" {idx+1}."
+                    iwr = (stats["wins"] / stats["trades"] * 100) if stats["trades"] > 0 else 0
+                    text += f"  {medal} <b>{sym}</b> : {stats['pnl']:+.2f}€  ({stats['trades']}t · {iwr:.0f}%)\n"
+
+                # Worst instrument
+                if len(sorted_instrs) > 1:
+                    worst_sym, worst_stats = sorted_instrs[-1]
+                    if worst_stats["pnl"] < 0:
+                        text += f"\n  📉 Pire : <b>{worst_sym}</b> {worst_stats['pnl']:+.2f}€\n"
+
+        # Achievements unlocked count
+        total_ach = len(ACHIEVEMENTS)
+        unlocked_count = len(self.unlocked)
+        text += (
+            f"\n🏅 Achievements : {unlocked_count}/{total_ach}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<i>Prochain leaderboard : 1er du mois 🗓</i>"
+        )
+
+        return text
+
     # ── Persistence ───────────────────────────────────────────────────────────
 
     def _save(self):

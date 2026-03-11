@@ -32,9 +32,10 @@ class NemesisHub:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def send_hub(self, balance: float = 0.0, pnl_today: float = 0.0,
-                 open_positions: int = 0, equity_data: list = None) -> Optional[int]:
+                 open_positions: int = 0, equity_data: list = None,
+                 confidence: tuple = None) -> Optional[int]:
         """Send the main Hub message with URL buttons and pin it."""
-        text = self._build_hub_text(balance, pnl_today, open_positions, equity_data)
+        text = self._build_hub_text(balance, pnl_today, open_positions, equity_data, confidence)
         markup = self._build_url_keyboard()
         msg_id = self._send_message(text, markup)
         if msg_id:
@@ -45,12 +46,13 @@ class NemesisHub:
         return msg_id
 
     def refresh_hub(self, balance: float = 0.0, pnl_today: float = 0.0,
-                    open_positions: int = 0, equity_data: list = None):
+                    open_positions: int = 0, equity_data: list = None,
+                    confidence: tuple = None):
         """Edit the Hub message in-place with fresh data."""
         if not self._hub_message_id:
-            self.send_hub(balance, pnl_today, open_positions, equity_data)
+            self.send_hub(balance, pnl_today, open_positions, equity_data, confidence)
             return
-        text = self._build_hub_text(balance, pnl_today, open_positions, equity_data)
+        text = self._build_hub_text(balance, pnl_today, open_positions, equity_data, confidence)
         markup = self._build_url_keyboard()
         self._edit_message(self._hub_message_id, text, markup)
 
@@ -62,7 +64,8 @@ class NemesisHub:
 
     @staticmethod
     def _build_hub_text(balance: float = 0.0, pnl_today: float = 0.0,
-                        open_positions: int = 0, equity_data: list = None) -> str:
+                        open_positions: int = 0, equity_data: list = None,
+                        confidence: tuple = None) -> str:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         time_str = now.strftime("%H:%M UTC")
@@ -92,6 +95,12 @@ class NemesisHub:
         # Positions
         pos_line = f"📋 {open_positions} position{'s' if open_positions != 1 else ''} ouverte{'s' if open_positions != 1 else ''}" if open_positions > 0 else "📋 Aucune position"
 
+        # Confidence score
+        conf_line = ""
+        if confidence:
+            conf_score, conf_emoji, conf_label = confidence
+            conf_line = f"\n🎢 Confiance : {conf_emoji} <b>{conf_score}%</b> ({conf_label})"
+
         return (
             "┌─────────────────────────────┐\n"
             "│  ⚡ NEMESIS COMMAND CENTER   │\n"
@@ -102,6 +111,7 @@ class NemesisHub:
             f"💰 {balance:,.2f}€  ·  {pnl_emoji} {pnl_sign}{pnl_today:,.2f}€\n"
             f"{pos_line}\n"
             f"⏭ {next_sess}"
+            f"{conf_line}"
             f"{sparkline}\n"
             "\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"

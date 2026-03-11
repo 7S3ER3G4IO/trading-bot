@@ -303,15 +303,29 @@ class BotTickMixin:
                 pnl_today_hb = sum(t.get("pnl", 0) for t in self._capital_closed_today)
                 open_count = sum(1 for s in self.capital_trades.values() if s is not None)
                 equity_vals = [e["v"] for e in self._equity_history[-12:]] if hasattr(self, '_equity_history') and self._equity_history else []
+                conf = self.telegram.gamification.confidence_score() if self.telegram.gamification else None
                 if self.telegram.hub:
                     self.telegram.hub.refresh_hub(
                         balance=bal_hb,
                         pnl_today=round(pnl_today_hb, 2),
                         open_positions=open_count,
                         equity_data=equity_vals,
+                        confidence=conf,
                     )
             except Exception as _e:
                 logger.debug(f"Hub refresh heartbeat : {_e}")
+
+        # ── Monthly leaderboard → Stats (1er du mois à 10h UTC) ──────────
+        if now.day == 1 and h_utc == 10 and today != getattr(self, '_last_leaderboard_day', ''):
+            self._last_leaderboard_day = today
+            try:
+                lb = self.telegram.gamification.build_monthly_leaderboard(
+                    trades_this_month=self._capital_closed_today,
+                )
+                if self.telegram.router:
+                    self.telegram.router.send_stats(lb, silent=False)
+            except Exception as _lb_e:
+                logger.debug(f"Monthly leaderboard: {_lb_e}")
 
         # ── Vérification drawdown journalier ─────────────────────────────
         if not self._dd_paused and self.capital.available:

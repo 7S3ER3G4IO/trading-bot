@@ -35,6 +35,33 @@ def _progress_bar(current: float, sl: float, tp: float, width: int = 10) -> str:
     return R.progress_bar(current, sl, tp, width)
 
 
+def _format_duration(open_time) -> str:
+    """Format trade duration as human-readable string."""
+    if not open_time:
+        return ""
+    try:
+        from datetime import datetime, timezone
+        delta = datetime.now(timezone.utc) - open_time
+        total_min = int(delta.total_seconds() / 60)
+        if total_min < 60:
+            return f"⏱ {total_min}min"
+        hours = total_min // 60
+        mins = total_min % 60
+        return f"⏱ {hours}h{mins:02d}min"
+    except Exception:
+        return ""
+
+
+def _calc_rr(entry: float, exit_price: float, sl: float) -> str:
+    """Calculate actual R:R achieved."""
+    risk = abs(entry - sl)
+    if risk == 0:
+        return ""
+    reward = abs(exit_price - entry)
+    rr = reward / risk
+    return f"📐 R:R réel : <b>{rr:.1f}x</b>"
+
+
 def _send_to_channel(channel: str, text: str):
     """Route to the correct dedicated channel."""
     if _router:

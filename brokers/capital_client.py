@@ -499,15 +499,37 @@ class CapitalClient:
                 timeout=15,
             )
             if r.status_code >= 400:
-                # Log le body de la réponse pour diagnostic
                 try:
                     err_body = r.json()
                 except Exception:
                     err_body = r.text[:300]
-                logger.error(
-                    f"❌ Capital.com place_order {epic}: HTTP {r.status_code} | "
-                    f"Body: {err_body} | Payload: {data}"
-                )
+
+                # Auto-retry with guaranteedStop=True if broker requires it
+                err_code = err_body.get("errorCode", "") if isinstance(err_body, dict) else str(err_body)
+                if "guaranteed-stop-loss" in str(err_code).lower():
+                    logger.info(f"🔄 {epic}: guaranteed stop requis — retry avec guaranteedStop=True")
+                    data["guaranteedStop"] = True
+                    r = self._session.post(
+                        f"{self._base_url}/positions",
+                        headers=self._headers(),
+                        json=data,
+                        timeout=15,
+                    )
+                    if r.status_code >= 400:
+                        try:
+                            err_body = r.json()
+                        except Exception:
+                            err_body = r.text[:300]
+                        logger.error(
+                            f"❌ Capital.com place_order {epic} (retry): HTTP {r.status_code} | "
+                            f"Body: {err_body} | Payload: {data}"
+                        )
+                        return None
+                else:
+                    logger.error(
+                        f"❌ Capital.com place_order {epic}: HTTP {r.status_code} | "
+                        f"Body: {err_body} | Payload: {data}"
+                    )
                 return None
             r.raise_for_status()
             resp     = r.json()
