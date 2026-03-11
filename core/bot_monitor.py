@@ -206,6 +206,9 @@ class BotMonitorMixin:
                     if result == "LOSS":
                         _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
                         self.risk.record_loss(instrument, category=_cat)
+                    # R-1: Record trade result for Kelly tracker
+                    _risk_amt = abs(entry - state.get("sl", entry)) * size_per * n_positions
+                    self.risk.record_trade_result(instrument, pnl_est, _risk_amt)
                     # F-6: also track monthly for leaderboard
                     self._capital_closed_month.append({
                         "instrument": instrument,

@@ -120,6 +120,10 @@ class BotSignalsMixin:
             logger.info(f"⛔ {instrument} bloqué par RiskManager (DD/Kill-Switch/catégorie)")
             return
 
+        # R-2: Currency exposure check
+        if not self.risk.check_currency_exposure(instrument, sig, self.capital_trades):
+            return
+
         # Protection Model : blacklist après 3 SL consécutifs
         if self.protection.is_blocked(instrument):
             return
@@ -197,9 +201,14 @@ class BotSignalsMixin:
             )
             return
 
-        # Taille totale puis split en 3 (0.5% du capital total)
+        # R-1: Dynamic Kelly sizing (remplace risk_pct fixe à 0.5%)
+        atr_20_avg = float(df["atr"].tail(20).mean()) if "atr" in df.columns and len(df) >= 20 else atr_val
+        dynamic_risk = self.risk.compute_risk_pct(
+            instrument=instrument, score=score,
+            current_atr=atr_val, avg_atr=atr_20_avg
+        )
         total_size = self.capital.position_size(
-            balance=balance, risk_pct=0.005, entry=entry, sl=sl, epic=instrument
+            balance=balance, risk_pct=dynamic_risk, entry=entry, sl=sl, epic=instrument
         )
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 1.0)
         size1 = max(min_sz, round(total_size / 3, 2))
