@@ -14,7 +14,11 @@ from config import LOOP_INTERVAL_SECONDS, DAILY_REPORT_HOUR_UTC, MAX_OPEN_TRADES
 from strategy import Strategy, SIGNAL_BUY, SIGNAL_SELL, SIGNAL_HOLD
 from risk_manager import RiskManager
 from telegram_notifier import TelegramNotifier
-from telegram_bot_handler import TelegramBotHandler, InlineKeyboardMarkup
+from telegram_bot_handler import TelegramBotHandler
+try:
+    from telegram import InlineKeyboardMarkup
+except ImportError:
+    InlineKeyboardMarkup = None
 from daily_reporter import DailyReporter
 from economic_calendar import EconomicCalendar
 from market_context import MarketContext
