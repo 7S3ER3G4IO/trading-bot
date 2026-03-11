@@ -226,9 +226,7 @@ class CapitalClient:
                     self._token    = r.headers.get("X-SECURITY-TOKEN")
                     self._auth_ts  = time.time()
                     self._base_url = url
-                    tag = "" if url == primary else (
-                          " (fallback opposé)" if url == opposite else " (open-api fallback)"
-                    )
+                    tag = "" if url == primary else " (open-api fallback)"
                     logger.info(f"🏦 Capital.com connecté ({env}){tag} ✅ — {url}")
                     return bool(self._cst and self._token)
                 except Exception as e:

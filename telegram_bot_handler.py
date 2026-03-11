@@ -209,17 +209,11 @@ class TelegramBotHandler:
 
         elif cmd == "/hyperopt":
             self._reply(
-                "⚙️ <b>Auto-Hyperopt lancé</b>\n"
-                "<code>Optimisation en arrière-plan...\n"
-                "Résultats dans ~60 secondes.</code>"
+                "⚙️ <b>Optimisation</b>\n"
+                "<code>L'optimiseur automatique a été remplacé par\n"
+                "l'AB Tester intégré (Feature U).\n"
+                "Les paramètres s'ajustent automatiquement.</code>"
             )
-            import threading, subprocess, sys
-            def _go():
-                subprocess.run(
-                    [sys.executable, "optimizer.py", "--days", "14", "--trials", "50"],
-                    capture_output=True, timeout=300
-                )
-            threading.Thread(target=_go, daemon=True).start()
 
         elif cmd == "/pairlist":
             self._reply(

@@ -174,6 +174,7 @@ class LSTMPredictor:
             return False
 
         Xs, ys = _make_sequences(X, y, SEQ_LEN)
+        import numpy as np  # lazy import (Railway numpy._globals fix)
         if len(np.unique(ys)) < 2:
             logger.debug("LSTM train: une seule classe dans les labels")
             return False
