@@ -106,11 +106,11 @@ class MarketContext:
         return (
             f"☀️ <b>Nemesis — Morning Brief</b>\n"
             f"<b>{date_str.capitalize()}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f""
             f"{fg_line}\n"
             f"📊 Tendance Daily : <code>{self._daily_trend}</code>\n"
             f"💰 Capital : <code>{balance:,.2f} €</code>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f""
             f"{news_line}\n"
             f"🟢 <b>Bot actif — Bonne journée !</b>"
         )

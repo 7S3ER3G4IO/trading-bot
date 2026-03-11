@@ -11,12 +11,8 @@ class NemesisRenderer:
     # ── Box Header ────────────────────────────────────────────────────────────
     @staticmethod
     def box_header(title: str) -> str:
-        """Encadré premium pour les headers de section."""
-        width = max(len(title) + 4, 29)
-        top = "┌" + "─" * width + "┐"
-        bot = "└" + "─" * width + "┘"
-        inner = "│  " + title.ljust(width - 3) + "│"
-        return f"{top}\n{inner}\n{bot}"
+        """Header propre et lisible sur mobile (push notifications)."""
+        return f"<b>{title}</b>"
 
     # ── Sparkline ─────────────────────────────────────────────────────────────
     @staticmethod
@@ -130,4 +126,4 @@ class NemesisRenderer:
         return "Hors session 🌙"
 
     # ── Separator ─────────────────────────────────────────────────────────────
-    SEP = "━━━━━━━━━━━━━━━━━━━━━━━"
+    SEP = ""

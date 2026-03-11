@@ -149,9 +149,8 @@ class BotCommandsMixin:
                 lines.append(f"  {inst}: ⚠️ {str(e)[:30]}")
         body = "\n".join(lines)
         return (
-            f"🧠 <b>Régimes HMM ({len(active_instruments)} positions)</b>\n"
-            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{body}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+            f"🧠 <b>Régimes HMM ({len(active_instruments)} positions)</b>\n\n"
+            f"<code>{body}</code>"
         )
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -196,18 +195,14 @@ class BotCommandsMixin:
 
         ctx = self.context.get_context_line() if hasattr(self.context, 'get_context_line') else ""
         return (
-            f"⚡ <b>NEMESIS — Statut</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ <b>NEMESIS — Statut</b>\n\n"
             f"💰 Balance : <b>{bal_str}</b>\n"
             f"  PnL total  : <b>{pnl_total:+.2f}€ ({pnl_pct:+.1f}%)</b>\n"
-            f"  Non-réalisé : <b>{total_unrealized:+.2f}€</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"  Non-réalisé : <b>{total_unrealized:+.2f}€</b>\n\n"
             f"📊 Positions ouvertes : <b>{cap_open}/{len(CAPITAL_INSTRUMENTS)}</b>\n"
             f"{cap_lines}"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📈 Equity : PnL={equity_pct:+.1f}%  MaxDD={max_dd:.1f}%  CB={cb_status}\n"
+            f"\n📈 Equity : PnL={equity_pct:+.1f}%  MaxDD={max_dd:.1f}%  CB={cb_status}\n"
             f"🤖 État : {paused}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ctx}"
         )
 
@@ -242,7 +237,7 @@ class BotCommandsMixin:
         if not lines:
             return "📋 <b>Aucune position ouverte.</b>", None
 
-        text   = "📋 <b>Positions actives :</b>\n━━━━━━━━━━━━━━━━━━━━━━━\n" + "\n\n".join(lines)
+        text   = "📋 <b>Positions actives :</b>\n\n" + "\n\n".join(lines)
         markup = TelegramBotHandler.trade_keyboard(markup_epic) if markup_epic else None
         return text, markup
 

@@ -102,9 +102,7 @@ class NemesisHub:
             conf_line = f"\n🎢 Confiance : {conf_emoji} <b>{conf_score}%</b> ({conf_label})"
 
         return (
-            "┌─────────────────────────────┐\n"
-            "│  ⚡ NEMESIS COMMAND CENTER   │\n"
-            "└─────────────────────────────┘\n"
+            "⚡ <b>NEMESIS COMMAND CENTER</b>\n"
             "\n"
             f"🟢 ONLINE  ·  {time_str}\n"
             "\n"
@@ -114,7 +112,6 @@ class NemesisHub:
             f"{conf_line}"
             f"{sparkline}\n"
             "\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "👇 Accède à tes canaux dédiés :\n"
         )
 

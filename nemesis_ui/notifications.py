@@ -37,14 +37,12 @@ class NotificationFormatter:
             f"{header}\n\n"
             f"{direction}  ·  <b>{name}</b>  ·  {session}\n"
             f"{score_bar}  Score {score}/3  ·  {rr}\n\n"
-            f"╭── NIVEAUX ─────────────────╮\n"
-            f"│ 📍 Entrée  <code>{entry:,.5f}</code>\n"
-            f"│\n"
-            f"│ 🎯 TP1  <code>{tp1:,.5f}</code>  (+{pct(tp1):.2f}%)\n"
-            f"│ 🎯 TP2  <code>{tp2:,.5f}</code>  (+{pct(tp2):.2f}%)\n"
-            f"│ 🎯 TP3  Trailing\n"
-            f"│ 🛑 SL   <code>{sl:,.5f}</code>  (-{pct(sl):.2f}%)\n"
-            f"╰────────────────────────────╯\n\n"
+            f"📍 <b>Niveaux</b>\n"
+            f"  📍 Entrée  <code>{entry:,.5f}</code>\n"
+            f"  🎯 TP1  <code>{tp1:,.5f}</code>  (+{pct(tp1):.2f}%)\n"
+            f"  🎯 TP2  <code>{tp2:,.5f}</code>  (+{pct(tp2):.2f}%)\n"
+            f"  🎯 TP3  Trailing\n"
+            f"  🛑 SL   <code>{sl:,.5f}</code>  (-{pct(sl):.2f}%)\n\n"
             f"🔬 {' · '.join(confirmations[:4]) if confirmations else '—'}"
             f"{streak_str}"
             f"{spark}"
@@ -225,9 +223,8 @@ class NotificationFormatter:
             global_bias = f"⚪ MIXTE · {bull} 🟢 / {bear} 🔴"
 
         lines.append("")
-        lines.append(f"╭── BIAIS GLOBAL ────────────╮")
-        lines.append(f"│ {global_bias}")
-        lines.append(f"╰────────────────────────────╯")
+        lines.append(f"🌍 <b>BIAIS GLOBAL</b>")
+        lines.append(f"  {global_bias}")
         lines.append(f"\n🤖 {len(analyses)} instruments · Score ≥2 requis")
 
         return "\n".join(lines)
@@ -270,15 +267,15 @@ class NotificationFormatter:
         if achievement:
             ach_line = f"\n🏅 Achievement : {achievement}"
 
+        streak_line = f"  Streak {streak_str}\n" if streak_str else ""
         return (
             f"{header}\n\n"
             f"🏆 TRADES DU JOUR\n"
             f"{trades_block}\n\n"
-            f"╭── PERFORMANCE ─────────────╮\n"
-            f"│ WR     {wr:.0f}% {R.wr_bar(wr)} {wins}/{total}\n"
-            f"│ PnL    {R.format_pnl(pnl_total)}  ({pnl_pct:+.2f}%)\n"
-            + (f"│ Streak {streak_str}\n" if streak_str else "")
-            + f"╰────────────────────────────╯"
+            f"📊 <b>Performance</b>\n"
+            f"  WR     {wr:.0f}% {R.wr_bar(wr)} {wins}/{total}\n"
+            f"  PnL    {R.format_pnl(pnl_total)}  ({pnl_pct:+.2f}%)\n"
+            f"{streak_line}"
             f"{equity_spark}\n\n"
             f"📊 Semaine : {R.format_pnl(weekly_pnl)} · WR {weekly_wr:.0f}%"
             f"{ach_line}"

@@ -556,7 +556,7 @@ class CapitalClient:
                         f"❌ Capital.com place_order {epic}: HTTP {r.status_code} | "
                         f"Body: {err_body} | Payload: {data}"
                     )
-                return None
+                    return None
             r.raise_for_status()
             resp     = r.json()
             deal_ref = resp.get("dealReference")

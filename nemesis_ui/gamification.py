@@ -252,7 +252,6 @@ class GamificationTracker:
         unlocked_count = len(self.unlocked)
         text += (
             f"\n🏅 Achievements : {unlocked_count}/{total_ach}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"<i>Prochain leaderboard : 1er du mois 🗓</i>"
         )
 
