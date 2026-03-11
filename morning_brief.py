@@ -30,9 +30,10 @@ from loguru import logger
 
 try:
     from brokers.capital_client import CapitalClient
-    from optimizer import precompute
+    from strategy import Strategy
+    _brief_strategy = Strategy()
 except ImportError:
-    logger.error("morning_brief: capital_client/optimizer introuvable")
+    logger.error("morning_brief: capital_client/strategy introuvable")
 
 
 # ─── Graphique chandelier ─────────────────────────────────────────────────────
@@ -329,7 +330,7 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
             if df is None or df.empty:
                 logger.warning(f"🌅 Matinale — {symbol} : pas de données")
                 continue
-            df = precompute(df)
+            df = _brief_strategy.compute_indicators(df)
             a  = analyze_asset(symbol, df)
             analyses.append((symbol, df, a))
         except Exception as e:
