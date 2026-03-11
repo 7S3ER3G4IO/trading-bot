@@ -460,7 +460,18 @@ class BotSignalsMixin:
         if sig == "HOLD" or score < 0.40:
             return
 
-        logger.info(f"⚡ MICRO-TF {micro_key} [{_strat}] {sig} score={score:.2f}")
+        # Wave 17: Micro-TF overlap bonus — more permissive during peak liquidity
+        _micro_overlap = False
+        try:
+            if self.context.is_overlap():
+                _micro_overlap = True
+                # Lower threshold during overlap — higher liquidity = better fills
+                if sig == "HOLD" and score >= 0.35:
+                    sig = "BUY" if score > 0 else sig  # already filtered above
+        except Exception:
+            pass
+
+        logger.info(f"⚡ MICRO-TF {micro_key} [{_strat}] {sig} score={score:.2f}{' 🔥OVL' if _micro_overlap else ''}")
 
         # Risk and position checks
         balance_for_risk = self.capital.get_balance() or balance

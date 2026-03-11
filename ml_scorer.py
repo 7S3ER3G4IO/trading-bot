@@ -238,6 +238,16 @@ class MLScorer:
             self._last_train_time = time.time()
             self._save_model()
 
+            # Wave 17: Notify first training via Telegram
+            if not getattr(self, '_first_train_notified', False):
+                self._first_train_notified = True
+                try:
+                    from telegram_capital import notify_ml_trained
+                    _acc = accuracy if 'accuracy' in dir() else 0.0
+                    notify_ml_trained(samples=n, accuracy=_acc)
+                except Exception as _ml_notif_e:
+                    logger.debug(f"ML notif: {_ml_notif_e}")
+
         except Exception as e:
             logger.error(f"❌ ML training error: {e}")
 

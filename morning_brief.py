@@ -311,13 +311,31 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
     # ─── Message d'intro ─────────────────────────────────────────────────────
     if telegram_notifier:
         if telegram_notifier.router:
+            # Wave 17: Add regime and context info
+            regime_line = ""
+            try:
+                from market_context import MarketContext
+                ctx = MarketContext()
+                ctx.refresh_fear_greed()
+                fg = ctx._fg_value or 0
+                regime = ctx.regime
+                regime_emoji = {"RISK_ON": "🟢", "RISK_OFF": "🔴"}.get(regime, "⚪")
+                overlap = "🔥 OVERLAP actif" if ctx.is_overlap() else ""
+                regime_line = (
+                    f"\n🌍 Régime : {regime_emoji} <b>{regime}</b> | F&G : {fg}/100"
+                    + (f"\n📡 {overlap}" if overlap else "")
+                    + "\n"
+                )
+            except Exception:
+                pass
+
             telegram_notifier.router.send_briefing(
                 f"☀️ <b>Matinale du {date_str}</b>\n"
                 f"\n"
                 f"Bonjour à tous ! C'est reparti pour le point marché du matin.\n"
                 f"Voici l'analyse complète de chaque actif pour la session "
                 f"<b>London ({d.hour:02d}h UTC)</b>.\n"
-                f"\n"
+                f"{regime_line}\n"
                 f"Prenez le temps de lire chaque analyse avant de trader. "
                 f"Les niveaux clés sont à surveiller de près. 🎯"
             )
