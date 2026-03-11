@@ -16,7 +16,6 @@ except ImportError:
     InlineKeyboardButton = None
 from loguru import logger
 from dotenv import load_dotenv
-from config import WALLET_CHANNEL_URL
 
 # Nemesis UI imports
 from nemesis_ui.hub import NemesisHub
@@ -54,12 +53,7 @@ class TelegramNotifier:
 
     # ─── Helpers ──────────────────────────────────────────────────────────────
 
-    def _wallet_button(self):
-        if InlineKeyboardMarkup is None:
-            return None
-        return InlineKeyboardMarkup([[
-            InlineKeyboardButton("📊 Wallet en direct", url=WALLET_CHANNEL_URL)
-        ]])
+
 
     def _send(self, text: str, markup=None):
         """Send to MAIN bot channel (DM)."""
@@ -466,7 +460,7 @@ class TelegramNotifier:
         if self.hub:
             self.hub.refresh_hub(balance=balance, pnl_today=daily_pnl)
 
-    # ─── Legacy aliases ───────────────────────────────────────────────────────
+    # ─── Legacy aliases (kept for backward compatibility) ─────────────────────
 
     def notify(self, text: str, markup=None):
         self._send(text, markup)

@@ -310,16 +310,17 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
 
     # ─── Message d'intro ─────────────────────────────────────────────────────
     if telegram_notifier:
-        telegram_notifier._send(
-            f"☀️ <b>Matinale du {date_str}</b>\n"
-            f"\n"
-            f"Bonjour à tous ! C'est reparti pour le point marché du matin.\n"
-            f"Voici l'analyse complète de chaque actif pour la session "
-            f"<b>London ({d.hour:02d}h UTC)</b>.\n"
-            f"\n"
-            f"Prenez le temps de lire chaque analyse avant de trader. "
-            f"Les niveaux clés sont à surveiller de près. 🎯"
-        )
+        if telegram_notifier.router:
+            telegram_notifier.router.send_briefing(
+                f"☀️ <b>Matinale du {date_str}</b>\n"
+                f"\n"
+                f"Bonjour à tous ! C'est reparti pour le point marché du matin.\n"
+                f"Voici l'analyse complète de chaque actif pour la session "
+                f"<b>London ({d.hour:02d}h UTC)</b>.\n"
+                f"\n"
+                f"Prenez le temps de lire chaque analyse avant de trader. "
+                f"Les niveaux clés sont à surveiller de près. 🎯"
+            )
 
     # ─── Analyse par actif ───────────────────────────────────────────────────
     analyses = []
@@ -344,18 +345,20 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
             analysis    = format_analysis(a)
 
             if telegram_notifier:
-                telegram_notifier._send_photo(
-                    image_bytes=chart_bytes,
-                    caption=analysis,
-                )
+                if telegram_notifier.router and chart_bytes:
+                    telegram_notifier.router.send_photo_to(
+                        "briefing", chart_bytes, caption=analysis,
+                    )
+                elif telegram_notifier.router:
+                    telegram_notifier.router.send_briefing(analysis)
             else:
                 print(f"\n{'='*60}")
                 print(analysis)
         except Exception as e:
             logger.error(f"🌅 Matinale chart {symbol}: {e}")
             # Envoie au moins l'analyse texte si la photo échoue
-            if telegram_notifier:
-                telegram_notifier._send(format_analysis(a))
+            if telegram_notifier and telegram_notifier.router:
+                telegram_notifier.router.send_briefing(format_analysis(a))
 
     # ─── Conclusion globale ───────────────────────────────────────────────────
     if telegram_notifier and analyses:
@@ -375,7 +378,7 @@ def generate_morning_brief(symbols: list, telegram_notifier=None) -> None:
             for _, _, a in analyses
         ])
 
-        telegram_notifier._send(
+        telegram_notifier.router.send_briefing(
             f"📋 <b>SYNTHÈSE — Matinale du {date_str}</b>\n"
             f"\n"
             f"{actifs_summary}\n"
