@@ -273,6 +273,13 @@ class Strategy:
         broke_down = last_close < low_r  - BREAKOUT_MARGIN
 
         if not broke_up and not broke_down:
+            # Diagnostic: proximité au breakout (temporaire)
+            dist_up = ((high_r + BREAKOUT_MARGIN) - last_close) / last_close * 100
+            dist_dn = (last_close - (low_r - BREAKOUT_MARGIN)) / last_close * 100
+            logger.debug(
+                f"📏 {symbol} range={range_pct:.2f}% | close={last_close:.2f} "
+                f"| H={high_r:.2f}(+{dist_up:.2f}%) L={low_r:.2f}(-{dist_dn:.2f}%)"
+            )
             return SIGNAL_HOLD, 0, []
 
         sig = SIGNAL_BUY if broke_up else SIGNAL_SELL
