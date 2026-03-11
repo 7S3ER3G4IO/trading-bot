@@ -430,7 +430,7 @@ class Strategy:
         elif rsi >= rsi_hi and c >= bb_up * 0.995:
             sig = SIGNAL_SELL
         else:
-            return SIGNAL_HOLD, 0, []
+            return SIGNAL_HOLD, 0, [f"MR:RSI={rsi:.0f}(need≤{rsi_lo}/≥{rsi_hi})"]
 
         confirmations = []
         adx_val = float(curr.get("adx", 0))
@@ -477,7 +477,9 @@ class Strategy:
         elif ema20 < ema50 and macd < macd_s and adx_val > 18:
             sig = SIGNAL_SELL
         else:
-            return SIGNAL_HOLD, 0, []
+            ema_dir = '>' if ema20 > ema50 else '<'
+            macd_dir = '>' if macd > macd_s else '<'
+            return SIGNAL_HOLD, 0, [f"TF:EMA20{ema_dir}50 MACD{macd_dir}S ADX={adx_val:.0f}"]
 
         # Weekly filter
         ema100 = float(curr.get("ema100", 0))
