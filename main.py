@@ -1,9 +1,22 @@
 """
 main.py — ⚡ Nemesis v2.0 — Point d'entrée
 """
-import signal
-from loguru import logger
-from core import TradingBot
+# ─── Supprimer les warnings cosmétiques au boot ──────────────────────────────
+import warnings, os, sys
+warnings.filterwarnings("ignore", message=".*_signature_descriptor.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+# Supprimer le stderr "ImportError: cannot load module more than once per process"
+# et "AttributeError: module 'numpy._globals'" qui viennent de ta/talib au boot
+import io as _io
+_real_stderr = sys.stderr
+sys.stderr = _io.StringIO()
+try:
+    import signal
+    from loguru import logger
+    from core import TradingBot
+finally:
+    sys.stderr = _real_stderr
 
 if __name__ == "__main__":
     bot = TradingBot()

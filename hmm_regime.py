@@ -23,7 +23,7 @@ try:
     _HMM_OK = True
 except ImportError:
     _HMM_OK = False
-    logger.warning("⚠️  hmmlearn non installé — HMM désactivé (pip install hmmlearn)")
+    logger.debug("hmmlearn non installé — HMM utilise le stub fallback")
 
 # Fallback si hmmlearn absent : scikit-learn GaussianMixture (moins précis)
 try:
