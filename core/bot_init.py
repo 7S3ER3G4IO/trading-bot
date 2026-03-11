@@ -115,7 +115,7 @@ class BotInitMixin:
         self.calendar.start_background_refresh()
 
         # ─── TradingView Webhook (opt-in) ─────────────────────────────────
-        if _WEBHOOK_OK:
+        if WEBHOOK_OK:
             self._webhook = get_webhook_server()
             self._webhook.start()
             logger.info("📡 Webhook TradingView actif")
@@ -157,7 +157,7 @@ class BotInitMixin:
         logger.info(f"💰 Solde initial Capital.com : {start_bal:.2f}€")
 
         # ─── Dashboard Web ────────────────────────────────────────────────
-        if _DASHBOARD_OK and os.getenv("DASHBOARD_ENABLED", "true").lower() == "true":
+        if DASHBOARD_OK and os.getenv("DASHBOARD_ENABLED", "true").lower() == "true":
             port = start_dashboard()
             logger.info(f"🌐 Dashboard web → http://0.0.0.0:{port}")
 

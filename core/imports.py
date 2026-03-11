@@ -149,6 +149,12 @@ except ImportError:
 
 TRAILING_ATR_MULT = 1.5     # Trailing stop à 1.5x ATR après TP2
 
+# ─── Forcer l'export des flags _XXX_OK pour `from .imports import *` ────────
+# Python exclut les noms _ du wildcard import → on les re-déclare sans _
+WEBHOOK_OK   = _WEBHOOK_OK
+DASHBOARD_OK = _DASHBOARD_OK
+MORNING_OK   = _MORNING_OK
+
 bot_running = True
 
 def shutdown_handler(sig, frame):
