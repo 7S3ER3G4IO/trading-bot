@@ -101,23 +101,23 @@ class DailyReporter:
             total_net   += t.pnl_net
             total_fees  += t.fees
             action = "ACHAT" if t.side == "BUY" else "VENTE"
-            lines.append(f"`{t.date_str} {action} {t.symbol}  {suffix}  {emoji}`")
+            lines.append(f"<code>{t.date_str} {action} {t.symbol}  {suffix}  {emoji}</code>")
 
         score = f"{wins}/{len(self._trades)}"
         pct   = f"{wins / len(self._trades) * 100:.0f}%"
 
         rpt = (
-            f"📊 *BILAN DU JOUR — {date_label}*\n"
+            f"📊 <b>BILAN DU JOUR — {date_label}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         )
         for l in lines:
             rpt += l + "\n"
         rpt += (
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🏆 BILAN TRADES : *{score}* | *{pct}*\n"
-            f"💵 PnL brut : `{total_gross:+.2f} €`\n"
-            f"💸 Frais CFD : `-{total_fees:.2f} €`\n"
-            f"✅ *PnL net : `{total_net:+.2f} €`*"
+            f"🏆 BILAN TRADES : <b>{score}</b> | <b>{pct}</b>\n"
+            f"💵 PnL brut : <code>{total_gross:+.2f} €</code>\n"
+            f"💸 Frais CFD : <code>-{total_fees:.2f} €</code>\n"
+            f"✅ <b>PnL net : <code>{total_net:+.2f} €</code></b>"
         )
         return rpt
 
@@ -159,7 +159,7 @@ class DailyReporter:
         # BUG FIX #B : lit depuis _weekly_trades (accumulation 7j) et non _trades (journalier)
         trades = self._weekly_trades
         if not trades:
-            return "📅 *Bilan hebdomadaire* — Aucun trade cette semaine."
+            return "📅 <b>Bilan hebdomadaire</b> — Aucun trade cette semaine."
 
         cet = datetime.now(timezone(timedelta(hours=1)))
         wins       = sum(1 for t in trades if t.result != "SL")
@@ -171,15 +171,15 @@ class DailyReporter:
         pct   = f"{wins / len(trades) * 100:.0f}%"
 
         return (
-            f"📅 *BILAN DE LA SEMAINE*\n"
+            f"📅 <b>BILAN DE LA SEMAINE</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🏆 Trades : *{score}* | Win rate : *{pct}*\n"
+            f"🏆 Trades : <b>{score}</b> | Win rate : <b>{pct}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 PnL net : `{total_net:+.2f} €`\n"
-            f"💸 Frais cumulés : `-{total_fees:.2f} €`\n"
+            f"💰 PnL net : <code>{total_net:+.2f} €</code>\n"
+            f"💸 Frais cumulés : <code>-{total_fees:.2f} €</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌟 Meilleur trade : `{best.symbol}` `{best.pnl_net:+.2f} €`\n"
-            f"📉 Pire trade : `{worst.symbol}` `{worst.pnl_net:+.2f} €`"
+            f"🌟 Meilleur trade : <code>{best.symbol}</code> <code>{best.pnl_net:+.2f} €</code>\n"
+            f"📉 Pire trade : <code>{worst.symbol}</code> <code>{worst.pnl_net:+.2f} €</code>"
         )
 
     def mark_weekly_sent(self):
