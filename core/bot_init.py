@@ -139,6 +139,10 @@ class BotInitMixin:
             pause        = self._do_pause,
             resume       = self._do_resume,
             get_hub_data = self._hub_data,
+            stats        = self._cmd_stats,
+            performance  = self._cmd_performance,
+            health       = self._cmd_health,
+            achievements = lambda: self.telegram.gamification.format_achievements_block() if self.telegram.gamification else "⚠️ Gamification not available",
         )
 
         self.handler.start_polling()

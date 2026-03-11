@@ -275,6 +275,37 @@ class BotMonitorMixin:
                         self.lstm.notify_trade_result(won_trade)
                     except Exception:
                         pass
+                    # Wave 14: Gamification with overlap/session tracking
+                    try:
+                        _is_overlap = state.get("in_overlap", False)
+                        _session = "overlap" if _is_overlap else (
+                            "asia" if (h_close < 8) else
+                            "london" if (h_close < 13) else "ny"
+                        )
+                        is_tp3 = state.get("tp1_hit") and state.get("tp2_hit")
+                        if hasattr(self, 'telegram') and self.telegram.gamification:
+                            newly = self.telegram.gamification.on_trade_closed(
+                                won=won_trade, pnl=pnl_trade,
+                                is_tp3_complete=is_tp3,
+                                is_overlap=_is_overlap, session=_session,
+                            )
+                            for ach in self.telegram.gamification.pop_new_achievements():
+                                if self.telegram.router:
+                                    from nemesis_ui.notifications import NotificationFormatter
+                                    self.telegram.router.send_to("stats",
+                                        NotificationFormatter.format_achievement_unlocked(
+                                            ach["name"], ach["desc"]
+                                        )
+                                    )
+                    except Exception as _gam_e:
+                        logger.debug(f"Gamification: {_gam_e}")
+                    # Wave 13: Record price change for correlation
+                    try:
+                        if hasattr(self, 'context') and close_px and entry:
+                            pct_chg = (close_px - entry) / entry * 100
+                            self.context.record_price_change(instrument, pct_chg)
+                    except Exception:
+                        pass
 
                 except Exception:
                     pass

@@ -37,6 +37,10 @@ class TelegramBotHandler:
         self._pause_cb    = kwargs.get("pause")
         self._resume_cb   = kwargs.get("resume")
         self._get_hub_data = kwargs.get("get_hub_data")
+        self._stats_cb     = kwargs.get("stats")
+        self._perf_cb      = kwargs.get("performance")
+        self._health_cb    = kwargs.get("health")
+        self._achievements_cb = kwargs.get("achievements")
 
     def is_paused(self) -> bool:
         return self._paused
@@ -103,6 +107,12 @@ class TelegramBotHandler:
             self._cmd_resume()
         elif cmd == "/status":
             self._cmd_status()
+        elif cmd == "/stats":
+            self._cmd_sys_stats()
+        elif cmd == "/performance" or cmd == "/perf":
+            self._cmd_perf()
+        elif cmd == "/achievements":
+            self._cmd_achievements()
 
     # ─── Commands ─────────────────────────────────────────────────────────────
 
@@ -155,6 +165,39 @@ class TelegramBotHandler:
             f"État : {status}\n"
             f"Mode : Multi-Channel ✅"
         )
+
+    def _cmd_sys_stats(self):
+        """Handle /stats command."""
+        if self._stats_cb:
+            try:
+                result = self._stats_cb()
+                self._reply(result)
+            except Exception as e:
+                self._reply(f"❌ Stats error: {e}")
+        else:
+            self._reply("⚠️ Stats not available")
+
+    def _cmd_perf(self):
+        """Handle /performance command."""
+        if self._perf_cb:
+            try:
+                result = self._perf_cb()
+                self._reply(result)
+            except Exception as e:
+                self._reply(f"❌ Performance error: {e}")
+        else:
+            self._reply("⚠️ Performance not available")
+
+    def _cmd_achievements(self):
+        """Handle /achievements command."""
+        if self._achievements_cb:
+            try:
+                result = self._achievements_cb()
+                self._reply(result)
+            except Exception as e:
+                self._reply(f"❌ Achievements error: {e}")
+        else:
+            self._reply("⚠️ Achievements not available")
 
     # ─── Reply Helper ─────────────────────────────────────────────────────────
 
