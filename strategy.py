@@ -38,9 +38,8 @@ PRE_SESSIONS_UTC = [
     (12 * 60,      13 * 60 + 15), # Pré-NY     : 12h00 → 13h15
 ]
 
-MIN_RANGE_PCT    = 0.05   # Range min = 0.05% du prix (assoupli de 0.08%)
-MAX_RANGE_PCT    = 6.0    # Range max = 6.0% du prix
-                          # (GOLD ~2-5%, forex ~0.5-1.5%, indices ~1-3%)
+MIN_RANGE_PCT    = 0.03   # Range min = 0.03% du prix (adapté 1H — ranges plus petits)
+MAX_RANGE_PCT    = 4.0    # Range max = 4.0% du prix (adapté 1H)
 MIN_SCORE        = 1      # Score minimum sur 7 (assoupli : 1 confirmation suffit)
 ADX_MIN          = 15     # ADX assoupli de 18 à 15 (capte plus de tendances)
 ATR_PERIOD       = 14
@@ -463,32 +462,34 @@ class Strategy:
     def _signal_tf(self, df, symbol, profile):
         curr = df.iloc[-1]
         c = float(curr["close"])
-        ema20 = float(curr.get("ema20", 0))
-        ema50 = float(curr.get("ema50", 0))
+        ema_fast = float(curr.get("ema20", 0))  # EMA rapide (ema20 inchangé car recalculé)
+        ema_slow = float(curr.get("ema50", 0))  # EMA lente
         macd = float(curr.get("macd", 0))
         macd_s = float(curr.get("macd_s", 0))
         adx_val = float(curr.get("adx", 0))
 
-        if ema20 <= 0 or ema50 <= 0:
+        if ema_fast <= 0 or ema_slow <= 0:
             return SIGNAL_HOLD, 0, []
 
-        if ema20 > ema50 and macd > macd_s and adx_val > 14:
+        if ema_fast > ema_slow and macd > macd_s and adx_val > 12:
             sig = SIGNAL_BUY
-        elif ema20 < ema50 and macd < macd_s and adx_val > 14:
+        elif ema_fast < ema_slow and macd < macd_s and adx_val > 12:
             sig = SIGNAL_SELL
         else:
-            ema_dir = '>' if ema20 > ema50 else '<'
+            ema_dir = '>' if ema_fast > ema_slow else '<'
             macd_dir = '>' if macd > macd_s else '<'
-            return SIGNAL_HOLD, 0, [f"TF:EMA20{ema_dir}50 MACD{macd_dir}S ADX={adx_val:.0f}"]
+            return SIGNAL_HOLD, 0, [f"TF:EMA{ema_dir} MACD{macd_dir}S ADX={adx_val:.0f}"]
 
-        # Weekly filter
-        ema100 = float(curr.get("ema100", 0))
-        ema250 = float(curr.get("ema250", 0))
-        if ema100 > 0 and ema250 > 0:
-            if sig == SIGNAL_BUY and ema100 < ema250:
-                return SIGNAL_HOLD, 0, []
-            if sig == SIGNAL_SELL and ema100 > ema250:
-                return SIGNAL_HOLD, 0, []
+        # Weekly filter — only for daily TF instruments, skip for 1H
+        _tf = profile.get("tf", "1h") if profile else "1h"
+        if _tf == "1d":
+            ema100 = float(curr.get("ema100", 0))
+            ema250 = float(curr.get("ema250", 0))
+            if ema100 > 0 and ema250 > 0:
+                if sig == SIGNAL_BUY and ema100 < ema250:
+                    return SIGNAL_HOLD, 0, []
+                if sig == SIGNAL_SELL and ema100 > ema250:
+                    return SIGNAL_HOLD, 0, []
 
         confirmations = []
         if adx_val > 25:
