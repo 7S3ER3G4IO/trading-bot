@@ -486,6 +486,15 @@ class Strategy:
         except Exception:
             pass
 
+        # W7 — Overlap Bonus (poids fixe 0.10) — highest volume window
+        try:
+            now_utc = datetime.now(timezone.utc)
+            if 12 <= now_utc.hour < 16:  # London/NY overlap
+                weights.append(0.10)
+                confirmations.append("Overlap🔥(0.10)")
+        except Exception:
+            pass
+
         score = round(sum(weights), 3)
 
         if score < WEIGHTED_SCORE_THRESHOLD:

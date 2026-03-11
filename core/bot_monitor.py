@@ -268,7 +268,12 @@ class BotMonitorMixin:
                         pass
                     try:
                         ab_v = state.get("ab_variant", "A")
-                        self.ab.record_result(instrument, ab_v, pnl_trade, won_trade)
+                        _ab_regime = state.get("market_regime", "")
+                        _ab_overlap = state.get("in_overlap", False)
+                        self.ab.record_result(
+                            instrument, ab_v, pnl_trade, won_trade,
+                            regime=_ab_regime, is_overlap=_ab_overlap,
+                        )
                     except Exception:
                         pass
                     try:

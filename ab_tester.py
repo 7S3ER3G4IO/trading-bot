@@ -144,7 +144,8 @@ class ABTester:
         """Retourne les paramètres pour une variante donnée."""
         return dict(VARIANT_PARAMS.get(variant, VARIANT_PARAMS["A"]))
 
-    def record_result(self, instrument: str, variant: str, pnl: float, won: bool):
+    def record_result(self, instrument: str, variant: str, pnl: float, won: bool,
+                       regime: str = "", is_overlap: bool = False):
         """
         Enregistre le résultat d'un trade pour un instrument/variante.
         Déclenche une comparaison si les deux variantes ont assez de trades.
@@ -155,11 +156,15 @@ class ABTester:
         variant    : 'A' ou 'B'
         pnl        : PnL du trade en euros
         won        : True si trade gagnant
+        regime     : market regime at entry (RISK_ON/OFF/NEUTRAL)
+        is_overlap : True if trade opened during London/NY overlap
         """
         self._init_instrument(instrument)
         self._state[instrument]["stats"][variant].trades.append({
             "pnl": round(pnl, 4),
             "won": won,
+            "regime": regime,
+            "overlap": is_overlap,
         })
 
         # Vérifier si on peut décider

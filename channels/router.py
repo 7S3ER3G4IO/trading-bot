@@ -94,27 +94,55 @@ class ChannelRouter:
 
     # ── Internal API ───────────────────────────────────────────────────────
 
+    _send_count = 0
+    _send_count_reset = 0.0
+
     def _send(self, chat_id: str, text: str, parse_mode: str = "HTML",
               silent: bool = False, reply_to: int = None) -> Optional[int]:
-        """Send a message via Telegram API. Returns message_id."""
+        """Send a message via Telegram API. Returns message_id. Retries on failure."""
         if not self._api or not _requests:
             return None
-        try:
-            payload = {
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": parse_mode,
-                "disable_notification": silent,
-            }
-            if reply_to:
-                payload["reply_to_message_id"] = reply_to
-            r = _requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
-            if r.ok:
-                return r.json().get("result", {}).get("message_id")
-            else:
-                logger.warning(f"⚠️ Router send to {chat_id}: {r.status_code} {r.text[:80]}")
-        except Exception as e:
-            logger.error(f"❌ Router send: {e}")
+
+        import time as _time
+
+        # Rate-limit tracking (warn at >50 msg/min)
+        now = _time.time()
+        if now - ChannelRouter._send_count_reset > 60:
+            ChannelRouter._send_count = 0
+            ChannelRouter._send_count_reset = now
+        ChannelRouter._send_count += 1
+        if ChannelRouter._send_count > 50:
+            logger.warning(f"⚠️ Router rate: {ChannelRouter._send_count} msg/min")
+
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "disable_notification": silent,
+        }
+        if reply_to:
+            payload["reply_to_message_id"] = reply_to
+
+        # Retry with exponential backoff (3 attempts)
+        for attempt in range(3):
+            try:
+                r = _requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
+                if r.ok:
+                    return r.json().get("result", {}).get("message_id")
+                elif r.status_code == 429:
+                    # Rate limited by Telegram — wait and retry
+                    retry_after = r.json().get("parameters", {}).get("retry_after", 5)
+                    logger.warning(f"⚠️ Telegram 429 — retry in {retry_after}s")
+                    _time.sleep(retry_after)
+                    continue
+                else:
+                    logger.warning(f"⚠️ Router send to {chat_id}: {r.status_code} {r.text[:80]}")
+                    return None
+            except Exception as e:
+                if attempt < 2:
+                    _time.sleep(1 * (2 ** attempt))  # 1s, 2s
+                    continue
+                logger.error(f"❌ Router send (attempt {attempt+1}): {e}")
         return None
 
     def _pin(self, chat_id: str, message_id: int):
