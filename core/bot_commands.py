@@ -127,10 +127,14 @@ class BotCommandsMixin:
         )
 
     def _cmd_regime(self) -> str:
-        """Retourne le régime HMM pour chaque instrument actif."""
+        """Retourne le régime HMM pour les instruments avec positions ouvertes."""
         REGIME_EMOJI = {0: "⬛ RANGING", 1: "🟢 TREND_UP", 2: "🔴 TREND_DOWN"}
+        # Seulement les instruments avec position ouverte (pas les 39)
+        active_instruments = [inst for inst, st in self.capital_trades.items() if st is not None]
+        if not active_instruments:
+            return "🧠 <b>Régimes HMM</b>\nAucune position ouverte."
         lines = []
-        for inst in CAPITAL_INSTRUMENTS:
+        for inst in active_instruments:
             try:
                 df = self.capital.fetch_ohlcv(inst, timeframe="5m", count=50)
                 if df is None or len(df) < 20:
@@ -145,7 +149,7 @@ class BotCommandsMixin:
                 lines.append(f"  {inst}: ⚠️ {str(e)[:30]}")
         body = "\n".join(lines)
         return (
-            f"🧠 <b>Régimes HMM</b>\n"
+            f"🧠 <b>Régimes HMM ({len(active_instruments)} positions)</b>\n"
             f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{body}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>"
         )

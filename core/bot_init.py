@@ -25,8 +25,9 @@ class BotInitMixin:
         self.capital = CapitalClient()
         if self.capital.available:
             logger.info(f"🏦 Capital.com actif — {len(CAPITAL_INSTRUMENTS)} instruments : {', '.join(CAPITAL_INSTRUMENTS)}")
-            # Validation au démarrage : vérifie que chaque epic existe
-            self.capital.validate_epics()
+            # Validation optionnelle : VALIDATE_EPICS=1 dans env vars Railway
+            if os.environ.get("VALIDATE_EPICS", "0") == "1":
+                self.capital.validate_epics()
         else:
             logger.info("ℹ️  Capital.com non configuré — vérifier CAPITAL_API_KEY / EMAIL / PASSWORD dans Railway")
 
