@@ -185,9 +185,19 @@ class BotSignalsMixin:
                 tp2 = entry - rng * _tp2_r
                 tp3 = entry - rng * _tp3_r
 
-        # Taille totale puis split en 3 (Kelly/8 = 1.25%)
+        # ── Guard R:R minimum : TP1 doit valoir au moins 1.2× SL ──
+        tp1_dist = abs(tp1 - entry)
+        sl_dist_real = abs(sl - entry)
+        if sl_dist_real > 0 and tp1_dist / sl_dist_real < 1.2:
+            logger.info(
+                f"⛔ {instrument} R:R trop faible : TP1={tp1_dist:.5f} / SL={sl_dist_real:.5f} "
+                f"= {tp1_dist/sl_dist_real:.2f}x (min 1.2x) — skip"
+            )
+            return
+
+        # Taille totale puis split en 3
         total_size = self.capital.position_size(
-            balance=balance, risk_pct=0.0125, entry=entry, sl=sl, epic=instrument
+            balance=balance, risk_pct=0.005, entry=entry, sl=sl, epic=instrument
         )
         min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
         size1 = max(min_sz, round(total_size / 3, 2))
