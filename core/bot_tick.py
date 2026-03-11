@@ -319,6 +319,8 @@ class BotTickMixin:
                 open_count = sum(1 for s in self.capital_trades.values() if s is not None)
                 equity_vals = [e["v"] for e in self._equity_history[-12:]] if hasattr(self, '_equity_history') and self._equity_history else []
                 conf = self.telegram.gamification.confidence_score() if self.telegram.gamification else None
+                # Wave 15: Pass system_stats to Hub
+                _sys_stats = self.get_system_stats() if hasattr(self, 'get_system_stats') else None
                 if self.telegram.hub:
                     self.telegram.hub.refresh_hub(
                         balance=bal_hb,
@@ -326,6 +328,7 @@ class BotTickMixin:
                         open_positions=open_count,
                         equity_data=equity_vals,
                         confidence=conf,
+                        system_stats=_sys_stats,
                     )
             except Exception as _e:
                 logger.debug(f"Hub refresh heartbeat : {_e}")
@@ -391,8 +394,22 @@ class BotTickMixin:
             self.telegram.notify_morning_brief(brief, nb_instruments=len(CAPITAL_INSTRUMENTS))
             self.context.mark_brief_sent()
 
-        # ── Fear & Greed refresh (1×/heure) ──────────────────────────────
+        # ── Fear & Greed refresh (1×/heure) + Regime-change detection ─────
+        _old_regime = getattr(self, '_last_known_regime', 'NEUTRAL')
         self.context.refresh_fear_greed()
+        _new_regime = self.context.regime
+        if _new_regime != _old_regime and _old_regime != 'NEUTRAL':
+            self._last_known_regime = _new_regime
+            try:
+                tgc.notify_regime_change(
+                    old_regime=_old_regime,
+                    new_regime=_new_regime,
+                    fg_value=self.context._fg_value or 0,
+                )
+                logger.info(f"🌍 Regime change: {_old_regime} → {_new_regime}")
+            except Exception as _rc_e:
+                logger.debug(f"Regime change notif: {_rc_e}")
+        self._last_known_regime = _new_regime
 
         # ── Wallet stats (toutes les 30 min) ─────────────────────────────
         wallet_interval = timedelta(minutes=30)
@@ -405,7 +422,12 @@ class BotTickMixin:
         # ── Rapport journalier (20h UTC) + hebdo (21h UTC) ───────────────
         if self.reporter.should_send_report():
             if self.telegram.router:
-                self.telegram.router.send_performance(self.reporter.build_report())
+                # Wave 15: Pass ML scorer and market context for enriched report
+                _ml = self.ml_scorer if hasattr(self, 'ml_scorer') else None
+                _ctx = self.context if hasattr(self, 'context') else None
+                self.telegram.router.send_performance(
+                    self.reporter.build_report(ml_scorer=_ml, context=_ctx)
+                )
             self.reporter.mark_report_sent()
         if self.reporter.should_send_weekly():
             if self.telegram.router:
