@@ -20,17 +20,18 @@ class BotSignalsMixin:
         if state is not None:
             return
 
-        # Données selon le timeframe du profil (4h ou 1d)
+        # Données depuis le cache OHLCV (A-2: pas de fetch REST sauf si périmé)
         _profile = ASSET_PROFILES.get(instrument, {})
-        _tf = _profile.get("tf", "1h")   # V8=1h, V7=4h, V6=1d
-        _count = {"1h": 200, "4h": 200, "1d": 100, "5m": 300}.get(_tf, 200)
-        df = self.capital.fetch_ohlcv(instrument, timeframe=_tf, count=_count)
+        _tf = _profile.get("tf", "1h")
+        _strat = _profile.get("strat", "BK")
+        df = self.ohlcv_cache.get(instrument, strategy=self.strategy)
         if df is None or len(df) < 50:
-            logger.warning(f"⚠️  {instrument}: OHLCV None ou insuffisant ({len(df) if df is not None else 'None'} bougies) — skip")
+            logger.warning(f"⚠️  {instrument}: OHLCV cache vide ou insuffisant ({len(df) if df is not None else 'None'} bougies) — skip")
             return
 
-        df = self.strategy.compute_indicators(df)
-        _strat = _profile.get("strat", "BK")
+        # Indicators déjà calculés dans le cache — recompute seulement si absent
+        if "atr" not in df.columns:
+            df = self.strategy.compute_indicators(df)
 
         # ── UPGRADE : Retest Entry (Anti-Fakeout) ────────────────────────────
         pending = self._pending_retest.get(instrument)

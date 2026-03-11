@@ -36,6 +36,12 @@ class BotTickMixin:
         cet  = now + timedelta(hours=1)
         today = now.date()
 
+        # ─── A-2: Refresh stale OHLCV cache (only expired instruments) ────
+        try:
+            self.ohlcv_cache.refresh_stale(CAPITAL_INSTRUMENTS, strategy=self.strategy)
+        except Exception as _cache_e:
+            logger.debug(f"OHLCVCache refresh: {_cache_e}")
+
         try:
             balance = self.capital.get_balance() if self.capital.available else 0.0
             open_trades = []

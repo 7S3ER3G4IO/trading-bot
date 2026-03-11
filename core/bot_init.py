@@ -146,6 +146,11 @@ class BotInitMixin:
         # ─── Restauration BDD ─────────────────────────────────────────────
         self._restore_from_db()
 
+        # ─── A-2: OHLCV Cache (warmup 200 bougies par instrument) ─────────
+        self.ohlcv_cache = OHLCVCache(self.capital)
+        if self.capital.available:
+            self.ohlcv_cache.warmup(CAPITAL_INSTRUMENTS, ASSET_PROFILES, strategy=self.strategy)
+
         self.calendar.refresh()
         start_bal = self.capital.get_balance() if self.capital.available else 0.0
         self.telegram.notify_start(start_bal, CAPITAL_INSTRUMENTS)
