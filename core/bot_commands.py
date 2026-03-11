@@ -245,3 +245,98 @@ class BotCommandsMixin:
         text   = "📋 <b>Positions actives :</b>\n━━━━━━━━━━━━━━━━━━━━━━━\n" + "\n\n".join(lines)
         markup = TelegramBotHandler.trade_keyboard(markup_epic) if markup_epic else None
         return text, markup
+
+    # ── Hub v3.0 — Page callbacks ─────────────────────────────────────────────
+
+    def _hub_data(self) -> tuple:
+        """Returns (balance, pnl_today) for Hub display."""
+        balance = self.capital.get_balance() if self.capital.available else 0.0
+        pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
+        return balance, pnl_today
+
+    def _hub_dashboard_page(self) -> tuple:
+        """Build Dashboard page for Hub navigation."""
+        from nemesis_ui.pages import PageBuilder
+        balance = self.capital.get_balance() if self.capital.available else 0.0
+        pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
+        pnl_total = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
+
+        positions = []
+        for epic, state in self.capital_trades.items():
+            if state is None:
+                continue
+            name = CAPITAL_NAMES.get(epic, epic)
+            entry = state.get("entry", 0.0)
+            direction = state.get("direction", "?")
+            unrealized = 0.0
+            current_price = entry
+            try:
+                px = self.capital.get_current_price(epic)
+                if px:
+                    current_price = px["mid"]
+                    unrealized = round((current_price - entry) * (1 if direction == "BUY" else -1) * 3, 2)
+            except Exception:
+                pass
+            positions.append({
+                "name": name, "epic": epic, "direction": direction,
+                "entry": entry, "sl": state.get("sl", 0),
+                "tp2": state.get("tp2", 0), "tp1_hit": state.get("tp1_hit", False),
+                "current_price": current_price, "pnl": unrealized,
+            })
+
+        equity_data = [e["v"] for e in self._equity_history[-20:]] if self._equity_history else []
+
+        return PageBuilder.build_dashboard(
+            balance=balance, pnl_today=pnl_today, pnl_total=pnl_total,
+            positions=positions, equity_data=equity_data,
+            nb_instruments=len(CAPITAL_INSTRUMENTS),
+        )
+
+    def _hub_risk_page(self) -> tuple:
+        """Build Risk page for Hub navigation."""
+        from nemesis_ui.pages import PageBuilder
+        balance = self.capital.get_balance() if self.capital.available else 0.0
+        open_count = sum(1 for s in self.capital_trades.values() if s is not None)
+        daily_dd = 0.0
+        if self._daily_start_balance > 0 and balance > 0:
+            daily_dd = (self._daily_start_balance - balance) / self._daily_start_balance * 100
+        monthly_dd = 0.0
+        if self._monthly_start_balance > 0 and balance > 0:
+            monthly_dd = (self._monthly_start_balance - balance) / self._monthly_start_balance * 100
+
+        return PageBuilder.build_risk(
+            balance=balance, open_count=open_count, max_trades=MAX_OPEN_TRADES,
+            dd_daily=daily_dd, dd_daily_limit=self.DAILY_DD_LIMIT,
+            dd_monthly=monthly_dd,
+            paused=self._manual_pause or self._dd_paused,
+        )
+
+    def _hub_regime_page(self) -> tuple:
+        """Build Regime page for Hub navigation."""
+        from nemesis_ui.pages import PageBuilder
+        active = [(inst, st) for inst, st in self.capital_trades.items() if st is not None]
+        regimes = []
+        for inst, st in active:
+            try:
+                df = self.capital.fetch_ohlcv(inst, timeframe="5m", count=50)
+                if df is not None and len(df) >= 20:
+                    df = self.strategy.compute_indicators(df)
+                    res = self.hmm.detect_regime(df, symbol=inst)
+                    regimes.append({
+                        "instrument": inst,
+                        "regime_name": res.get("name", "?"),
+                        "confidence": res.get("confidence", 0),
+                    })
+            except Exception:
+                pass
+        return PageBuilder.build_regime(regimes)
+
+    def _hub_stats_page(self) -> tuple:
+        """Build Stats/Gamification page for Hub navigation."""
+        from nemesis_ui.pages import PageBuilder
+        gam = self.telegram.gamification
+        return PageBuilder.build_stats(
+            stats_block=gam.format_stats_block(),
+            achievements_block=gam.format_achievements_block(),
+            win_streak=gam.win_streak,
+        )

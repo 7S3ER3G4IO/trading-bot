@@ -286,42 +286,21 @@ class BotTickMixin:
             except Exception as _e:
                 logger.debug(f"Auto-push session : {_e}")
 
-        # ── Auto-push Telegram : heartbeat toutes les 30min en session active ──
+        # ── Auto-push Telegram : heartbeat via Hub refresh (zéro spam) ────────
         in_session = h_utc in SESSION_HOURS
         since_last = (now - self._last_heartbeat_push).total_seconds()
         if in_session and since_last >= 1800:  # 30 minutes
             self._last_heartbeat_push = now
             try:
-                bal_hb    = self.capital.get_balance() if self.capital.available else 0.0
-                pnl_hb    = round(bal_hb - self.initial_balance, 2) if bal_hb > 0 else 0.0
-                pnl_pct   = (pnl_hb / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
-                open_pos  = [instr for instr, s in self.capital_trades.items() if s is not None]
-                pos_lines = ""
-                for epic in open_pos:
-                    state = self.capital_trades[epic]
-                    name  = CAPITAL_NAMES.get(epic, epic)
-                    entry = state.get("entry", 0.0)
-                    direction = state.get("direction", "?")
-                    unreal = 0.0
-                    try:
-                        px = self.capital.get_current_price(epic)
-                        if px:
-                            unreal = round((px["mid"] - entry) * (1 if direction == "BUY" else -1) * 3, 2)
-                    except Exception:
-                        pass
-                    icon = "🟢" if unreal >= 0 else "🔴"
-                    pos_lines += f"  • <b>{name}</b> {direction} | {icon} {unreal:+.2f}€\n"
+                bal_hb = self.capital.get_balance() if self.capital.available else 0.0
                 pnl_today_hb = sum(t.get("pnl", 0) for t in self._capital_closed_today)
-                self.telegram.send_message(
-                    f"📡 <b>Heartbeat Nemesis</b> — {cet.strftime('%H:%M')} CET\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"💰 Balance : <b>{bal_hb:,.2f}€</b>  ({pnl_pct:+.1f}%)\n"
-                    f"📈 PnL aujourd'hui : <b>{pnl_today_hb:+.2f}€</b>\n"
-                    + (f"📊 Positions ouvertes :\n{pos_lines}" if pos_lines else "📊 Aucune position ouverte\n")
-                    + f"━━━━━━━━━━━━━━━━━━━━━━━"
-                )
+                if self.telegram.hub:
+                    self.telegram.hub.refresh_hub(
+                        balance=bal_hb,
+                        pnl_today=round(pnl_today_hb, 2),
+                    )
             except Exception as _e:
-                logger.debug(f"Auto-push heartbeat : {_e}")
+                logger.debug(f"Hub refresh heartbeat : {_e}")
 
         # ── Vérification drawdown journalier ─────────────────────────────
         if not self._dd_paused and self.capital.available:
@@ -438,25 +417,17 @@ class BotTickMixin:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
             time.sleep(0.3)  # Rate limiting Capital.com API (max ~3 req/s)
 
-        # ── Alerte Telegram "scan sans signal" toutes les 10 minutes ──────────
+        # ── Alerte "scan sans signal" — supprimée en v3.0 (visible via Dashboard) ──
+        # Si aucun signal trouvé, on l'enregistre dans les logs uniquement
         if signals_found == 0:
             elapsed_ns = (now - self._last_no_signal_alert).total_seconds()
             if elapsed_ns >= 600:  # 10 minutes
                 self._last_no_signal_alert = now
                 session_str = "London" if now.hour < 13 else "NY"
-                open_pos = [CAPITAL_NAMES.get(i, i) for i, s in self.capital_trades.items() if s is not None]
-                pos_str = ", ".join(open_pos) if open_pos else "Aucune"
-                fg = getattr(self.context, "_fg_value", None)
-                fg_str = f" | F&G : {fg}/100" if fg is not None else ""
-                try:
-                    self.telegram.send_message(
-                        f"🔍 <b>Nemesis surveille</b> — {session_str} session{fg_str}\n"
-                        f"⏰ {now.strftime('%H:%M')} UTC | Balance : <b>{balance:,.0f}€</b>\n"
-                        f"📊 Positions ouvertes : {pos_str}\n"
-                        f"Aucun breakout détecté sur {len(CAPITAL_INSTRUMENTS)} instruments — surveillance continue…"
-                    )
-                except Exception:
-                    pass
+                logger.info(
+                    f"🔍 Scan {session_str} — aucun breakout sur "
+                    f"{len(CAPITAL_INSTRUMENTS)} instruments — surveillance continue…"
+                )
 
 
 

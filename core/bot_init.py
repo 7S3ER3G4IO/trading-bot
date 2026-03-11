@@ -147,6 +147,12 @@ class BotInitMixin:
             get_best_pair= self._cmd_best_pair,
             get_risk     = self._cmd_risk,
             get_regime   = self._cmd_regime,
+            # Hub pages v3.0
+            get_dashboard  = self._hub_dashboard_page,
+            get_risk_page  = self._hub_risk_page,
+            get_regime_page= self._hub_regime_page,
+            get_stats_page = self._hub_stats_page,
+            get_hub_data   = self._hub_data,
         )
 
         self.handler.start_polling()
