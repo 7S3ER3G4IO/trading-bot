@@ -68,7 +68,6 @@ class BotCommandsMixin:
     def _do_brief(self) -> str:
         """Envoie la matinale à la demande."""
         try:
-            import threading
             balance = self.capital.get_balance() if self.capital.available else 0.0
             _, reason = self.calendar.should_pause_trading()
             brief = self.context.build_morning_brief(balance, reason or None)

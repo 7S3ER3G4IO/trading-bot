@@ -81,7 +81,6 @@ class BotSignalsMixin:
                 try:
                     pre = self.strategy.check_pre_signal(df, symbol=instrument, asset_profile=_profile)
                     if pre:
-                        import threading
                         threading.Thread(
                             target=lambda: tgc.notify_pre_signal_alert(pre),
                             daemon=True,
@@ -393,7 +392,6 @@ class BotSignalsMixin:
         logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
 
         # ─── Telegram en background ────────
-        import threading
         # sr disponible seulement pour BK, fallback pour MR/TF
         _range_pct  = sr["pct"]  if _strat == "BK" else 0.0
         _range_high = sr["high"] if _strat == "BK" else entry

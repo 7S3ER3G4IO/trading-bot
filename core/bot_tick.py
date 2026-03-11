@@ -254,7 +254,6 @@ class BotTickMixin:
                 self._last_hyperopt_week = cur_week
                 logger.info(f"⚙️  Auto-Optimisation hebdo S{cur_week} — lancement...")
                 # F-5: Only LSTM training and AB weekly report are active.
-                import threading
                 def _run_weekly_tasks():
                     # Feature P : Entraîner le LSTM sur chaque instrument
                     try:
@@ -438,7 +437,6 @@ class BotTickMixin:
         if h_utc == 20 and today != self._last_daily_report_day:
             self._last_daily_report_day = today
             try:
-                import threading
                 threading.Thread(target=self._send_daily_report, daemon=True).start()
             except Exception as _rp_e:
                 logger.debug(f"Daily report: {_rp_e}")
