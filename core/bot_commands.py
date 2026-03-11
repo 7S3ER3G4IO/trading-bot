@@ -273,3 +273,139 @@ class BotCommandsMixin:
             }
         return stats
     # ── Hub pages removed — multi-channel uses URL buttons now ──────────────
+
+    # ─── NEW TELEGRAM COMMANDS ───────────────────────────────────────────────
+
+    def _cmd_stats(self) -> str:
+        """
+        /stats — System stats (cache, ML, risk, market context).
+        """
+        stats = self.get_system_stats()
+        lines = ["📊 <b>Nemesis System Stats</b>\n"]
+
+        # Cache
+        c = stats.get("cache", {})
+        lines.append(f"📦 <b>Cache OHLCV</b>")
+        lines.append(f"  Cached: {c.get('cached', 0)} | Stale: {c.get('stale', 0)}")
+        lines.append(f"  API calls total: {c.get('total_fetches', 0)}")
+
+        # ML
+        ml = stats.get("ml", {})
+        ml_status = "🟢 actif" if ml.get("model_ready") else f"🟡 {ml.get('samples', 0)}/{ml.get('min_required', 100)}"
+        lines.append(f"\n🧠 <b>ML Scorer</b>")
+        lines.append(f"  Status: {ml_status}")
+        lines.append(f"  Samples: {ml.get('samples', 0)}")
+
+        # Risk
+        r = stats.get("risk", {})
+        dd_icon = "🔴 PAUSED" if r.get("dd_paused") else "🟢 OK"
+        lines.append(f"\n🛡️ <b>Risk Manager</b>")
+        lines.append(f"  DD: {dd_icon}")
+        lines.append(f"  VIX synthetic: {r.get('vix_synthetic', 0):.2f}")
+        lines.append(f"  DD limit: {r.get('dd_limit', 0.10):.0%}")
+
+        # Market
+        if hasattr(self, 'context'):
+            ctx = self.context.stats
+            lines.append(f"\n🌍 <b>Market Context</b>")
+            lines.append(f"  Regime: {ctx.get('regime', '—')}")
+            lines.append(f"  F&G: {ctx.get('fg_value', '—')}")
+            lines.append(f"  Session: {ctx.get('session', '—')}")
+            lines.append(f"  Overlap: {'🔥 OUI' if ctx.get('overlap') else '—'}")
+
+        # Positions
+        lines.append(f"\n📈 <b>Trading</b>")
+        lines.append(f"  Active: {stats.get('active_positions', 0)}")
+        lines.append(f"  Today: {stats.get('trades_today', 0)} trades")
+        lines.append(f"  PnL: {stats.get('pnl_today', 0):+.2f}€")
+
+        return "\n".join(lines)
+
+    def _cmd_performance(self) -> str:
+        """
+        /performance — Per-instrument P&L leaderboard.
+        """
+        if not self._capital_closed_today:
+            return "📊 Aucun trade clôturé aujourd'hui"
+
+        # Group by instrument
+        by_inst: dict = {}
+        for t in self._capital_closed_today:
+            inst = t.get("instrument", t.get("symbol", "?"))
+            if inst not in by_inst:
+                by_inst[inst] = {"pnl": 0, "wins": 0, "total": 0}
+            by_inst[inst]["pnl"] += t.get("pnl", 0)
+            by_inst[inst]["total"] += 1
+            if t.get("pnl", 0) > 0:
+                by_inst[inst]["wins"] += 1
+
+        # Sort by PnL desc
+        ranked = sorted(by_inst.items(), key=lambda x: x[1]["pnl"], reverse=True)
+
+        lines = ["🏆 <b>Performance par instrument</b>\n"]
+        for i, (inst, data) in enumerate(ranked):
+            icon = "🟢" if data["pnl"] > 0 else "🔴"
+            wr = data["wins"] / data["total"] * 100 if data["total"] > 0 else 0
+            lines.append(
+                f"{icon} {inst:<10} {data['pnl']:+.2f}€  "
+                f"WR {wr:.0f}% ({data['wins']}/{data['total']})"
+            )
+
+        total_pnl = sum(d["pnl"] for d in by_inst.values())
+        lines.append(f"\n💰 Total: <b>{total_pnl:+.2f}€</b>")
+        return "\n".join(lines)
+
+    def _cmd_health(self) -> str:
+        """
+        /health — Real-time system health check.
+        """
+        checks = []
+
+        # Capital.com API
+        api_ok = self.capital.available if hasattr(self, 'capital') else False
+        checks.append(f"{'✅' if api_ok else '❌'} Capital.com API")
+
+        # WebSocket
+        ws_ok = hasattr(self, 'capital_ws') and self.capital_ws and self.capital_ws._running
+        checks.append(f"{'✅' if ws_ok else '⚠️'} WebSocket")
+
+        # Cache
+        cache_ok = hasattr(self, 'ohlcv_cache')
+        if cache_ok:
+            st = self.ohlcv_cache.stats
+            stale_pct = st["stale"] / max(st["cached"], 1) * 100
+            icon = "✅" if stale_pct < 30 else "⚠️"
+            checks.append(f"{icon} Cache ({st['cached']} cached, {stale_pct:.0f}% stale)")
+        else:
+            checks.append("❌ Cache")
+
+        # ML
+        ml_ok = hasattr(self, 'ml_scorer') and self.ml_scorer
+        if ml_ok:
+            ms = self.ml_scorer.stats
+            icon = "✅" if ms.get("model_ready") else "🟡"
+            checks.append(f"{icon} ML ({ms['samples']} samples)")
+        else:
+            checks.append("⚠️ ML scorer")
+
+        # Risk
+        dd = getattr(self, '_dd_paused', False)
+        manual = getattr(self, '_manual_pause', False)
+        if dd:
+            checks.append("🔴 Risk: DD PAUSE active")
+        elif manual:
+            checks.append("🟡 Risk: Manual PAUSE")
+        else:
+            checks.append("✅ Risk: all clear")
+
+        # Uptime
+        if hasattr(self, '_start_time'):
+            uptime = datetime.now(timezone.utc) - self._start_time
+            h, m = divmod(int(uptime.total_seconds()) // 60, 60)
+            checks.append(f"⏱️ Uptime: {h}h{m:02d}m")
+
+        header = "🏥 <b>System Health Check</b>\n"
+        all_ok = all("✅" in c for c in checks[:4])
+        status = "🟢 ALL SYSTEMS GO" if all_ok else "🟡 DEGRADED"
+
+        return header + "\n".join(checks) + f"\n\n{status}"
