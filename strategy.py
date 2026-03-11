@@ -152,11 +152,11 @@ class Strategy:
             return False
         return _in_session_window(now.hour, now.minute, category)
 
-    def compute_session_range(self, df: pd.DataFrame) -> dict:
+    def compute_session_range(self, df: pd.DataFrame, range_lookback: int = 6) -> dict:
         """
         Calcule le range pré-session à partir des bougies DE PRÉ-SESSION.
-        Si le DataFrame contient des timestamps, filtre sur les bonnes heures.
-        Sinon (pas de timezone info), prend les RANGE_BARS dernières bougies.
+        IMPORTANT: exclut la bougie courante pour que le breakout soit détectable.
+        range_lookback: nombre de bougies à utiliser (from ASSET_PROFILES.range_lb).
         """
         last_close = float(df.iloc[-1]["close"])
 
@@ -172,8 +172,12 @@ class Strategy:
                 range_pct  = (range_size / last_close * 100) if last_close > 0 else 0
                 return {"high": high_range, "low": low_range, "size": range_size, "pct": range_pct}
 
-        # Fallback : 6 dernières bougies
-        recent     = df.tail(6)
+        # Fallback : range_lookback bougies AVANT la bougie courante
+        # On exclut la dernière bougie pour que le close puisse "casser" le range
+        if len(df) > range_lookback:
+            recent = df.iloc[-(range_lookback + 1):-1]  # exclut la bougie courante
+        else:
+            recent = df.iloc[:-1] if len(df) > 1 else df
         high_range = float(recent["high"].max())
         low_range  = float(recent["low"].min())
         range_size = high_range - low_range
@@ -244,7 +248,8 @@ class Strategy:
         curr = df.iloc[-1]
 
         # ── Range pré-session ────────────────────────────────────────────────
-        sr = self.compute_session_range(df)
+        _range_lb = asset_profile.get("range_lb", 6) if asset_profile else 6
+        sr = self.compute_session_range(df, range_lookback=_range_lb)
         range_size = sr["size"]
         range_pct  = sr["pct"]
 

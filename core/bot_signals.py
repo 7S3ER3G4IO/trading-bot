@@ -80,7 +80,8 @@ class BotSignalsMixin:
 
             # Retest uniquement pour BK (MR/TF entrent directement)
             if _strat == "BK":
-                sr_now  = self.strategy.compute_session_range(df)
+                _rlb = _profile.get("range_lb", 6)
+                sr_now  = self.strategy.compute_session_range(df, range_lookback=_rlb)
                 atr_now = self.strategy.get_atr(df)
                 if atr_now > 0 and score < 2:
                     retest_level = sr_now["high"] if sig == "BUY" else sr_now["low"]
