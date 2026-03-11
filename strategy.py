@@ -595,7 +595,7 @@ class Strategy:
             confirmations.append("EMA50_near\u2713")
 
         score = len(confirmations)
-        if score < 1:
+        if score < 2:
             return SIGNAL_HOLD, score, confirmations
 
         info = f"[MR] RSI={rsi:.0f} | BB={'lo' if sig == SIGNAL_BUY else 'hi'}"
@@ -653,7 +653,7 @@ class Strategy:
             confirmations.append("Mom3\u2713")
 
         score = len(confirmations)
-        if score < 1:
+        if score < 2:
             return SIGNAL_HOLD, score, confirmations
 
         arrow = '↑' if macd > macd_s else '↓'

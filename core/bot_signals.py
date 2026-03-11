@@ -259,6 +259,7 @@ class BotSignalsMixin:
         ref3 = _place(tp3)
 
         if not any([ref1, ref2, ref3]):
+            logger.warning(f"⛔ {instrument} — tous les ordres rejetés (marché fermé ou erreur)")
             return
 
         # ─── WebSocket monitoring BE temps réel ───

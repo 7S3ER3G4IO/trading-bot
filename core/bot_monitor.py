@@ -43,8 +43,9 @@ class BotMonitorMixin:
 
         if event == "TP1":
             state["tp1_hit"] = True
-            rng = abs(state["entry"] - state["sl"])
-            pips_tp1 = round(rng * 0.8 / pip)
+            # Use actual TP1 distance, not hardcoded 0.8
+            tp1_price = state.get("tp1", state["entry"])
+            pips_tp1 = round(abs(tp1_price - state["entry"]) / pip)
             logger.info(f"⚡ WS BE instant — {instrument} @ {entry_or_sl:.5f}")
             tgc.notify_tp1_be(
                 name=name, instrument=instrument,
@@ -87,12 +88,16 @@ class BotMonitorMixin:
             ref2_open = refs[1] in open_refs if refs[1] else False
             ref3_open = refs[2] in open_refs if refs[2] else False
 
-            # ── Time-based Stop Loss (90 minutes max sans TP1) ──────
+            # ── Time-based Stop Loss (max_hold from profile, default 12h) ──────
             if not state.get("tp1_hit"):
                 open_time = state.get("open_time")
                 if open_time:
                     age_minutes = (datetime.now(timezone.utc) - open_time).total_seconds() / 60
-                    if age_minutes > 90:
+                    # Use max_hold from profile (hours), default 12h = 720min
+                    from brokers.capital_client import ASSET_PROFILES
+                    _prof = ASSET_PROFILES.get(instrument, {})
+                    max_hold_min = _prof.get("max_hold", 12) * 60  # hours → minutes
+                    if age_minutes > max_hold_min:
                         name_ts = CAPITAL_NAMES.get(instrument, instrument)
                         logger.warning(
                             f"⏱️  Time-Stop {instrument} — {age_minutes:.0f}min sans TP1 "
@@ -120,12 +125,16 @@ class BotMonitorMixin:
                 state["tp1_hit"] = True
                 name = CAPITAL_NAMES.get(instrument, instrument)
                 pip  = CAPITAL_PIP.get(instrument, 0.0001)
-                pips_tp1 = round(abs(entry - state["sl"]) / pip * 0.8)
+                # Use actual TP1 distance
+                tp1_price = state.get("tp1", entry)
+                pips_tp1 = round(abs(tp1_price - entry) / pip)
                 logger.info(f"🎯 [POLL FALLBACK] TP1 touché {instrument} — activation Break-Even")
 
                 for ref in [refs[1], refs[2]]:
                     if ref and ref in open_refs:
-                        self.capital.modify_position_stop(ref, entry)
+                        # BE at entry + 1 pip (covers spread)
+                        be_price = entry + pip if state.get("direction") == "BUY" else entry - pip
+                        self.capital.modify_position_stop(ref, be_price)
 
                 try:
                     self.db.save_capital_trade(instrument, state)
@@ -180,9 +189,11 @@ class BotMonitorMixin:
                     pnl_est  = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
                     pips_pnl = round(pnl_est / pip_close)
                     result   = "WIN" if pnl_est > 0 else "LOSS"
+                    # Count actual positions that were open (not all assumed to be 3)
+                    n_positions = sum(1 for r in refs if r)
                     self._capital_closed_today.append({
                         "instrument": instrument,
-                        "pnl": round(pnl_est * 3, 4),
+                        "pnl": round(pnl_est * n_positions, 4),
                         "direction": state["direction"],
                         "symbol": name_close,
                     })
@@ -192,7 +203,7 @@ class BotMonitorMixin:
                         if instrument not in self._heatmap_data:
                             self._heatmap_data[instrument] = {}
                         self._heatmap_data[instrument].setdefault(h_heat, []).append(
-                            round(pnl_est * 3, 4)
+                            round(pnl_est * n_positions, 4)
                         )
                     except Exception:
                         pass
@@ -201,10 +212,10 @@ class BotMonitorMixin:
                     h_close = datetime.now(timezone.utc).hour
                     m_close = datetime.now(timezone.utc).minute
                     tracker_close = self._london_tracker if (h_close < 13 or (h_close == 13 and m_close < 30)) else self._ny_tracker
-                    tracker_close.record_close(name=name_close, pnl=pnl_est * 3, result=result)
+                    tracker_close.record_close(name=name_close, pnl=pnl_est * n_positions, result=result)
 
                     # ── Feedback DRL + AB + LSTM ──
-                    pnl_trade = round(pnl_est * 3, 4)
+                    pnl_trade = round(pnl_est * n_positions, 4)
                     won_trade = pnl_trade > 0
                     rr_trade  = abs(pnl_trade) / max(abs(pnl_est), 0.0001)
                     try:
@@ -229,13 +240,13 @@ class BotMonitorMixin:
                     pass
                 try:
                     dash_close(symbol=name_close,
-                               pnl=round(pnl_est * 3, 2), result=result,
+                               pnl=round(pnl_est * n_positions, 2), result=result,
                                side=state["direction"])
                     self.reporter.record_trade(
                         symbol=name_close,
                         side=state["direction"],
                         result=result,
-                        pnl_gross=round(pnl_est * 3, 2),
+                        pnl_gross=round(pnl_est * n_positions, 2),
                         entry=state["entry"],
                         exit_price=close_px,
                     )
@@ -244,7 +255,7 @@ class BotMonitorMixin:
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
                 self.risk.on_trade_closed(instrument=instrument)
-                pnl_final = round(pnl_est * 3, 2)
+                pnl_final = round(pnl_est * n_positions, 2)
                 self.protection.on_trade_closed(instrument, pnl_final)
                 self.drift.record_trade(
                     pnl=pnl_final,
