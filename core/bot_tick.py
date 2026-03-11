@@ -469,7 +469,7 @@ class BotTickMixin:
                 continue
             try:
                 _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
-                self._process_capital_symbol(instrument, per_instrument)
+                self._process_capital_symbol(instrument, balance)
                 _open_after  = sum(1 for s in self.capital_trades.values() if s is not None)
                 if _open_after > _open_before:
                     signals_found += 1

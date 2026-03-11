@@ -195,36 +195,19 @@ class BotSignalsMixin:
             )
             return
 
-        # Taille totale puis split en 3
+        # Taille totale puis split en 3 (1% du capital total)
         total_size = self.capital.position_size(
-            balance=balance, risk_pct=0.005, entry=entry, sl=sl, epic=instrument
+            balance=balance, risk_pct=0.01, entry=entry, sl=sl, epic=instrument
         )
-        min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 0.01)
+        min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 1.0)
         size1 = max(min_sz, round(total_size / 3, 2))
 
-        # ── SPRINT FINAL T : DRL Size Multiplier ──
-        drl_mult = self.drl.get_multiplier()
-        if drl_mult != 1.0:
-            size1 = max(min_sz, round(size1 * drl_mult, 2))
-            logger.debug(f"🎯 DRL size mult={drl_mult:.2f}× → size1={size1}")
-
-        # Sprint 4 : Drift size reduction (50% si drift actif)
+        # Sprint 4 : Drift size reduction (50% si drift actif — safety net)
         if self._drift_size_reduced and self._drift_reduced_until and datetime.now(timezone.utc) < self._drift_reduced_until:
             size1 = max(min_sz, round(size1 * 0.5, 2))
             logger.debug(f"🔴 Drift reduction active — taille réduite à {size1}")
 
-        # ── UPGRADE : Session Overlap Boost (13h-17h UTC = volume max) ─────
-        h_utc_now = datetime.now(timezone.utc).hour
-        in_overlap = 13 <= h_utc_now < 17
-        if in_overlap:
-            size1_boosted = max(min_sz, round(size1 * 1.5, 2))
-            logger.info(
-                f"⚡ Session Overlap (London∕NY) — taille boostée : "
-                f"{size1:.2f} → {size1_boosted:.2f}"
-            )
-            size1 = size1_boosted
-
-        # ── UPGRADE : R:R Adaptatif (ADX > 30 = tendance forte) ─────────────
+        # ── R:R Adaptatif (ADX > 30 = tendance forte) ─────────────
         adx_now = float(df.iloc[-1].get("adx", 0)) if "adx" in df.columns else 0
         if adx_now > 30 and sl_dist > 0:
             rr_tp2 = 2.5
@@ -237,18 +220,14 @@ class BotSignalsMixin:
                 tp2 = entry - sl_dist * rr_tp2
                 tp3 = entry - sl_dist * rr_tp3
 
-        # ── UPGRADE : HMM Regime Switching ───────────────────────────────
-        regime_result = {"name": "RANGING", "regime": 0, "confidence": 0.5}
+        # ── HMM Regime Switching (block only, no size reduction) ──
         try:
             regime_result = self.hmm.detect_regime(df, symbol=instrument)
             regime_name   = regime_result["name"]
             regime_conf   = regime_result["confidence"]
             logger.debug(f"🧠 HMM Regime {instrument} : {regime_name} (conf={regime_conf:.0%})")
 
-            if regime_result["regime"] == 0 and regime_conf >= 0.6:
-                size1 = max(min_sz, round(size1 * 0.5, 2))
-                logger.info(f"🔶 HMM RANGING ({regime_conf:.0%}) — taille réduite à {size1}")
-            elif regime_result["regime"] == 1 and sig == "SELL" and regime_conf >= 0.65:
+            if regime_result["regime"] == 1 and sig == "SELL" and regime_conf >= 0.65:
                 logger.info(f"⛔ HMM TREND_UP ({regime_conf:.0%}) bloque SELL sur {instrument}")
                 return
             elif regime_result["regime"] == 2 and sig == "BUY" and regime_conf >= 0.65:
