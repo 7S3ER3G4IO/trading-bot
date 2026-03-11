@@ -75,6 +75,7 @@ class BotSignalsMixin:
         else:
             sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument, asset_profile=_profile)
             if sig == "HOLD":
+                logger.info(f"📊 {instrument} [{_strat}] → HOLD | score={score} | {confirmations[:2] if confirmations else '∅'}")
                 return
 
             # Retest uniquement pour BK (MR/TF entrent directement)
