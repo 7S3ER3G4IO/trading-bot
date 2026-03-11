@@ -119,13 +119,19 @@ MIN_SIZE = {
     "BNBUSD":0.01,"XRPUSD":1,"SOLUSD":0.1,"AVAXUSD":1,
 }
 
+# ─── R-1: Decimal precision per instrument (auto-derived from PIP_FACTOR) ────
+# Used to round SL/TP to the correct number of decimals for Capital.com API.
+import math as _math
+PRICE_DECIMALS = {k: max(0, int(round(-_math.log10(v)))) for k, v in PIP_FACTOR.items()}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ASSET_PROFILES — V8 Haute Fréquence
 #   strat: "BK" (Breakout) | "MR" (Mean Reversion) | "TF" (Trend Following)
 #   tf:    "1h" (V8) | "1d" (Daily MR)
 #   range_lb: bougies lookback pour BK (4 = 4h en 1H)
 #   bk_margin: % du range pour valider breakout (0.03 = 3% — sensible pour 1H)
-#   tp1/tp2/tp3: en multiples ATR
+#   tp1/tp2/tp3: en multiples ATR (1.5x / 3.0x / 5.0x pour tous les instruments)
+#   sl_buffer: multiplicateur ATR pour SL (MR/TF) ou % du range pour BK
 # ═══════════════════════════════════════════════════════════════════════════════
 ASSET_PROFILES = {
     # ── 1H — Forex majeurs (haute liquidité, spreads bas) ──

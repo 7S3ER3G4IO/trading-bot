@@ -247,6 +247,13 @@ class BotSignalsMixin:
         if size1 <= 0:
             return
 
+        # ─── R-1: Round SL/TP to instrument's required decimal precision ────
+        _dec = PRICE_DECIMALS.get(instrument, 5)
+        sl  = round(sl,  _dec)
+        tp1 = round(tp1, _dec)
+        tp2 = round(tp2, _dec)
+        tp3 = round(tp3, _dec)
+
         # ─── ORDRES SÉQUENTIELS (anti-throttling Capital.com) ────
         import time as _time
         def _place(tp):
