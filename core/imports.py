@@ -36,6 +36,7 @@ from telegram_capital import SessionTracker
 from capital_websocket import CapitalWebSocket
 from ohlcv_cache import OHLCVCache
 from trade_executor import TradeExecutor
+from ml_scorer import MLScorer
 from concurrent.futures import ThreadPoolExecutor
 
 

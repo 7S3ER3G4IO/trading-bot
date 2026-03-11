@@ -138,6 +138,25 @@ class BotSignalsMixin:
             confirmations.append(f"MTF{'+' if mtf_bonus > 0 else ''}{mtf_bonus:.2f}")
             logger.debug(f"✅ MTF bonus {instrument} {sig}: {mtf_bonus:+.2f}")
 
+        # S-4: ML Score Adjustment (self-learning)
+        _ml_features = {}
+        if hasattr(self, 'ml_scorer') and self.ml_scorer:
+            _spread_ratio = 0.0
+            try:
+                _px = self.capital.get_current_price(instrument)
+                if _px:
+                    _sprd = abs(_px["ask"] - _px["bid"])
+                    _tp1_d = abs(float(df.iloc[-1]["close"]) - (float(df.iloc[-1]["close"]) + float(df.iloc[-1].get("atr", 0.001))))
+                    _spread_ratio = _sprd / _tp1_d if _tp1_d > 0 else 0
+            except Exception:
+                pass
+            _ml_features = self.ml_scorer.extract_features(
+                df, instrument, score, mtf_bonus=mtf_bonus, spread_ratio=_spread_ratio
+            )
+            if _ml_features:
+                score = self.ml_scorer.score_adjustment(score, _ml_features)
+                confirmations.append(f"ML:{self.ml_scorer.predict_win_probability(_ml_features):.0%}")
+
         # ═══ SL / TP dynamiques par stratégie et actif ══════════════════════════════
         _sl_buf = _profile.get("sl_buffer", 0.10)
         _tp1_r  = _profile.get("tp1", 1.5)
@@ -327,6 +346,7 @@ class BotSignalsMixin:
             "in_overlap": False,
             "adx_at_entry": adx_now,
             "open_time":  datetime.now(timezone.utc),
+            "ml_features": _ml_features,  # S-4: for outcome recording
         }
         if _partial_tp1_failed:
             logger.warning(

@@ -155,6 +155,9 @@ class BotInitMixin:
         if hasattr(self, 'capital_ws') and self.capital_ws:
             self.capital_ws.register_breakout_callback(self._on_ws_breakout)
 
+        # ─── S-4: ML Scorer (self-learning) ──────────────────────────────
+        self.ml_scorer = MLScorer()
+
         self.calendar.refresh()
         start_bal = self.capital.get_balance() if self.capital.available else 0.0
         self.telegram.notify_start(start_bal, CAPITAL_INSTRUMENTS)

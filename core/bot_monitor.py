@@ -209,6 +209,10 @@ class BotMonitorMixin:
                     # R-1: Record trade result for Kelly tracker
                     _risk_amt = abs(entry - state.get("sl", entry)) * size_per * n_positions
                     self.risk.record_trade_result(instrument, pnl_est, _risk_amt)
+                    # S-4: Record ML outcome for self-learning
+                    _ml_feats = state.get("ml_features", {})
+                    if _ml_feats and hasattr(self, 'ml_scorer') and self.ml_scorer:
+                        self.ml_scorer.record_outcome(_ml_feats, won=(pnl_est > 0))
                     # F-6: also track monthly for leaderboard
                     self._capital_closed_month.append({
                         "instrument": instrument,
