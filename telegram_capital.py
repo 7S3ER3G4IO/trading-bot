@@ -114,6 +114,7 @@ def notify_pre_signal_alert(pre: dict):
     name = INSTRUMENT_NAMES.get(symbol, symbol)
 
     header = R.box_header(f"⏳ SETUP EN FORMATION — {name}")
+    conf_str = ' · '.join(confs) if confs else '—'
     _send_to_channel("trades",
         f"{header}\n\n"
         f"{dir_emoji}  ·  Proximité : {prox_bar} <b>{prox}%</b>\n\n"
@@ -124,7 +125,7 @@ def notify_pre_signal_alert(pre: dict):
         f"  🎯 TP2     <code>{tp2:.5f}</code>\n\n"
         f"📍 Prix actuel : <code>{current:.5f}</code>\n"
         f"📐 R:R estimé : <b>{rr_est:.1f}x</b>\n\n"
-        f"✅ Confirmé : {' · '.join(confs) if confs else '—'}\n"
+        f"✅ Confirmé : {conf_str}\n"
         f"⏳ Manque : <b>{missing}</b>\n\n"
         f"<i>Le bot ouvrira automatiquement si la dernière condition est remplie ✅</i>"
     )
