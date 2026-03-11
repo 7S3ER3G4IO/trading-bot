@@ -62,7 +62,7 @@ CAPITAL_INSTRUMENTS = [
     # ── V7 4H — Forex volatils (7) ──
     "GBPUSD",   "USDCHF",   "AUDNZD",   "AUDJPY",   "NZDJPY",   "EURCHF",   "CHFJPY",
     # ── V7 4H — Commodités (5) ──
-    "GOLD",     "SILVER",   "OIL_WTI",  "OIL_BRENT","COPPER",
+    "GOLD",     "SILVER",   "OIL_CRUDE",  "OIL_BRENT","COPPER",
     # ── V7 4H — Indices (8) ──
     "US500",    "US100",    "US30",     "DE40",     "FR40",     "UK100",    "J225",     "AU200",
     # ── V7 4H — Crypto (3) ──
@@ -77,7 +77,7 @@ CAPITAL_INSTRUMENTS = [
 INSTRUMENT_NAMES = {
     "GBPUSD":"GBP/USD","USDCHF":"USD/CHF","AUDNZD":"AUD/NZD","AUDJPY":"AUD/JPY",
     "NZDJPY":"NZD/JPY","EURCHF":"EUR/CHF","CHFJPY":"CHF/JPY",
-    "GOLD":"Gold","SILVER":"Silver","OIL_WTI":"WTI Crude","OIL_BRENT":"Brent","COPPER":"Copper",
+    "GOLD":"Gold","SILVER":"Silver","OIL_CRUDE":"WTI Crude","OIL_BRENT":"Brent","COPPER":"Copper",
     "US500":"S&P 500","US100":"NASDAQ","US30":"Dow Jones","DE40":"DAX 40",
     "FR40":"CAC 40","UK100":"FTSE 100","J225":"Nikkei","AU200":"ASX 200",
     "BNBUSD":"BNB/USD","XRPUSD":"XRP/USD","AVAXUSD":"AVAX/USD",
@@ -90,7 +90,7 @@ INSTRUMENT_NAMES = {
 PIP_FACTOR = {
     "GBPUSD":0.0001,"USDCHF":0.0001,"AUDNZD":0.0001,"AUDJPY":0.01,
     "NZDJPY":0.01,"EURCHF":0.0001,"CHFJPY":0.01,
-    "GOLD":0.01,"SILVER":0.001,"OIL_WTI":0.01,"OIL_BRENT":0.01,"COPPER":0.0001,
+    "GOLD":0.01,"SILVER":0.001,"OIL_CRUDE":0.01,"OIL_BRENT":0.01,"COPPER":0.0001,
     "US500":0.1,"US100":0.1,"US30":1.0,"DE40":1.0,
     "FR40":1.0,"UK100":1.0,"J225":1.0,"AU200":1.0,
     "BNBUSD":0.01,"XRPUSD":0.0001,"AVAXUSD":0.01,
@@ -101,7 +101,7 @@ PIP_FACTOR = {
 }
 
 MIN_SIZE = {
-    "GOLD":0.01,"SILVER":1,"COPPER":1,"OIL_WTI":0.1,"OIL_BRENT":0.1,
+    "GOLD":0.01,"SILVER":1,"COPPER":1,"OIL_CRUDE":0.1,"OIL_BRENT":0.1,
     "US500":0.1,"US100":0.1,"US30":0.1,"DE40":0.1,"FR40":0.1,
     "UK100":0.1,"J225":1,"AU200":0.1,
     "AAPL":1,"TSLA":1,"NVDA":1,"MSFT":1,"META":1,"GOOGL":1,
@@ -128,7 +128,7 @@ ASSET_PROFILES = {
     # ── V7 4H — Commodités ──
     "GOLD":    {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":6},
     "SILVER":  {"strat":"BK","tf":"4h","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.08,"range_lb":6},
-    "OIL_WTI": {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":18},
+    "OIL_CRUDE": {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":18},
     "OIL_BRENT":{"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.08,"range_lb":18},
     "COPPER":  {"strat":"BK","tf":"4h","tp1":2.0,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":42,"adx_min":12,"bk_margin":0.05,"range_lb":6},
     # ── V7 4H — Indices ──
@@ -569,7 +569,7 @@ class CapitalClient:
         "SILVER":     1.00,   # XAGUSD
         # Pétrole
         "OIL_BRENT":  1.00,   # Brent Crude — min 1 unit
-        "OIL_WTI":    1.00,   # WTI
+        "OIL_CRUDE":    1.00,   # WTI
         "OIL":        0.10,   # fallback legacy
         "NATURALGAS": 0.10,
         # Indices (minimum 1 contrat)
