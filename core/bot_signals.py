@@ -94,7 +94,7 @@ class BotSignalsMixin:
                 _rlb = _profile.get("range_lb", 6)
                 sr_now  = self.strategy.compute_session_range(df, range_lookback=_rlb)
                 atr_now = self.strategy.get_atr(df)
-                if atr_now > 0 and score < 2:
+                if atr_now > 0 and score < 0.60:
                     retest_level = sr_now["high"] if sig == "BUY" else sr_now["low"]
                     self._pending_retest[instrument] = {
                         "sig":           sig,
@@ -105,11 +105,11 @@ class BotSignalsMixin:
                         "ticks_waited":  0,
                     }
                     logger.info(
-                        f"🔔 Breakout {instrument} {sig} score={score} | niveau={retest_level:.5f} "
+                        f"🔔 Breakout {instrument} {sig} score={score:.2f} | niveau={retest_level:.5f} "
                         f"| Attente retest (ATR={atr_now:.5f})…"
                     )
                     return
-            logger.info(f"⚡ Entrée directe {instrument} [{_strat}] {sig} score={score}")
+            logger.info(f"⚡ Entrée directe {instrument} [{_strat}] {sig} score={score:.2f}")
 
 
         # BUG FIX #5 : Vérification RiskManager avant d'ouvrir
@@ -253,6 +253,21 @@ class BotSignalsMixin:
         tp1 = round(tp1, _dec)
         tp2 = round(tp2, _dec)
         tp3 = round(tp3, _dec)
+
+        # ─── S-5: Dynamic Spread Filter (anti-frais) ─────────────────────
+        try:
+            _px = self.capital.get_current_price(instrument)
+            if _px:
+                _spread = abs(_px["ask"] - _px["bid"])
+                _tp1_dist = abs(tp1 - entry)
+                if _tp1_dist > 0 and _spread / _tp1_dist > 0.25:
+                    logger.info(
+                        f"⛔ S-5 Spread filter {instrument} | spread={_spread:.5f} "
+                        f"/ TP1_dist={_tp1_dist:.5f} = {_spread/_tp1_dist:.0%} > 25% — skip"
+                    )
+                    return
+        except Exception as _sp_e:
+            logger.debug(f"Spread check {instrument}: {_sp_e}")
 
         # ─── ORDRES SÉQUENTIELS (anti-throttling Capital.com) ────
         import time as _time

@@ -97,6 +97,12 @@ def _in_session_window(h: int, m: int, category: str) -> bool:
     return False
 
 
+# ─── S-1: Weighted score configuration ────────────────────────────────────────
+# Threshold for trade entry (0.0-1.0 continuous score).
+# 0.40 ≈ ancien score ≥ 1 (une confirmation forte suffit).
+WEIGHTED_SCORE_THRESHOLD = 0.40
+
+
 class Strategy:
 
     def compute_indicators(self, df: pd.DataFrame, df_htf: pd.DataFrame = None) -> pd.DataFrame:
@@ -287,112 +293,97 @@ class Strategy:
 
         sig = SIGNAL_BUY if broke_up else SIGNAL_SELL
 
-        # ── Confirmations (score 0-3) ────────────────────────────────────────
+        # ── S-1: Weighted Scoring (0.0-1.0) ──────────────────────────────────
+        import math
+        weights = []
         confirmations = []
 
-        # C1 — ADX (force de tendance en formation)
+        # W1 — ADX (poids max 0.20) — sigmoid normalisé
         adx_val = float(curr.get("adx", 0))
         _adx_min = asset_profile.get("adx_min", ADX_MIN) if asset_profile else ADX_MIN
+        adx_w = min(0.20, 0.20 / (1 + math.exp(-(adx_val - 25) / 8)))
         if adx_val > _adx_min:
-            confirmations.append(f"ADX {adx_val:.0f}")
+            weights.append(adx_w)
+            confirmations.append(f"ADX {adx_val:.0f}({adx_w:.2f})")
 
-        # C2 — Volume > MA20
+        # W2 — Volume ratio (poids max 0.15)
         vol    = float(curr.get("volume", 0))
         vol_ma = float(curr.get("vol_ma", vol + 1))
-        if vol > vol_ma:
-            confirmations.append("Volume✓")
+        vol_ratio = vol / vol_ma if vol_ma > 0 else 0
+        vol_w = min(0.15, 0.15 * max(0, vol_ratio - 0.8) / 1.2)
+        if vol_w > 0.01:
+            weights.append(vol_w)
+            confirmations.append(f"Vol {vol_ratio:.1f}×({vol_w:.2f})")
 
-        # C3 — Momentum Candle : corps > 60% de l'ATR (bougie conviction forte)
-        # Standard institutionnel : la bougie de breakout doit être grande
+        # W3 — Momentum candle (poids max 0.20)
         atr_val     = float(curr.get("atr", range_size or 1))
         candle_body = abs(float(curr["close"]) - float(curr["open"]))
-        momentum_ok = (atr_val > 0 and candle_body >= 0.6 * atr_val) or \
-                      (range_size > 0 and (candle_body / range_size) >= 0.3)
-        if momentum_ok:
-            confirmations.append(f"Momentum {candle_body:.5f} (ATR {atr_val:.5f})")
+        body_ratio  = candle_body / atr_val if atr_val > 0 else 0
+        mom_w = min(0.20, 0.20 * max(0, body_ratio - 0.3) / 0.7)
+        if mom_w > 0.01:
+            weights.append(mom_w)
+            confirmations.append(f"Mom {body_ratio:.1f}×ATR({mom_w:.2f})")
 
-        # ── UPGRADE : Filtre VWAP (direction par rapport à la valeur équitable) ──
-        # BUY  : prix doit être AU-DESSUS du VWAP de session
-        # SELL : prix doit être EN-DESSOUS du VWAP de session
-        # Un trade contre le VWAP a statistiquement 40% moins de chance de réussir.
+        # W4 — VWAP alignment (poids fixe 0.10)
         vwap = self.compute_session_vwap(df)
         if vwap > 0:
-            vwap_ok = (sig == SIGNAL_BUY  and last_close > vwap) or \
+            vwap_ok = (sig == SIGNAL_BUY and last_close > vwap) or \
                       (sig == SIGNAL_SELL and last_close < vwap)
             if vwap_ok:
-                confirmations.append(f"VWAP✓ ({vwap:.5f})")
-            else:
-                logger.debug(
-                    f"⚠️  VWAP contra-tendance {sig} | prix={last_close:.5f} vs VWAP={vwap:.5f}"
-                )
-                # Ne bloque pas mais ne compte pas comme confirmation
+                weights.append(0.10)
+                confirmations.append("VWAP✓(0.10)")
 
-        # ── UPGRADE : Filtre Wick (bougie à longue mèche = fakeout probable) ──
-        # La mèche dans la direction du breakout ne doit pas dépasser 40%
-        # du range total de la bougie. Une longue mèche = rejet de prix.
+        # FILTER — Wick rejection (hard block)
         candle_range = float(curr["high"]) - float(curr["low"])
         if candle_range > 0:
             if sig == SIGNAL_BUY:
-                upper_wick = float(curr["high"]) - float(curr["close"])
-                wick_pct   = upper_wick / candle_range
+                wick_pct = (float(curr["high"]) - float(curr["close"])) / candle_range
             else:
-                lower_wick = float(curr["close"]) - float(curr["low"])
-                wick_pct   = lower_wick / candle_range
-
+                wick_pct = (float(curr["close"]) - float(curr["low"])) / candle_range
             if wick_pct > 0.40:
-                logger.info(
-                    f"🕯️  Wick filter {sig} : mèche {wick_pct:.0%} > 40% — fakeout probable, skip"
-                )
-                return SIGNAL_HOLD, 0, []
+                logger.info(f"🕯️  Wick filter {sig} : mèche {wick_pct:.0%} > 40% — skip")
+                return SIGNAL_HOLD, 0.0, []
             elif wick_pct < 0.20:
-                confirmations.append(f"Wick✓ ({wick_pct:.0%})")
+                weights.append(0.08)
+                confirmations.append("Wick✓(0.08)")
 
-        # \u2500\u2500 UPGRADE : Orderflow Imbalance (OFI) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-        # Mesure la pression acheteur/vendeur sur les 3 dernières bougies.
-        # BUY favori si les 3 bougies sont bullish (close > open)
-        # SELL favori si les 3 bougies sont bearish (close < open)
+        # W5 — OFI orderflow (poids fixe 0.10)
         try:
             last3 = df.tail(3)
             if len(last3) >= 3:
                 bull_bars = (last3["close"] > last3["open"]).sum()
                 bear_bars = (last3["close"] < last3["open"]).sum()
-                ofi_ok = (sig == SIGNAL_BUY  and bull_bars >= 2) or \
+                ofi_ok = (sig == SIGNAL_BUY and bull_bars >= 2) or \
                          (sig == SIGNAL_SELL and bear_bars >= 2)
                 if ofi_ok:
                     ofi_label = f"{'↑'*bull_bars if sig == SIGNAL_BUY else '↓'*bear_bars}"
-                    confirmations.append(f"OFI✓ {ofi_label}")
+                    weights.append(0.10)
+                    confirmations.append(f"OFI✓{ofi_label}(0.10)")
         except Exception:
             pass
 
-        # \u2500\u2500 UPGRADE : London Squeeze Filter \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-        # Range asiatique (0h-7h UTC) très compressée = London Squeeze probable
-        # Les vrais breakouts sont plus puissants après un squeeze asiatique.
-        # Confirmation +1 si range_asiatique < 35% de la moyenne 20j.
+        # W6 — London Squeeze (poids fixe 0.12)
         try:
             if hasattr(df.index, "hour"):
                 asian_bars = df[df.index.map(lambda ts: 0 <= ts.hour < 7)]
                 if len(asian_bars) >= 4:
                     asian_range = float(asian_bars["high"].max() - asian_bars["low"].min())
-                    avg_range_20 = float((df["high"] - df["low"]).tail(20 * 12).mean())  # 12 bougies/h
+                    avg_range_20 = float((df["high"] - df["low"]).tail(20 * 12).mean())
                     if avg_range_20 > 0 and asian_range < avg_range_20 * 0.35:
-                        confirmations.append(f"Squeeze✓ ({asian_range:.5f})")
-                        logger.debug(f"🔵 London Squeeze détecté — range asiat. {asian_range:.5f} < 35% avg")
+                        weights.append(0.12)
+                        confirmations.append("Squeeze✓(0.12)")
         except Exception:
             pass
 
-        score = len(confirmations)
+        score = round(sum(weights), 3)
 
-
-        if score < req_score:
-            logger.info(f"❌ Score {score}/{req_score} insuffisant sur {symbol} — confirmations: {confirmations}")
+        if score < WEIGHTED_SCORE_THRESHOLD:
+            logger.info(f"❌ Score {score:.2f} < {WEIGHTED_SCORE_THRESHOLD} sur {symbol} — {confirmations}")
             return SIGNAL_HOLD, score, confirmations
 
         rng_info = f"Range {range_pct:.2f}% | {high_r:.5f}–{low_r:.5f}"
-        if sig == SIGNAL_BUY:
-            logger.info(f"🟢 BREAKOUT BUY  | {rng_info} | Score {score}/3 | {confirmations}")
-        else:
-            logger.info(f"🔴 BREAKOUT SELL | {rng_info} | Score {score}/3 | {confirmations}")
-
+        icon = "🟢" if sig == SIGNAL_BUY else "🔴"
+        logger.info(f"{icon} BREAKOUT {sig} | {rng_info} | Score {score:.2f} | {confirmations}")
         return sig, score, [rng_info] + confirmations
 
     def get_sl_tp(self, sig: str, entry: float, range_info: dict, rr: float = 2.0) -> dict:
@@ -566,7 +557,7 @@ class Strategy:
         bb_up = float(curr.get("bb_up", c))
         atr = float(curr.get("atr", 0))
         if atr <= 0:
-            return SIGNAL_HOLD, 0, []
+            return SIGNAL_HOLD, 0.0, []
 
         rsi_lo = profile.get("rsi_lo", 30)
         rsi_hi = profile.get("rsi_hi", 70)
@@ -576,31 +567,62 @@ class Strategy:
         elif rsi >= rsi_hi and c >= bb_up * 0.985:
             sig = SIGNAL_SELL
         else:
-            return SIGNAL_HOLD, 0, [f"MR:RSI={rsi:.0f}(need≤{rsi_lo}/≥{rsi_hi})"]
+            return SIGNAL_HOLD, 0.0, [f"MR:RSI={rsi:.0f}(need≤{rsi_lo}/≥{rsi_hi})"]
 
+        # S-1: Weighted MR scoring
+        weights = []
         confirmations = []
+
+        # W1 — ADX low = good for MR (max 0.20)
         adx_val = float(curr.get("adx", 0))
-        if adx_val < 25:
-            confirmations.append(f"ADX_low {adx_val:.0f}")
+        adx_w = min(0.20, 0.20 * max(0, 30 - adx_val) / 20)
+        if adx_w > 0.01:
+            weights.append(adx_w)
+            confirmations.append(f"ADX_low {adx_val:.0f}({adx_w:.2f})")
+
+        # W2 — Body ratio (max 0.15)
         candle_body = abs(c - float(curr["open"]))
         candle_range = float(curr["high"]) - float(curr["low"])
-        if candle_range > 0 and candle_body / candle_range >= 0.35:
-            confirmations.append("Body\u2713")
+        body_ratio = candle_body / candle_range if candle_range > 0 else 0
+        body_w = min(0.15, 0.15 * max(0, body_ratio - 0.2) / 0.6)
+        if body_w > 0.01:
+            weights.append(body_w)
+            confirmations.append(f"Body {body_ratio:.0%}({body_w:.2f})")
+
+        # W3 — Volume (max 0.15)
         vol = float(curr.get("volume", 0))
         vol_ma = float(curr.get("vol_ma", vol + 1))
-        if vol > vol_ma * 0.8:
-            confirmations.append("Volume\u2713")
-        ema50 = float(curr.get("ema50", c))
-        if c > 0 and abs(c - ema50) / c < 0.03:
-            confirmations.append("EMA50_near\u2713")
+        vol_ratio = vol / vol_ma if vol_ma > 0 else 0
+        vol_w = min(0.15, 0.15 * max(0, vol_ratio - 0.5) / 1.0)
+        if vol_w > 0.01:
+            weights.append(vol_w)
+            confirmations.append(f"Vol {vol_ratio:.1f}×({vol_w:.2f})")
 
-        score = len(confirmations)
-        if score < 2:
+        # W4 — EMA50 proximity (max 0.15)
+        ema50 = float(curr.get("ema50", c))
+        ema_dist = abs(c - ema50) / c if c > 0 else 1
+        ema_w = min(0.15, 0.15 * max(0, 0.05 - ema_dist) / 0.05)
+        if ema_w > 0.01:
+            weights.append(ema_w)
+            confirmations.append(f"EMA50({ema_w:.2f})")
+
+        # W5 — RSI extremity bonus (max 0.15)
+        if sig == SIGNAL_BUY:
+            rsi_extreme = max(0, rsi_lo - rsi) / 10
+        else:
+            rsi_extreme = max(0, rsi - rsi_hi) / 10
+        rsi_w = min(0.15, 0.15 * rsi_extreme)
+        if rsi_w > 0.01:
+            weights.append(rsi_w)
+            confirmations.append(f"RSI_ext({rsi_w:.2f})")
+
+        score = round(sum(weights), 3)
+        if score < WEIGHTED_SCORE_THRESHOLD:
             return SIGNAL_HOLD, score, confirmations
 
         info = f"[MR] RSI={rsi:.0f} | BB={'lo' if sig == SIGNAL_BUY else 'hi'}"
         icon = "🟢" if sig == SIGNAL_BUY else "🔴"
-        logger.info(f"{icon} MEAN REV {sig} {symbol} | {info} | Score {score} | {confirmations}")
+        logger.info(f"{icon} MEAN REV {sig} {symbol} | {info} | Score {score:.2f} | {confirmations}")
         return sig, score, [info] + confirmations
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -609,14 +631,14 @@ class Strategy:
     def _signal_tf(self, df, symbol, profile):
         curr = df.iloc[-1]
         c = float(curr["close"])
-        ema_fast = float(curr.get("ema20", 0))  # EMA rapide (ema20 inchangé car recalculé)
-        ema_slow = float(curr.get("ema50", 0))  # EMA lente
+        ema_fast = float(curr.get("ema20", 0))
+        ema_slow = float(curr.get("ema50", 0))
         macd = float(curr.get("macd", 0))
         macd_s = float(curr.get("macd_s", 0))
         adx_val = float(curr.get("adx", 0))
 
         if ema_fast <= 0 or ema_slow <= 0:
-            return SIGNAL_HOLD, 0, []
+            return SIGNAL_HOLD, 0.0, []
 
         if ema_fast > ema_slow and macd > macd_s and adx_val > 12:
             sig = SIGNAL_BUY
@@ -625,40 +647,72 @@ class Strategy:
         else:
             ema_dir = '>' if ema_fast > ema_slow else '<'
             macd_dir = '>' if macd > macd_s else '<'
-            return SIGNAL_HOLD, 0, [f"TF:EMA{ema_dir} MACD{macd_dir}S ADX={adx_val:.0f}"]
+            return SIGNAL_HOLD, 0.0, [f"TF:EMA{ema_dir} MACD{macd_dir}S ADX={adx_val:.0f}"]
 
-        # Weekly filter — only for daily TF instruments, skip for 1H
+        # Weekly filter
         _tf = profile.get("tf", "1h") if profile else "1h"
         if _tf == "1d":
             ema100 = float(curr.get("ema100", 0))
             ema250 = float(curr.get("ema250", 0))
             if ema100 > 0 and ema250 > 0:
                 if sig == SIGNAL_BUY and ema100 < ema250:
-                    return SIGNAL_HOLD, 0, []
+                    return SIGNAL_HOLD, 0.0, []
                 if sig == SIGNAL_SELL and ema100 > ema250:
-                    return SIGNAL_HOLD, 0, []
+                    return SIGNAL_HOLD, 0.0, []
 
+        # S-1: Weighted TF scoring
+        import math
+        weights = []
         confirmations = []
-        if adx_val > 25:
-            confirmations.append(f"ADX {adx_val:.0f}")
+
+        # W1 — ADX strength (max 0.25)
+        adx_w = min(0.25, 0.25 / (1 + math.exp(-(adx_val - 25) / 8)))
+        if adx_w > 0.02:
+            weights.append(adx_w)
+            confirmations.append(f"ADX {adx_val:.0f}({adx_w:.2f})")
+
+        # W2 — RSI in trend zone (0.12)
         rsi = float(curr.get("rsi", 50))
-        if (sig == SIGNAL_BUY and 40 < rsi < 70) or (sig == SIGNAL_SELL and 30 < rsi < 60):
-            confirmations.append(f"RSI\u2713 {rsi:.0f}")
+        rsi_ok = (sig == SIGNAL_BUY and 40 < rsi < 70) or \
+                 (sig == SIGNAL_SELL and 30 < rsi < 60)
+        if rsi_ok:
+            weights.append(0.12)
+            confirmations.append(f"RSI✓ {rsi:.0f}(0.12)")
+
+        # W3 — Volume (max 0.15)
         vol = float(curr.get("volume", 0))
         vol_ma = float(curr.get("vol_ma", vol + 1))
-        if vol > vol_ma * 0.9:
-            confirmations.append("Volume\u2713")
-        mom3 = float(curr.get("close", 0)) / float(df.iloc[-4]["close"]) - 1 if len(df) > 4 else 0
-        if (mom3 > 0.005 and sig == SIGNAL_BUY) or (mom3 < -0.005 and sig == SIGNAL_SELL):
-            confirmations.append("Mom3\u2713")
+        vol_ratio = vol / vol_ma if vol_ma > 0 else 0
+        vol_w = min(0.15, 0.15 * max(0, vol_ratio - 0.6) / 1.0)
+        if vol_w > 0.01:
+            weights.append(vol_w)
+            confirmations.append(f"Vol {vol_ratio:.1f}×({vol_w:.2f})")
 
-        score = len(confirmations)
-        if score < 2:
+        # W4 — 3-bar momentum (max 0.15)
+        mom3 = c / float(df.iloc[-4]["close"]) - 1 if len(df) > 4 else 0
+        mom_ok = (mom3 > 0.003 and sig == SIGNAL_BUY) or \
+                 (mom3 < -0.003 and sig == SIGNAL_SELL)
+        if mom_ok:
+            mom_w = min(0.15, abs(mom3) * 10)
+            weights.append(mom_w)
+            confirmations.append(f"Mom3 {mom3:+.2%}({mom_w:.2f})")
+
+        # W5 — MACD divergence strength (max 0.10)
+        macd_diff = abs(macd - macd_s)
+        atr = float(curr.get("atr", 1))
+        macd_norm = macd_diff / atr if atr > 0 else 0
+        macd_w = min(0.10, macd_norm * 0.5)
+        if macd_w > 0.01:
+            weights.append(macd_w)
+            confirmations.append(f"MACD_str({macd_w:.2f})")
+
+        score = round(sum(weights), 3)
+        if score < WEIGHTED_SCORE_THRESHOLD:
             return SIGNAL_HOLD, score, confirmations
 
         arrow = '↑' if macd > macd_s else '↓'
         cmp = '>' if sig == SIGNAL_BUY else '<'
         info = f"[TF] EMA20{cmp}EMA50 | MACD {arrow} | ADX={adx_val:.0f}"
         icon = "🟢" if sig == SIGNAL_BUY else "🔴"
-        logger.info(f"{icon} TREND {sig} {symbol} | {info} | Score {score} | {confirmations}")
+        logger.info(f"{icon} TREND {sig} {symbol} | {info} | Score {score:.2f} | {confirmations}")
         return sig, score, [info] + confirmations
