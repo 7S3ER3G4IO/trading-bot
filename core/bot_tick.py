@@ -416,7 +416,7 @@ class BotTickMixin:
             logger.info(f"📅 Trading suspendu : {reason}")
             return
 
-        # ── Limite corrélation (max 3 CFD simultanées) ───────────────────────
+        # ── Limite exposition (max 10 CFD simultanées) ───────────────────────
         active_count = sum(1 for s in self.capital_trades.values() if s is not None)
         if active_count >= 10:
             logger.debug(f"🔒 Positions max atteint ({active_count}/10) — skip ce tick")
@@ -433,7 +433,7 @@ class BotTickMixin:
         # ── Heartbeat visible : confirme que la boucle tourne ──────────────────
         logger.info(
             f"🔍 Scan {len(CAPITAL_INSTRUMENTS)} instruments | "
-            f"Balance={balance:,.0f}€ | Positions={active_count}/2 | "
+            f"Balance={balance:,.0f}€ | Positions={active_count}/10 | "
             f"{now.hour}h{now.minute:02d} UTC"
         )
 
