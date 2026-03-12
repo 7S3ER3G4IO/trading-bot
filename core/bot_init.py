@@ -114,6 +114,22 @@ class BotInitMixin:
         self.drl     = DRLPositionSizer()    # Feature T : Sizing adaptatif
         self.ab      = ABTester()            # Feature U : A/B Testing stratégie
 
+        # ─── 3 Modules Institutionnels ────────────────────────────────────
+        self.rate_limiter = get_rate_limiter()           # Module 1: Rate-Limit Guardian
+        self.quarantine   = AssetQuarantine(             # Module 2: Dynamic Blacklist
+            db=self.db,
+            telegram_router=self.telegram.router if self.telegram else None,
+        )
+        self.eod = EoDReconciliation(                    # Module 3: EoD Reconciliation
+            capital=self.capital,
+            db=self.db,
+            quarantine=self.quarantine,
+            telegram_router=self.telegram.router if self.telegram else None,
+        )
+        # CRON trackers
+        self._last_eod_date             = None   # date de dernier audit EoD
+        self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
+
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()

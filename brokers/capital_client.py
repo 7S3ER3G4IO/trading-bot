@@ -486,23 +486,28 @@ class CapitalClient:
 
     # ─── E-3: Request with Exponential Backoff ─────────────────────────────
 
-    def _request_safe(self, method: str, url: str, retries: int = 4, **kwargs):
+    def _request_safe(self, method: str, url: str, retries: int = 4,
+                      rl_priority: int = 2, **kwargs):
         """
         E-3: Requête HTTP avec exponential backoff + Retry-After header.
         Backoff: 0.5s → 1s → 2s → 4s (cap).
+        Rate-Limit Guardian: acquire() avant chaque tentative selon priorité.
         """
+        from rate_limiter import get_rate_limiter, Priority as RLP
+        _rl = get_rate_limiter()
+        _pri = RLP(rl_priority) if isinstance(rl_priority, int) else rl_priority
+
         kwargs.setdefault("timeout", 15)
         kwargs.setdefault("headers", self._headers())
         for attempt in range(retries):
             try:
+                _rl.acquire(_pri)   # Rate-Limit Guardian
                 r = getattr(self._session, method)(url, **kwargs)
                 if r.status_code == 429:
-                    # Parse Retry-After header
+                    # Notifier le Rate-Limit Guardian
                     retry_after = r.headers.get("Retry-After")
-                    if retry_after:
-                        wait = min(float(retry_after), 10)
-                    else:
-                        wait = min(0.5 * (2 ** attempt), 10)
+                    wait = min(float(retry_after), 30) if retry_after else min(0.5 * (2 ** attempt), 10)
+                    _rl.on_429(retry_after=int(wait))
                     logger.warning(f"⏳ 429 Rate-limited — wait {wait:.1f}s (attempt {attempt+1})")
                     time.sleep(wait)
                     continue
@@ -512,6 +517,7 @@ class CapitalClient:
                 logger.debug(f"Request error attempt {attempt+1}/{retries}: {e} — wait {wait:.1f}s")
                 time.sleep(wait)
         return None
+
 
     # ─── Ordres ──────────────────────────────────────────────────────────────
 

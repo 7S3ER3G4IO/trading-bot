@@ -268,6 +268,9 @@ class BotMonitorMixin:
                 self.risk.on_trade_closed(instrument=instrument)
                 pnl_final = round(pnl_est, 2)
                 self.protection.on_trade_closed(instrument, pnl_final)
+                # Module 2: Dynamic Blacklist — enregistrer le résultat
+                if hasattr(self, 'quarantine'):
+                    self.quarantine.record_result(instrument, won=(result == "WIN"))
                 self.drift.record_trade(
                     pnl=pnl_final,
                     win=(result == "WIN"),

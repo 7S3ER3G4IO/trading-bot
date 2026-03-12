@@ -9,16 +9,19 @@ class BotSignalsMixin:
     def _process_capital_symbol(self, instrument: str, balance: float):
         """
         Analyse un instrument Capital.com avec la stratégie London/NY Open Breakout.
-        Ouvre 3 positions (taille/3) avec 3 niveaux de TP :
-          TP1 = range × 1.5   (sortie rapide + déclencheur BE)
-          TP2 = range × 3.0   (objectif principal)
-          TP3 = range × 5.0   (laisser courir)
+        Ouvre 1 position avec TP unique (mode 1-TP anti-throttling).
         """
         state = self.capital_trades.get(instrument)
 
         # Trade déjà ouvert — on ne re-entre pas
         if state is not None:
             return
+
+        # ─── Module 2: Dynamic Blacklist — vérification quarantaine ──────────
+        if hasattr(self, 'quarantine') and self.quarantine.is_quarantined(instrument):
+            logger.debug(f"🚫 {instrument} en quarantaine — skipped")
+            return
+
 
         # Données depuis le cache OHLCV (A-2: pas de fetch REST sauf si périmé)
         _profile = ASSET_PROFILES.get(instrument, {})

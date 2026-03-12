@@ -174,3 +174,42 @@ def shutdown_handler(sig, frame):
 
 signal.signal(signal.SIGINT,  shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
+
+# ─── Module 1 : Rate-Limit Guardian ─────────────────────────────────────────
+try:
+    from rate_limiter import RateLimiter, Priority as RLPriority, get_rate_limiter
+    _RATE_LIMITER_OK = True
+except ImportError:
+    _RATE_LIMITER_OK = False
+    class RateLimiter:  # stub transparent
+        def acquire(self, *a, **kw): pass
+        def on_429(self, *a, **kw): pass
+        def stats(self): return {}
+    class RLPriority:
+        CRITICAL = 0; HIGH = 1; LOW = 2
+    def get_rate_limiter(): return RateLimiter()
+
+# ─── Module 2 : Dynamic Blacklist ────────────────────────────────────────────
+try:
+    from asset_quarantine import AssetQuarantine
+    _QUARANTINE_OK = True
+except ImportError:
+    _QUARANTINE_OK = False
+    class AssetQuarantine:  # stub transparent — laisse passer tout
+        def __init__(self, *a, **kw): pass
+        def is_quarantined(self, instrument): return False
+        def record_result(self, instrument, won): pass
+        def refresh_from_db(self): pass
+        def get_quarantined(self): return []
+        def status_summary(self): return "Quarantine: non disponible"
+
+# ─── Module 3 : EoD Reconciliation ──────────────────────────────────────────
+try:
+    from eod_reconciliation import EoDReconciliation
+    _EOD_OK = True
+except ImportError:
+    _EOD_OK = False
+    class EoDReconciliation:  # stub silencieux
+        def __init__(self, *a, **kw): pass
+        def run(self): pass
+

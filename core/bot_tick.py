@@ -168,6 +168,28 @@ class BotTickMixin:
             self._last_reset_day = today
             self._capital_closed_today.clear()
             self._dd_paused = False
+
+            # ─── Module 3: EoD Reconciliation — CRON 00h00 UTC ──────────────
+            if getattr(self, '_last_eod_date', None) != today:
+                self._last_eod_date = today
+                threading.Thread(
+                    target=self.eod.run,
+                    daemon=True,
+                    name="eod_reconciliation",
+                ).start()
+                logger.info("📋 EoD Reconciliation lancée (00h00 UTC)")
+
+        # ─── Module 2: Quarantine refresh toutes les 15 min ──────────────────
+        _qrefresh_delta = (now - getattr(self, '_last_quarantine_refresh',
+                                         datetime.min.replace(tzinfo=timezone.utc))).total_seconds()
+        if _qrefresh_delta >= 900:  # 15 min
+            self._last_quarantine_refresh = now
+            threading.Thread(
+                target=self.quarantine.refresh_from_db,
+                daemon=True,
+                name="quarantine_refresh",
+            ).start()
+
             # C-4: Clear persisted dd_paused on new day
             try:
                 self.db.save_bot_state("dd_paused", "0")
