@@ -217,6 +217,70 @@ class BotInitMixin:
             except Exception as e:
                 logger.error(f"❌ Restauration trade Capital.com {instrument} : {e}")
 
+        # ─── LIVE SYNC: fetch actual open positions from Capital.com ──────────
+        # Prevents re-entering same instrument after restart when DB is empty.
+        try:
+            live_positions = self.capital.get_open_positions()
+            # Group by epic — mark each open epic so bot won't re-open
+            open_epics = set()
+            epic_to_ref  = {}  # epic → dealId of first position found
+            epic_to_data = {}  # epic → basic state dict
+
+            for pos in live_positions:
+                p = pos.get("position", {})
+                m = pos.get("market", {})
+                epic = m.get("epic", "")
+                if not epic:
+                    continue
+                open_epics.add(epic)
+                deal_id   = p.get("dealId", "")
+                direction = p.get("direction", "BUY")
+                entry     = float(p.get("level", 0))
+                sl        = float(p.get("stopLevel", 0)) or entry * (1.02 if direction == "BUY" else 0.98)
+                tp        = float(p.get("limitLevel", 0)) or entry * (0.98 if direction == "BUY" else 1.02)
+                size      = float(p.get("size", 0))
+
+                if epic not in epic_to_ref:
+                    epic_to_ref[epic] = deal_id
+                    epic_to_data[epic] = {
+                        "direction": direction,
+                        "entry":     entry,
+                        "sl":        sl,
+                        "tp1":       tp,
+                        "tp2":       tp,
+                        "tp3":       tp,
+                        "refs":      [deal_id, None, None],
+                        "size":      size,
+                        "open_time": datetime.now(timezone.utc),
+                        "tp1_hit":   False,
+                        "tp2_hit":   False,
+                        "score":     0,
+                        "confirmations": [],
+                        "regime":    "RANGING",
+                        "in_overlap": False,
+                        "adx_at_entry": 0,
+                        "ab_variant": "A",
+                        "_live_synced": True,  # marker
+                    }
+
+            # Apply live state: only for instruments NOT already restored from DB
+            synced = 0
+            for epic, state in epic_to_data.items():
+                if epic in CAPITAL_INSTRUMENTS and self.capital_trades.get(epic) is None:
+                    self.capital_trades[epic] = state
+                    synced += 1
+                    logger.info(f"🔄 Live sync: {epic} {state['direction']} @ {state['entry']} déjà ouvert → capital_trades restauré")
+
+            if synced:
+                logger.warning(f"⚠️ Live sync: {synced} position(s) restaurée(s) depuis Capital.com (DB était vide)")
+            elif open_epics:
+                logger.info(f"✅ Live sync: {len(open_epics)} position(s) déjà dans capital_trades (DB OK)")
+            else:
+                logger.info("✅ Live sync: aucune position ouverte sur Capital.com")
+
+        except Exception as _ls_e:
+            logger.error(f"❌ Live sync positions: {_ls_e}")
+
         # C-4: Restore dd_paused state
         try:
             dd_state = self.db.load_bot_state("dd_paused", "0")
@@ -231,3 +295,4 @@ class BotInitMixin:
                 logger.info("🟢 DD pause expirée (jour précédent) — trading actif")
         except Exception:
             pass
+
