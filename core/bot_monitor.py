@@ -251,6 +251,18 @@ class BotMonitorMixin:
                     )
                 except Exception:
                     pass
+                # Persistance Supabase async (non-bloquant)
+                try:
+                    duration_min_close = int((datetime.now(timezone.utc) - state["open_time"]).total_seconds() / 60) if state.get("open_time") else 0
+                    self.db.close_capital_trade_async(
+                        instrument,
+                        pnl=round(pnl_est, 2),
+                        result=result,
+                        close_price=round(close_px, 5),
+                        duration_min=duration_min_close,
+                    )
+                except Exception:
+                    pass
                 self.capital_ws.unwatch(instrument)
                 self.capital_trades[instrument] = None
                 self.risk.on_trade_closed(instrument=instrument)

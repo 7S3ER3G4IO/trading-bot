@@ -362,7 +362,7 @@ class BotSignalsMixin:
         self.risk.on_trade_opened(instrument=instrument)
 
         try:
-            self.db.save_capital_trade(instrument, self.capital_trades[instrument])
+            self.db.save_capital_trade_async(instrument, self.capital_trades[instrument])
         except Exception as exc:
             logger.warning(f"⚠️ DB save_capital_trade open: {exc}")
 
