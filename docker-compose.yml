@@ -1,8 +1,8 @@
-version: "3.9"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║   NEMESIS TRADING BOT — Local Docker Bastion                    ║
 # ║   Lancement: docker compose up -d                               ║
+
 # ║   Logs live:  docker compose logs -f bot                        ║
 # ║   Arrêt:      docker compose down                               ║
 # ╚══════════════════════════════════════════════════════════════════╝
@@ -77,7 +77,8 @@ services:
       - .env
     environment:
       # Override DATABASE_URL pour pointer vers le postgres local
-      DATABASE_URL:        postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db
+      DATABASE_URL:        postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
+
       REDIS_URL:           redis://redis:6379/0
       # Mode local — pas de charge network sur Railway
       DEPLOYMENT_ENV:      local
@@ -87,8 +88,8 @@ services:
     volumes:
       # Persist le modèle RL et les caches entre redémarrages
       - bot_models:/tmp
-      # Hot-reload local: monte le code source pour dev rapid
-      - .:/app:ro
+      - bot_logs:/app/logs
+
     networks:
       - nemesis_net
     logging:
@@ -107,6 +108,9 @@ volumes:
     name: nemesis_redis_data
   bot_models:
     name: nemesis_bot_models
+  bot_logs:
+    name: nemesis_bot_logs
+
 
 networks:
   nemesis_net:

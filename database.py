@@ -517,9 +517,16 @@ class Database:
         self._pg = DATABASE_URL and HAS_PG
         self._lock = threading.Lock()  # Thread-safety pour SQLite
         if self._pg:
-            self._conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+            _is_local = os.environ.get("DEPLOYMENT_ENV", "cloud") == "local"
+            _ssl = "disable" if _is_local else "require"
+            # Si la DATABASE_URL contient déjà sslmode= on ne le double pas
+            if "sslmode=" in (DATABASE_URL or ""):
+                self._conn = psycopg2.connect(DATABASE_URL)
+            else:
+                self._conn = psycopg2.connect(DATABASE_URL, sslmode=_ssl)
             self._conn.autocommit = False
-            logger.info("🗄️  PostgreSQL Supabase connecté ✅")
+            logger.info(f"🗄️  PostgreSQL connecté ✅ (ssl={_ssl})")
+
         else:
             self._conn = sqlite3.connect(_SQLITE_PATH, check_same_thread=False)
             if not DATABASE_URL:

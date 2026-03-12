@@ -349,6 +349,36 @@ except ImportError:
         def run(self): return {"all_ok": True, "checks": {}}
         def send_telegram_report(self): pass
 
+try:
+    from latency_tracker import LatencyTracker
+    _LATENCY_OK = True
+except ImportError:
+    _LATENCY_OK = False
+    class LatencyTracker:
+        def __init__(self, *a, **kw): pass
+        def measure(self, inst): return _NullCtx()
+        def start(self, inst): return 0.0
+        def end(self, ts, inst, phase=""): return 0.0
+        def get_stats(self, inst=None): return {}
+        def format_report(self): return ""
+        def top_slowest(self, n=5): return []
+
+class _NullCtx:
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+
+try:
+    from golive_checklist import GoLiveChecker
+    _GOLIVE_OK = True
+except ImportError:
+    _GOLIVE_OK = False
+    class GoLiveChecker:
+        def __init__(self, *a, **kw): pass
+        def run_full_check(self): return {"_ready_for_live": False}
+        def send_telegram_report(self): pass
+        def get_sql_queries(self): return {}
+
+
 # ─── Singularité Algorithmique (Moteurs 8-10) ─────────────────────────────────
 try:
     from vpin_guard import VPINGuard

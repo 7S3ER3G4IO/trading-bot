@@ -1,69 +1,37 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║   Dockerfile — Nemesis Trading Bot                              ║
-# ║   Image ultralegère (Python 3.11 Alpine)                        ║
-# ║   Build: docker build -t nemesis-bot .                          ║
-# ╚══════════════════════════════════════════════════════════════════╝
+# Dockerfile — Nemesis Trading Bot (python:3.11-slim = build rapide, wheels binaires)
+FROM python:3.11-slim
 
-# ─── Stage 1: Builder (compile les dépendances C) ────────────────
-FROM python:3.11-alpine AS builder
+LABEL maintainer="Nemesis Trading" version="2.0-leviathan"
 
-# Dépendances système pour psycopg2, numpy, scikit-learn
-RUN apk add --no-cache \
-    gcc \
-    g++ \
-    musl-dev \
-    postgresql-dev \
-    libffi-dev \
-    openssl-dev \
-    linux-headers \
-    make \
-    && rm -rf /var/cache/apk/*
-
-WORKDIR /build
-
-# Copier seulement requirements pour layer cache
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir \
-        psycopg2-binary \
-        redis \
-        hmmlearn
-
-# ─── Stage 2: Runtime (image minimale) ───────────────────────────
-FROM python:3.11-alpine AS runtime
-
-LABEL maintainer="Nemesis Trading"
-LABEL version="2.0-leviathan"
-
-# Runtime libs seulement (pas de compilo)
-RUN apk add --no-cache \
-    libpq \
-    libstdc++ \
-    libgcc \
+# Dependencies système minimales
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
     curl \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Créer user non-root pour la sécurité
-RUN addgroup -S nemesis && adduser -S nemesis -G nemesis
+# Créer user non-root
+RUN groupadd -r nemesis && useradd -r -g nemesis nemesis
 
 WORKDIR /app
 
-# Copier le code
+# Installer les deps Python AVANT de copier le code (layer cache)
+COPY requirements.txt .
+
+# Wheels binaires disponibles sur slim → pas de compilation → 2-3 min max
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir psycopg2-binary redis hmmlearn 2>/dev/null || true
+
+# Copier le code + créer dossiers writables
 COPY --chown=nemesis:nemesis . .
+RUN mkdir -p /app/logs /app/data && chown -R nemesis:nemesis /app/logs /app/data
 
-# Installer les deps depuis le stage builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Ajouter les dépendances spécifiques local (redis, hmmlearn)
-RUN pip install --no-cache-dir psycopg2-binary redis hmmlearn 2>/dev/null || true
-
-# Volume pour les modèles persistants (RL weights etc.)
+# Volume pour les modèles persistants (RL weights)
 VOLUME ["/tmp"]
 
 USER nemesis
 
-# Healthcheck — vérifie que le bot répond
+# Sentinel Docker healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python3 -c "import os; exit(0 if os.path.exists('/tmp/.nemesis_alive') else 1)" || exit 1
 

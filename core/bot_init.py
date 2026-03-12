@@ -170,6 +170,18 @@ class BotInitMixin:
         import threading as _thr
         _thr.Thread(target=self.health.run, daemon=True, name="startup_healthcheck").start()
 
+        self.latency = LatencyTracker(                        # Étape 2: Latency Tracker
+            telegram_router=tg_router,
+        )
+
+        self.golive = GoLiveChecker(                          # Étape 3: Go-Live Checklist
+            db=self.db,
+            rate_limiter=self.rate_limiter,
+            telegram_router=tg_router,
+        )
+
+
+
         # ─── Singularité Algorithmique ────────────────────────────────────────
         self.vpin    = VPINGuard(                           # Moteur 9: VPIN Toxicity
             capital_client=self.capital,
@@ -263,6 +275,8 @@ class BotInitMixin:
             stats        = self._cmd_stats,
             performance  = self._cmd_performance,
             health       = self._cmd_health,
+            golive       = self._cmd_golive,
+            latency      = self._cmd_latency,
             achievements = lambda: self.telegram.gamification.format_achievements_block() if self.telegram.gamification else "⚠️ Gamification not available",
         )
 

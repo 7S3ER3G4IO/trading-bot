@@ -397,6 +397,17 @@ class BotCommandsMixin:
         else:
             checks.append("✅ Risk: all clear")
 
+        # Network (Moteur 21)
+        if hasattr(self, 'network'):
+            ns = self.network.stats()
+            net_icon = "✅" if ns.get("state") == "ONLINE" else "🔴"
+            checks.append(f"{net_icon} Network: {ns.get('state','?')} (reconnects={ns.get('reconnects',0)})")
+
+        # Cluster (Moteur 16)
+        if hasattr(self, 'cluster'):
+            cs = self.cluster.cluster_status()
+            checks.append(f"🌐 Cluster: {cs.get('role','?')} | {cs.get('state','?')}")
+
         # Uptime
         if hasattr(self, '_start_time'):
             uptime = datetime.now(timezone.utc) - self._start_time
@@ -408,3 +419,53 @@ class BotCommandsMixin:
         status = "🟢 ALL SYSTEMS GO" if all_ok else "🟡 DEGRADED"
 
         return header + "\n".join(checks) + f"\n\n{status}"
+
+    def _cmd_golive(self) -> str:
+        """
+        /golive — Vérifie tous les critères de passage en Live (Win Rate, DD, Sharpe...).
+        """
+        if not hasattr(self, 'golive'):
+            return "⚠️ GoLiveChecker non disponible"
+        try:
+            results = self.golive.run_full_check()
+            ready   = results.pop("_ready_for_live", False)
+            lines   = ["📋 <b>Go-Live Checklist — Nemesis v2.0</b>\n"]
+            for key, r in results.items():
+                icon = "✅" if r.get("pass") else "❌"
+                val  = r.get("value", "N/A")
+                thr  = r.get("threshold", "")
+                name = r.get("name", key)
+                lines.append(f"  {icon} {name}: <b>{val}</b> (seuil={thr})")
+            verdict = (
+                "\n🚀 <b>PRÊT POUR LE LIVE !</b>" if ready
+                else "\n⏳ <b>Pas encore prêt — critères non validés</b>"
+            )
+            return "\n".join(lines) + verdict
+        except Exception as e:
+            return f"❌ GoLive erreur: {e}"
+
+    def _cmd_latency(self) -> str:
+        """
+        /latency — Affiche les stats de latence par instrument.
+        """
+        if not hasattr(self, 'latency'):
+            return "⚠️ LatencyTracker non disponible"
+        try:
+            s = self.latency.get_stats()
+            if not s.get("total_measured"):
+                return "⏱️ <b>Latency</b>\nAucune mesure pour l'instant."
+            top = self.latency.top_slowest(5)
+            lines = [
+                "⏱️ <b>Latence Loop — Nemesis</b>\n",
+                f"  Avg: <b>{s['avg_ms']}ms</b>  P95: <b>{s['p95_ms']}ms</b>  Max: <b>{s['max_ms']}ms</b>",
+                f"  Bottlenecks (>200ms): {s['bottlenecks']}/{s['total_measured']}",
+                f"  Alertes: {s['total_alerts']}",
+            ]
+            if top:
+                lines.append("\n🐢 <b>Top 5 instruments les plus lents:</b>")
+                for inst, mx, avg in top:
+                    lines.append(f"  • {inst}: max={mx:.0f}ms  avg={avg:.0f}ms")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"❌ Latency erreur: {e}"
+
