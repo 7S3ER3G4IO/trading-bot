@@ -444,6 +444,48 @@ except ImportError:
         def stats(self): return {}
         def format_report(self): return ""
 
+# ─── Leviathan Tier — Moteurs 14-16 ──────────────────────────────────────────
+try:
+    from spatial_arb import SpatialArbEngine
+    _SPATIAL_OK = True
+except ImportError:
+    _SPATIAL_OK = False
+    class SpatialArbEngine:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def stats(self): return {}
+
+try:
+    from market_maker import MarketMaker
+    _MM_OK = True
+except ImportError:
+    _MM_OK = False
+    class MarketMaker:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_quotes(self, *a): return {}
+        def on_fill(self, *a, **kw): pass
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from cluster_manager import ClusterManager
+    _CLUSTER_OK = True
+except ImportError:
+    _CLUSTER_OK = False
+    class ClusterManager:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def is_primary(self): return True
+        def register_leg(self, *a, **kw): pass
+        def close_leg(self, *a): pass
+        def cluster_status(self): return {"role": "PRIMARY", "state": "RUNNING"}
+        def format_report(self): return ""
+
+
 
 
 

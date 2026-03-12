@@ -259,6 +259,31 @@ class BotInitMixin:
         # Injection tardive: le cache est maintenant disponible
         if hasattr(self, 'pairs'):
             self.pairs._cache = self.ohlcv_cache
+        if hasattr(self, 'hmm'):
+            self.hmm._cache = self.ohlcv_cache
+
+        # ─── Moteurs Leviathan (14-16) ────────────────────────────────────
+        self.spatial_arb = SpatialArbEngine(           # Moteur 14: Cross-Exchange Arb
+            db=self.db,
+            telegram_router=tg_router,
+        )
+        self.spatial_arb.start()
+
+        self.market_maker = MarketMaker(               # Moteur 15: Avellaneda-Stoikov MM
+            capital_client=self.capital,
+            db=self.db,
+            telegram_router=tg_router,
+            ohlcv_cache=self.ohlcv_cache,
+        )
+        self.market_maker.start()
+
+        self.cluster = ClusterManager(                 # Moteur 16: Failover State Machine
+            db=self.db,
+            telegram_router=tg_router,
+            capital_client=self.capital,
+            arb_engine=self.spatial_arb,
+        )
+        self.cluster.start()
 
         # ─── A-4: Register WS breakout callback ──────────────────────────
         if hasattr(self, 'capital_ws') and self.capital_ws:
