@@ -365,46 +365,81 @@ class CapitalClient:
 
     # ─── Données de marché ────────────────────────────────────────────────────
 
+    # ─── Rate limiter state (class-level, shared across instances) ───────────
+    _rl_lock = __import__("threading").Lock()
+    _rl_last_call = 0.0
+    _rl_min_interval = 0.12  # 8 req/s max (Capital.com limit: ~10 req/s)
+
+    def _rate_limit(self):
+        """Global rate limiter: enforces minimum interval between API calls."""
+        with CapitalClient._rl_lock:
+            now = time.time()
+            wait = CapitalClient._rl_min_interval - (now - CapitalClient._rl_last_call)
+            if wait > 0:
+                time.sleep(wait)
+            CapitalClient._rl_last_call = time.time()
+
     def fetch_ohlcv(self, epic: str, timeframe: str = "5m", count: int = 300) -> Optional[pd.DataFrame]:
-        """Télécharge les bougies OHLCV depuis Capital.com."""
+        """Télécharge les bougies OHLCV depuis Capital.com. Rate-limited + 429 retry."""
         if not self.available:
             return None
-        try:
-            gran = TF_MAP.get(timeframe, "MINUTE_5")
-            r = self._session.get(
-                f"{self._base_url}/prices/{epic}",
-                headers=self._headers(),
-                params={"resolution": gran, "max": count, "pageSize": count},
-                timeout=15,
-            )
-            r.raise_for_status()
-            prices = r.json().get("prices", [])
-            if not prices:
+
+        gran = TF_MAP.get(timeframe, "MINUTE_5")
+
+        for attempt in range(3):
+            try:
+                self._rate_limit()  # enforce global rate limit
+                r = self._session.get(
+                    f"{self._base_url}/prices/{epic}",
+                    headers=self._headers(),
+                    params={"resolution": gran, "max": count, "pageSize": count},
+                    timeout=15,
+                )
+
+                # Handle 429 explicitly
+                if r.status_code == 429:
+                    retry_after = int(r.headers.get("Retry-After", 5 * (2 ** attempt)))
+                    logger.warning(f"⚠️ Capital 429 {epic} — wait {retry_after}s (attempt {attempt+1}/3)")
+                    time.sleep(retry_after)
+                    continue
+
+                r.raise_for_status()
+                prices = r.json().get("prices", [])
+                if not prices:
+                    return None
+
+                records = []
+                for p in prices:
+                    mid_open  = (p["openPrice"]["bid"]  + p["openPrice"]["ask"])  / 2
+                    mid_high  = (p["highPrice"]["bid"]  + p["highPrice"]["ask"])  / 2
+                    mid_low   = (p["lowPrice"]["bid"]   + p["lowPrice"]["ask"])   / 2
+                    mid_close = (p["closePrice"]["bid"] + p["closePrice"]["ask"]) / 2
+                    records.append({
+                        "timestamp": pd.Timestamp(p["snapshotTimeUTC"]).tz_localize("UTC"),
+                        "open":   mid_open,
+                        "high":   mid_high,
+                        "low":    mid_low,
+                        "close":  mid_close,
+                        "volume": float(p.get("lastTradedVolume", 0)),
+                    })
+
+                df = pd.DataFrame(records)
+                df.set_index("timestamp", inplace=True)
+                df.sort_index(inplace=True)
+                return df
+
+            except Exception as e:
+                if "429" in str(e):
+                    wait_s = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                    logger.warning(f"⚠️ Capital 429 {epic} — wait {wait_s}s (attempt {attempt+1}/3)")
+                    time.sleep(wait_s)
+                    continue
+                logger.error(f"❌ Capital.com fetch_ohlcv {epic}: {e}")
                 return None
 
-            records = []
-            for p in prices:
-                mid_open  = (p["openPrice"]["bid"]  + p["openPrice"]["ask"])  / 2
-                mid_high  = (p["highPrice"]["bid"]  + p["highPrice"]["ask"])  / 2
-                mid_low   = (p["lowPrice"]["bid"]   + p["lowPrice"]["ask"])   / 2
-                mid_close = (p["closePrice"]["bid"] + p["closePrice"]["ask"]) / 2
-                records.append({
-                    "timestamp": pd.Timestamp(p["snapshotTimeUTC"]).tz_localize("UTC"),
-                    "open":   mid_open,
-                    "high":   mid_high,
-                    "low":    mid_low,
-                    "close":  mid_close,
-                    "volume": float(p.get("lastTradedVolume", 0)),
-                })
+        logger.error(f"❌ Capital.com fetch_ohlcv {epic}: max retries exceeded (429)")
+        return None
 
-            df = pd.DataFrame(records)
-            df.set_index("timestamp", inplace=True)
-            df.sort_index(inplace=True)
-            return df
-
-        except Exception as e:
-            logger.error(f"❌ Capital.com fetch_ohlcv {epic}: {e}")
-            return None
 
     def get_balance(self) -> float:
         """Retourne la valeur totale du compte (equity, pas margin disponible)."""
