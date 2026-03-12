@@ -145,9 +145,36 @@ class BotInitMixin:
             telegram_router=tg_router,
         )
 
+        # ─── Moteurs Quantitatifs Avancés ─────────────────────────────────────
+        self.ml_engine   = MLEngine(db=self.db)              # Moteur 4: ML Score
+        self.alt_data    = AltDataEngine(tg_router)           # Moteur 5: Sentiment
+        self.pairs       = PairsTrader(                       # Moteur 6: Stat-Arb
+            capital_client=self.capital,
+            ohlcv_cache=self.ohlcv_cache,
+            db=self.db,
+            telegram_router=tg_router,
+        )
+        self.pairs.start()  # démarre le daemon thread de scan
+        self.smart_router = SmartRouter(                      # Moteur 7: TWAP/Iceberg
+            capital_client=self.capital,
+            db=self.db,
+            telegram_router=tg_router,
+        )
+        self.health = HealthCheck(                            # DevOps: Health Check
+            capital=self.capital,
+            db=self.db,
+            rate_limiter=self.rate_limiter,
+            telegram_router=tg_router,
+        )
+        # Health check au démarrage (non bloquant)
+        import threading as _thr
+        _thr.Thread(target=self.health.run, daemon=True, name="startup_healthcheck").start()
+
         # CRON trackers
         self._last_eod_date             = None   # date de dernier audit EoD
         self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
+
+
 
 
 

@@ -323,12 +323,55 @@ class BotSignalsMixin:
             except Exception as _ob_e:
                 logger.debug(f"OBGuard {instrument}: {_ob_e}")
 
-        # ─── SINGLE ORDER PLACEMENT ──────────────────────────────────────────
-        # 1 position / 1 TP / 1 SL — no throttling, no duplicates
-        ref = self.capital.place_market_order(
-            epic=instrument, direction=direction,
-            size=size1, sl_price=sl, tp_price=tp1,
-        )
+        # ─── MOTEUR 4: ML Predictive Score ───────────────────────────────────
+        if hasattr(self, 'ml_engine'):
+            try:
+                _hour = datetime.now(timezone.utc).hour
+                _ml_score = self.ml_engine.predict(df, direction, instrument)
+                if _ml_score < 0.42:
+                    logger.info(
+                        f"🧠 ML Filter: {instrument} {direction} score={_ml_score:.2f} < 0.42 → skip"
+                    )
+                    return
+                logger.debug(f"🧠 ML: {instrument} score={_ml_score:.2f} ✅")
+            except Exception as _ml_e:
+                logger.debug(f"ML {instrument}: {_ml_e}")
+
+        # ─── MOTEUR 5: Alt-Data Sentiment Filter ─────────────────────────────
+        if hasattr(self, 'alt_data'):
+            try:
+                _alt_blocked, _alt_reason = self.alt_data.should_block_entry(
+                    instrument, direction
+                )
+                if _alt_blocked:
+                    logger.info(f"📡 AltData: {instrument} {direction} bloqué — {_alt_reason}")
+                    return
+            except Exception as _alt_e:
+                logger.debug(f"AltData {instrument}: {_alt_e}")
+
+        # ─── SINGLE ORDER PLACEMENT (Moteur 7 : TWAP/Iceberg ou direct) ──────
+        ref = None
+        if hasattr(self, 'smart_router') and size1 >= 0.5:
+            # Ordres ≥0.5 lot → exécution TWAP (institutionnel)
+            try:
+                twap_result = self.smart_router.execute_twap(
+                    epic=instrument, direction=direction,
+                    total_size=size1, num_slices=3, interval_s=8,
+                    sl_price=sl, tp_price=tp1, blocking=False,
+                )
+                # ref = premier ordre (pour le monitoring)
+                ref = twap_result.get("order_id", f"twap_{instrument}")
+            except Exception as _twap_e:
+                logger.debug(f"TWAP {instrument}: {_twap_e} — fallback direct")
+
+        if ref is None:
+            # Fallback: ordre direct classique (petit size ou TWAP échoué)
+            ref = self.capital.place_market_order(
+                epic=instrument, direction=direction,
+                size=size1, sl_price=sl, tp_price=tp1,
+            )
+
+
 
         if not ref:
             logger.warning(f"⛔ {instrument} — ordre rejeté (marché fermé ou erreur)")

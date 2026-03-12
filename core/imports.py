@@ -292,5 +292,63 @@ except ImportError:
         def get_sql_queries(self): return {}
     GO_LIVE_SQL_QUERIES = {}
 
+# ─── Moteurs Quantitatifs Avancés ────────────────────────────────────────────
+try:
+    from ml_engine import MLEngine
+    _ML_OK = True
+except ImportError:
+    _ML_OK = False
+    class MLEngine:
+        def __init__(self, *a, **kw): pass
+        def predict(self, *a, **kw): return 0.5
+        def retrain(self): return False
+        def stats(self): return {}
+
+try:
+    from alt_data import AltDataEngine
+    _ALT_DATA_OK = True
+except ImportError:
+    _ALT_DATA_OK = False
+    class AltDataEngine:
+        def __init__(self, *a, **kw): pass
+        def get_sentiment(self, *a, **kw): return 0.0
+        def should_block_entry(self, *a, **kw): return False, "stub"
+        def get_all_scores(self): return {}
+        def format_report(self): return ""
+        def stop(self): pass
+
+try:
+    from pairs_trader import PairsTrader
+    _PAIRS_OK = True
+except ImportError:
+    _PAIRS_OK = False
+    class PairsTrader:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def status(self): return {}
+
+try:
+    from smart_router import SmartRouter
+    _ROUTER_OK = True
+except ImportError:
+    _ROUTER_OK = False
+    class SmartRouter:
+        def __init__(self, *a, **kw): pass
+        def execute_twap(self, epic, direction, total_size, **kw): return {}
+        def execute_single(self, epic, direction, size, **kw): return None
+        def stats(self): return {}
+
+try:
+    from health_check import HealthCheck
+    _HEALTH_OK = True
+except ImportError:
+    _HEALTH_OK = False
+    class HealthCheck:
+        def __init__(self, *a, **kw): pass
+        def run(self): return {"all_ok": True, "checks": {}}
+        def send_telegram_report(self): pass
+
+
 
 
