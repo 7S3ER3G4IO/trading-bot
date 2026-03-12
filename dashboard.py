@@ -1,6 +1,6 @@
 """
 dashboard.py — Nemesis Web Dashboard
-Interface premium dark — accessible via URL Railway.
+Interface premium dark — accessible via http://localhost:8080.
 Auto-refresh toutes les 15s. Zéro dépendance externe JS.
 """
 import os, sys, threading, time, json, logging
@@ -27,7 +27,7 @@ _DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 def _auth():
     """Vérifie le token sur toutes les routes sauf /health."""
     if request.path == "/health":
-        return  # health check libre (Railway probes)
+        return  # health check local Docker
     if not _DASHBOARD_TOKEN:
         return  # pas de token configuré = pas d'auth (dev local)
     token = request.args.get("token") or request.headers.get("X-Dashboard-Token", "")
@@ -175,7 +175,7 @@ _HTML = r"""<!DOCTYPE html>
     <span class="badge">{{ "PAUSED" if s.paused else "LIVE" }}</span>
   </div>
   <div class="header-right">
-    <span class="dot"></span>Railway Production<br>
+    <span class="dot"></span>Docker Local<br>
     Mis à jour : {{ s.last_update }} · refresh 15s
   </div>
 </div>
@@ -439,13 +439,14 @@ def health():
 
 @app.route("/ip")
 def get_ip():
-    """Retourne l'IP publique de Railway."""
+    """Retourne l'IP locale du container Docker."""
     try:
-        import requests as _req
-        ip = _req.get("https://ifconfig.me", timeout=5).text.strip()
+        import socket as _s
+        ip = _s.gethostbyname(_s.gethostname())
     except Exception:
-        ip = "Impossible de récupérer l'IP"
-    return jsonify({"railway_ip": ip, "note": "IP du serveur Railway"})
+        ip = "127.0.0.1"
+    return jsonify({"local_ip": ip, "note": "IP du container Docker local"})
+
 
 
 # ─── API pour mise à jour depuis le bot ────────────────────────────────────

@@ -29,7 +29,8 @@ class BotInitMixin:
             if os.environ.get("VALIDATE_EPICS", "0") == "1":
                 self.capital.validate_epics()
         else:
-            logger.info("ℹ️  Capital.com non configuré — vérifier CAPITAL_API_KEY / EMAIL / PASSWORD dans Railway")
+            logger.info("⚠️  Capital.com non configuré — vérifier CAPITAL_API_KEY / EMAIL / PASSWORD dans le .env")
+
 
         # ─── WebSocket Capital.com — BE temps réel (<500ms) ──────────────
         self.capital_ws = CapitalWebSocket(
@@ -259,11 +260,11 @@ class BotInitMixin:
         else:
             self._webhook = None
 
-        # ─── Log IP Railway ───────────────────────────────────────────────
+        # ─── Log IP locale ────────────────────────────────────────────────
         try:
-            import requests as _rq
-            _ip = _rq.get("https://ifconfig.me", timeout=5).text.strip()
-            logger.info(f"🌐 IP publique Railway : {_ip}")
+            import socket as _s
+            _ip = _s.gethostbyname(_s.gethostname())
+            logger.info(f"🏠 IP locale Docker: {_ip}")
         except Exception:
             pass
 

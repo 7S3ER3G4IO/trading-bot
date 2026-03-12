@@ -21,7 +21,7 @@ finally:
 if __name__ == "__main__":
     bot = TradingBot()
 
-    # TASK-017 : SIGTERM handler Railway — sauvegarde l'équity curve avant shutdown
+    # TASK-017 : SIGTERM handler local Docker — sauvegarde l'équity curve avant shutdown
     def _sigterm_handler(signum, frame):
         logger.info("🛑 SIGTERM reçu — sauvegarde en cours...")
         try:

@@ -1,6 +1,6 @@
 """
 database.py — Persistance PostgreSQL via Supabase (remplace SQLite).
-Les données survivent aux redéploiements Railway.
+Les données survivent aux redémarrages Docker (volume persistant).
 
 Améliorations production:
 - Reconnexion automatique si la connexion est perdue (keepalive)
@@ -199,7 +199,7 @@ class Database:
         )
         """)
 
-        # Capital.com trades (persistance CFD après redéploiement Railway)
+        # Capital.com trades (persistance CFD après redémarrage Docker)
         self._execute(f"""
         CREATE TABLE IF NOT EXISTS capital_trades (
             id          {serial} PRIMARY KEY,
@@ -611,7 +611,7 @@ class Database:
         )
         """)
 
-        # Table Capital.com (persistance CFD trades après redéploiement Railway)
+        # Table Capital.com (persistance CFD trades (volume Docker persistant))
         self._execute(f"""
         CREATE TABLE IF NOT EXISTS capital_trades (
             id          {serial} PRIMARY KEY,
