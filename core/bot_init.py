@@ -150,7 +150,7 @@ class BotInitMixin:
         self.alt_data    = AltDataEngine(tg_router)           # Moteur 5: Sentiment
         self.pairs       = PairsTrader(                       # Moteur 6: Stat-Arb
             capital_client=self.capital,
-            ohlcv_cache=self.ohlcv_cache,
+            ohlcv_cache=None,   # sera injecté après OHLCVCache warmup
             db=self.db,
             telegram_router=tg_router,
         )
@@ -219,6 +219,9 @@ class BotInitMixin:
         self.ohlcv_cache = OHLCVCache(self.capital)
         if self.capital.available:
             self.ohlcv_cache.warmup(CAPITAL_INSTRUMENTS, ASSET_PROFILES, strategy=self.strategy)
+        # Injection tardive: le cache est maintenant disponible
+        if hasattr(self, 'pairs'):
+            self.pairs._cache = self.ohlcv_cache
 
         # ─── A-4: Register WS breakout callback ──────────────────────────
         if hasattr(self, 'capital_ws') and self.capital_ws:
