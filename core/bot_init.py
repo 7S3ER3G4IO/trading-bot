@@ -309,6 +309,31 @@ class BotInitMixin:
         )
         self.zerocopy.start()
 
+        # ─── Singularity Tier (Moteurs 32-34) ───────────────────────────
+        self.quantum = QuantumTensorEngine(             # Moteur 32: Quantum
+            db=self.db,
+            capital_client=self.capital,
+            telegram_router=tg_router,
+        )
+        self.quantum.start()
+
+        self.dark_forest = DarkForestMEV(               # Moteur 33: MEV
+            db=self.db,
+            flash_loan_engine=self.flash_loan,
+            telegram_router=tg_router,
+        )
+        self.dark_forest.start()
+
+        self.hdc = HDCMemory(                           # Moteur 34: HDC
+            db=self.db,
+            capital_client=self.capital,
+            macro_nlp=self.macro_nlp,
+            tda_engine=self.tda,
+            swarm=self.swarm,
+            telegram_router=tg_router,
+        )
+        self.hdc.start()
+
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)

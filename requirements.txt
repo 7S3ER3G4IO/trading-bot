@@ -37,3 +37,6 @@ feedparser>=6.0
 
 # Flash Loan Web3 (M30)
 web3>=6.0
+
+# Flashbots Bundle Signing (M33 Dark Forest MEV)
+eth_account>=0.10

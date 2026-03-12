@@ -697,3 +697,46 @@ except ImportError:
         def get_pipeline(self, inst): return None
         def stats(self): return {}
         def format_report(self): return ""
+
+# ─── Singularity Tier — Moteurs 32-34 ────────────────────────────────────────
+try:
+    from quantum_tensor import QuantumTensorEngine
+    _QUANTUM_OK = True
+except ImportError:
+    _QUANTUM_OK = False
+    class QuantumTensorEngine:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_quantum_signal(self, inst): return "NONE", 0.0, "no_wave"
+        def get_wave_state(self, inst): return {}
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from dark_forest_mev import DarkForestMEV
+    _DARKFOREST_OK = True
+except ImportError:
+    _DARKFOREST_OK = False
+    class DarkForestMEV:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def submit_private_tx(self, *a, **kw): return None
+        def get_protection_status(self): return {}
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from hdc_memory import HDCMemory
+    _HDC_OK = True
+except ImportError:
+    _HDC_OK = False
+    class HDCMemory:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_hdc_prediction(self, inst): return "NONE", 0.0
+        def store_outcome(self, *a, **kw): pass
+        def stats(self): return {}
+        def format_report(self): return ""
