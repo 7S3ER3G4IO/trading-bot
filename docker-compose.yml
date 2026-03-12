@@ -1,0 +1,114 @@
+version: "3.9"
+
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║   NEMESIS TRADING BOT — Local Docker Bastion                    ║
+# ║   Lancement: docker compose up -d                               ║
+# ║   Logs live:  docker compose logs -f bot                        ║
+# ║   Arrêt:      docker compose down                               ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+services:
+
+  # ────────────────────────────────────────────────────────────────
+  # 1. PostgreSQL — Supabase LOCAL (remplace le cloud en dev)
+  # ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nemesis_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       nemesis_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nemesis_net
+
+  # ────────────────────────────────────────────────────────────────
+  # 2. Redis — Cache haute fréquence (prix, signaux, sessions)
+  # ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nemesis_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --save 60 1
+        --appendonly yes
+        --appendfilename nemesis.aof
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nemesis_net
+
+  # ────────────────────────────────────────────────────────────────
+  # 3. Bot — Application principale (dépend de postgres + redis)
+  # ────────────────────────────────────────────────────────────────
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nemesis_bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_URL pour pointer vers le postgres local
+      DATABASE_URL:        postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db
+      REDIS_URL:           redis://redis:6379/0
+      # Mode local — pas de charge network sur Railway
+      DEPLOYMENT_ENV:      local
+      # Moteur 22: le bot sait qu'il tourne en local (sleep guard actif)
+      LOCAL_DEPLOYMENT:    "true"
+      # Les autres variables viennent du .env (clés API, Telegram...)
+    volumes:
+      # Persist le modèle RL et les caches entre redémarrages
+      - bot_models:/tmp
+      # Hot-reload local: monte le code source pour dev rapid
+      - .:/app:ro
+    networks:
+      - nemesis_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+# ────────────────────────────────────────────────────────────────
+# Volumes persistants (survivent à docker compose down)
+# ────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: nemesis_postgres_data
+  redis_data:
+    name: nemesis_redis_data
+  bot_models:
+    name: nemesis_bot_models
+
+networks:
+  nemesis_net:
+    name: nemesis_network
+    driver: bridge

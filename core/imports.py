@@ -485,6 +485,42 @@ except ImportError:
         def cluster_status(self): return {"role": "PRIMARY", "state": "RUNNING"}
         def format_report(self): return ""
 
+# ─── Infrastructure Locale — Moteurs 21-22 ────────────────────────────────────
+try:
+    from network_resilience import NetworkResilience
+    _NETRES_OK = True
+except ImportError:
+    _NETRES_OK = False
+    class NetworkResilience:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        @property
+        def is_online(self): return True
+        def on_reconnect(self, fn): pass
+        def on_disconnect(self, fn): pass
+        def retry(self, **kw):
+            def d(fn): return fn
+            return d
+        def safe_call(self, fn, *a, fallback=None, **kw):
+            try: return fn(*a, **kw)
+            except Exception: return fallback
+        def wrap_websocket(self, fn): return fn
+        def stats(self): return {}
+
+try:
+    from sleep_guard import SleepGuard
+    _SLEEP_OK = True
+except ImportError:
+    _SLEEP_OK = False
+    class SleepGuard:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def ensure_table(self): pass
+        def stats(self): return {}
+
+
 
 
 

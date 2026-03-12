@@ -209,6 +209,25 @@ class BotInitMixin:
         self._last_eod_date             = None   # date de dernier audit EoD
         self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
 
+        # ─── Infrastructure Locale (Moteurs 21-22) ────────────────────────
+        self.network = NetworkResilience(               # Moteur 21: WiFi Resilience
+            capital_client=self.capital,
+            db=self.db,
+            telegram_router=tg_router,
+        )
+        self.network.start()
+
+        self.sleep_guard = SleepGuard(                  # Moteur 22: Mac Sleep Guard
+            capital_client=self.capital,
+            db=self.db,
+            telegram_router=tg_router,
+            capital_trades_ref=self.capital_trades,
+        )
+        self.sleep_guard.ensure_table()
+        self.sleep_guard.start()
+
+
+
 
 
 
