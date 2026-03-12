@@ -126,9 +126,19 @@ class BotInitMixin:
             quarantine=self.quarantine,
             telegram_router=self.telegram.router if self.telegram else None,
         )
+
+        # ─── 3 Moteurs Intelligence Adaptative ───────────────────────────────
+        self.vol_adjuster = VolAdjuster()                # Moteur 1: Volatility TP/SL
+        self.ob_guard     = OrderBookGuard(self.capital) # Moteur 2: OrderBook Imbalance
+        self.shadow       = ShadowEngine(                # Moteur 3: Shadow Trading
+            db=self.db,
+            capital_client=self.capital,
+        )
+
         # CRON trackers
         self._last_eod_date             = None   # date de dernier audit EoD
         self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
+
 
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)

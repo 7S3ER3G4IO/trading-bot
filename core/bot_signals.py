@@ -295,7 +295,35 @@ class BotSignalsMixin:
         except Exception as _sp_e:
             logger.debug(f"Spread check {instrument}: {_sp_e}")
 
-        # ─── SINGLE ORDER PLACEMENT ──────────────────────────────────────
+        # ─── MOTEUR 1: Volatility-Adjusted TP/SL ─────────────────────────────
+        if hasattr(self, 'vol_adjuster'):
+            try:
+                adj_sl, adj_tp1, adj_size = self.vol_adjuster.adjust(
+                    df=df, entry=entry, sl=sl, tp1=tp1,
+                    direction=direction,
+                    risk_pct=dynamic_risk,
+                    balance=balance,
+                )
+                sl   = adj_sl   # SL ajusté à la volatilité
+                tp1  = adj_tp1  # TP ajusté à la volatilité
+                if adj_size is not None:
+                    size1 = max(round(adj_size, 2), 0.1)
+            except Exception as _va_e:
+                logger.debug(f"VolAdj {instrument}: {_va_e}")
+
+        # ─── MOTEUR 2: Order Book Imbalance Guard (async, fail-open 0.5s) ───
+        if hasattr(self, 'ob_guard'):
+            try:
+                _ob_allowed, _ob_reason = self.ob_guard.check(
+                    instrument=instrument, direction=direction, df=df, entry=entry
+                )
+                if not _ob_allowed:
+                    logger.info(f"🛡️ OBGuard: {instrument} {direction} bloqué — {_ob_reason}")
+                    return
+            except Exception as _ob_e:
+                logger.debug(f"OBGuard {instrument}: {_ob_e}")
+
+        # ─── SINGLE ORDER PLACEMENT ──────────────────────────────────────────
         # 1 position / 1 TP / 1 SL — no throttling, no duplicates
         ref = self.capital.place_market_order(
             epic=instrument, direction=direction,
@@ -305,6 +333,17 @@ class BotSignalsMixin:
         if not ref:
             logger.warning(f"⛔ {instrument} — ordre rejeté (marché fermé ou erreur)")
             return
+
+        # ─── MOTEUR 3: Shadow Trading — enregistrer le trade fantôme ─────────
+        if hasattr(self, 'shadow'):
+            try:
+                self.shadow.on_signal(
+                    instrument=instrument, direction=direction,
+                    entry=entry, sl=sl, tp1=tp1, score=score,
+                )
+            except Exception as _sh_e:
+                logger.debug(f"Shadow {instrument}: {_sh_e}")
+
 
         # ─── WebSocket monitoring ────────────────────────────────────────
         self.capital_ws.watch(

@@ -213,3 +213,40 @@ except ImportError:
         def __init__(self, *a, **kw): pass
         def run(self): pass
 
+# ─── Moteur 1 : Volatility-Adjusted TP/SL ────────────────────────────────────
+try:
+    from vol_adjuster import VolAdjuster
+    _VOL_ADJ_OK = True
+except ImportError:
+    _VOL_ADJ_OK = False
+    class VolAdjuster:  # stub: retourne les valeurs originales
+        def adjust(self, df, entry, sl, tp1, direction, risk_pct, balance, **kw):
+            return sl, tp1, None
+        def format_status(self, df): return "VolAdj: N/A"
+
+# ─── Moteur 2 : Order Book Imbalance Guard ────────────────────────────────────
+try:
+    from orderbook_guard import OrderBookGuard
+    _OB_GUARD_OK = True
+except ImportError:
+    _OB_GUARD_OK = False
+    class OrderBookGuard:  # stub: fail-open
+        def __init__(self, *a, **kw): pass
+        def check(self, *a, **kw): return True, "stub"
+        def stats(self): return {}
+
+# ─── Moteur 3 : Shadow Trading Engine ────────────────────────────────────────
+try:
+    from shadow_engine import ShadowEngine
+    _SHADOW_OK = True
+except ImportError:
+    _SHADOW_OK = False
+    class ShadowEngine:  # stub silencieux
+        def __init__(self, *a, **kw): pass
+        def on_signal(self, *a, **kw): pass
+        def on_real_trade_closed(self, *a, **kw): pass
+        def weekly_report(self): return {}
+        def format_telegram_report(self): return ""
+        def stop(self): pass
+
+
