@@ -555,7 +555,7 @@ class BotSignalsMixin:
 
         refs = self.capital.place_market_order(
             epic=epic, direction=direction, size=size1,
-            sl=sl, tp_levels=[tp1, tp2, tp3]
+            sl_price=sl, tp_price=tp1,
         )
         if refs:
             self.capital_trades[epic] = {
