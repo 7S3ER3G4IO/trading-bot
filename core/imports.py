@@ -551,9 +551,57 @@ except ImportError:
         def stats(self): return {}
 
 
+# ─── Predator Tier — Moteurs 23-25 ────────────────────────────────────────────
+try:
+    from onchain_gnn import OnChainGNN
+    _ONCHAIN_OK = True
+except ImportError:
+    _ONCHAIN_OK = False
+    class OnChainGNN:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_whale_signal(self, inst): return False, 0.0, "stub"
+        def get_all_scores(self): return {}
+        def stats(self): return {}
+        def format_report(self): return ""
 
+try:
+    from algo_hunter import AlgoHunter, SIGNAL_PENNY_BUY, SIGNAL_PENNY_SELL, SIGNAL_NONE as AH_NONE
+    _ALGOHUNT_OK = True
+except ImportError:
+    _ALGOHUNT_OK = False
+    SIGNAL_PENNY_BUY = "PENNY_JUMP_BUY"
+    SIGNAL_PENNY_SELL = "PENNY_JUMP_SELL"
+    AH_NONE = "NONE"
+    class AlgoHunter:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_hunt_signal(self, inst): return AH_NONE, 0.0, "stub"
+        def detect(self, inst): return None
+        def on_tick(self, *a, **kw): pass
+        def stats(self): return {}
+        def format_report(self): return ""
 
-
-
+try:
+    from vol_surface import VolSurface, Greeks
+    _VOLSURF_OK = True
+except ImportError:
+    _VOLSURF_OK = False
+    class Greeks:
+        def __init__(self, *a, **kw):
+            self.delta = 0; self.gamma = 0; self.theta = 0
+            self.vega = 0; self.rho = 0; self.iv = 0
+    class VolSurface:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_greeks(self, inst): return Greeks()
+        def get_portfolio_greeks(self): return Greeks()
+        def scan_anomalies(self): return []
+        def get_delta_neutral_signal(self, inst): return "NONE", 0.0, "no_anomaly"
+        def stats(self): return {}
+        def format_report(self): return ""
 
 

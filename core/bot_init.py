@@ -239,10 +239,30 @@ class BotInitMixin:
         self.sleep_guard.ensure_table()
         self.sleep_guard.start()
 
+        # ─── Predator Tier (Moteurs 23-25) ────────────────────────────────
+        self.onchain_gnn = OnChainGNN(                 # Moteur 23: On-Chain GNN
+            db=self.db,
+            capital_client=self.capital,
+            telegram_router=tg_router,
+        )
+        self.onchain_gnn.start()
 
+        self.algo_hunter = AlgoHunter(                 # Moteur 24: Adversarial AI
+            db=self.db,
+            capital_client=self.capital,
+            capital_ws=self.capital_ws,
+            telegram_router=tg_router,
+        )
+        self.algo_hunter.start()
 
+        self.vol_surface = VolSurface(                 # Moteur 25: Greeks Arb
+            db=self.db,
+            capital_client=self.capital,
+            telegram_router=tg_router,
+        )
+        self.vol_surface.start()
 
-
+        # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
 
 
 
