@@ -286,6 +286,29 @@ class BotInitMixin:
         )
         self.synth_router.start()
 
+        # ─── God Tier (Moteurs 29-31) ────────────────────────────────────
+        self.tda = TDAEngine(                          # Moteur 29: TDA
+            db=self.db,
+            capital_client=self.capital,
+            telegram_router=tg_router,
+        )
+        self.tda.start()
+
+        self.flash_loan = FlashLoanEngine(             # Moteur 30: Flash Loans
+            db=self.db,
+            capital_client=self.capital,
+            onchain_gnn=self.onchain_gnn,
+            synthetic_router=self.synth_router,
+            telegram_router=tg_router,
+        )
+        self.flash_loan.start()
+
+        self.zerocopy = ZeroCopyEngine(                # Moteur 31: Zero-Copy
+            db=self.db,
+            instruments=list(CAPITAL_INSTRUMENTS),
+        )
+        self.zerocopy.start()
+
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)

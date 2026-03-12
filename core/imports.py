@@ -648,3 +648,52 @@ except ImportError:
         def get_triangular_opportunities(self): return []
         def stats(self): return {}
         def format_report(self): return ""
+
+# ─── God Tier — Moteurs 29-31 ────────────────────────────────────────────────
+try:
+    from tda_engine import TDAEngine, BettiNumbers, ChaosState
+    _TDA_OK = True
+except ImportError:
+    _TDA_OK = False
+    class BettiNumbers:
+        def __init__(self, *a, **kw): self.b0=1;self.b1=0;self.b2=0
+    class ChaosState:
+        def __init__(self, *a, **kw): self.lyapunov=0;self.fractal_dim=1.5;self.hurst=0.5;self.regime="UNKNOWN";self.is_chaotic=False
+    class TDAEngine:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_tda_signal(self, inst): return "NONE", 0.0, "UNKNOWN"
+        def get_betti(self, inst): return BettiNumbers()
+        def get_chaos(self, inst): return ChaosState()
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from flash_loan import FlashLoanEngine
+    _FLASH_OK = True
+except ImportError:
+    _FLASH_OK = False
+    class FlashLoanEngine:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_opportunities(self): return []
+        def get_best_opportunity(self): return None
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from zerocopy_engine import ZeroCopyEngine
+    _ZEROCOPY_OK = True
+except ImportError:
+    _ZEROCOPY_OK = False
+    class ZeroCopyEngine:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def ingest(self, *a, **kw): pass
+        def get_ml_input(self, inst, w=50): return __import__('numpy').empty((0,5))
+        def get_pipeline(self, inst): return None
+        def stats(self): return {}
+        def format_report(self): return ""
