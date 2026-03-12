@@ -170,9 +170,34 @@ class BotInitMixin:
         import threading as _thr
         _thr.Thread(target=self.health.run, daemon=True, name="startup_healthcheck").start()
 
+        # ─── Singularité Algorithmique ────────────────────────────────────────
+        self.vpin    = VPINGuard(                           # Moteur 9: VPIN Toxicity
+            capital_client=self.capital,
+            capital_trades_ref=self.capital_trades,
+            db=self.db,
+            telegram_router=tg_router,
+            close_fn=None,   # sera injecté après bot_monitor init
+        )
+        self.vpin.ensure_table()
+        self.vpin.start()
+
+        self.hmm     = HMMPortfolio(                       # Moteur 10: HMM + BL
+            ohlcv_cache=None,  # injecté après OHLCVCache warmup
+            db=self.db,
+            telegram_router=tg_router,
+            asset_profiles=ASSET_PROFILES,
+        )
+        self.hmm.start()
+
+        self.rl      = RLAgent(                            # Moteur 8: RL DQN
+            db=self.db,
+            telegram_router=tg_router,
+        )
+
         # CRON trackers
         self._last_eod_date             = None   # date de dernier audit EoD
         self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
+
 
 
 

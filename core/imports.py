@@ -349,6 +349,53 @@ except ImportError:
         def run(self): return {"all_ok": True, "checks": {}}
         def send_telegram_report(self): pass
 
+# ─── Singularité Algorithmique (Moteurs 8-10) ─────────────────────────────────
+try:
+    from vpin_guard import VPINGuard
+    _VPIN_OK = True
+except ImportError:
+    _VPIN_OK = False
+    class VPINGuard:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def is_toxic(self, *a): return False, 0.0, "SAFE"
+        def ensure_table(self): pass
+        def get_all_scores(self): return {}
+        def status(self): return {}
+
+try:
+    from hmm_portfolio import HMMPortfolio, REGIME_BULL, REGIME_RANGE, REGIME_CRISIS
+    _HMM_OK = True
+except ImportError:
+    _HMM_OK = False
+    REGIME_BULL = "BULL_LOW_VOL"
+    REGIME_RANGE = "RANGE_MID_VOL"
+    REGIME_CRISIS = "CRISIS_HIGH_VOL"
+    class HMMPortfolio:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_current_regime(self): return REGIME_RANGE
+        def get_kelly_multiplier(self, *a): return 1.0
+        def get_regime_summary(self): return {"regime": REGIME_RANGE, "kelly_mult": 1.0}
+        def format_report(self): return ""
+
+try:
+    from rl_agent import RLAgent, ACTION_BUY, ACTION_SELL, ACTION_HOLD
+    _RL_OK = True
+except ImportError:
+    _RL_OK = False
+    ACTION_BUY, ACTION_SELL, ACTION_HOLD = 2, 0, 1
+    class RLAgent:
+        def __init__(self, *a, **kw): pass
+        def get_action(self, *a): return ACTION_HOLD, 0.5
+        def record_transition(self, *a, **kw): pass
+        def compute_reward(self, pnl, *a, **kw): return pnl
+        def stats(self): return {}
+        def stop(self): pass
+
+
 
 
 

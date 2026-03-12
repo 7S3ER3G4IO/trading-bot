@@ -22,6 +22,17 @@ class BotSignalsMixin:
             logger.debug(f"🚫 {instrument} en quarantaine — skipped")
             return
 
+        # ─── MOTEUR 9: VPIN Toxicity Shield ──────────────────────────────────
+        if hasattr(self, 'vpin'):
+            try:
+                _toxic, _vpin_score, _vpin_level = self.vpin.is_toxic(instrument)
+                if _toxic:
+                    logger.info(
+                        f"🛡️ VPIN {_vpin_level}: {instrument} score={_vpin_score:.3f} → entrée bloquée"
+                    )
+                    return
+            except Exception as _vpin_e:
+                logger.debug(f"VPIN {instrument}: {_vpin_e}")
 
         # Données depuis le cache OHLCV (A-2: pas de fetch REST sauf si périmé)
         _profile = ASSET_PROFILES.get(instrument, {})
@@ -310,6 +321,18 @@ class BotSignalsMixin:
                     size1 = max(round(adj_size, 2), 0.1)
             except Exception as _va_e:
                 logger.debug(f"VolAdj {instrument}: {_va_e}")
+
+        # ─── MOTEUR 10: HMM Black-Litterman Kelly Multiplier ─────────────────
+        if hasattr(self, 'hmm'):
+            try:
+                _hmm_mult = self.hmm.get_kelly_multiplier(instrument)
+                _regime   = self.hmm.get_current_regime()
+                size1     = max(round(size1 * _hmm_mult, 2), 0.01)
+                logger.debug(
+                    f"🎲 HMM [{_regime}] mult={_hmm_mult:.2f}x → size={size1}"
+                )
+            except Exception as _hmm_e:
+                logger.debug(f"HMM {instrument}: {_hmm_e}")
 
         # ─── MOTEUR 2: Order Book Imbalance Guard (async, fail-open 0.5s) ───
         if hasattr(self, 'ob_guard'):

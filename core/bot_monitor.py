@@ -271,6 +271,20 @@ class BotMonitorMixin:
                 # Module 2: Dynamic Blacklist — enregistrer le résultat
                 if hasattr(self, 'quarantine'):
                     self.quarantine.record_result(instrument, won=(result == "WIN"))
+                # Moteur 8: RL Agent — enregistrer la transition post-close
+                if hasattr(self, 'rl'):
+                    try:
+                        _trade_dur = round(
+                            (datetime.now(timezone.utc) - state.get("opened_at", datetime.now(timezone.utc))).total_seconds() / 60, 1
+                        ) if isinstance(state, dict) else 30.0
+                        _score_v   = state.get("score", 0.5) if isinstance(state, dict) else 0.5
+                        _rl_state  = [_score_v, pnl_final / 100, min(_trade_dur / 60, 1.0),
+                                      0.0, 0.0, 0.0, 0.0, 0.0]
+                        _rl_action = ACTION_BUY if state.get("direction") == "BUY" else ACTION_SELL if isinstance(state, dict) else ACTION_HOLD
+                        _rl_reward = self.rl.compute_reward(pnl_final, _trade_dur)
+                        self.rl.record_transition(_rl_state, _rl_action, _rl_reward, _rl_state, done=True)
+                    except Exception as _rl_e:
+                        logger.debug(f"RL record {instrument}: {_rl_e}")
                 self.drift.record_trade(
                     pnl=pnl_final,
                     win=(result == "WIN"),
