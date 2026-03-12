@@ -249,4 +249,48 @@ except ImportError:
         def format_telegram_report(self): return ""
         def stop(self): pass
 
+# ─── Audit Quantitatif Go-Live ───────────────────────────────────────────────
+try:
+    from slippage_injector import SlippageInjector
+    _SLIPPAGE_OK = True
+except ImportError:
+    _SLIPPAGE_OK = False
+    class SlippageInjector:  # stub transparent (pas de dégradation)
+        def __init__(self, *a, **kw): pass
+        def apply_market_slippage(self, entry, direction, ob_imbalance=0.5): return entry
+        def simulate_limit_fill(self, lp, cp, qty, direction="BUY"): return qty, lp
+        def compute_adjusted_pnl(self, pnl, *a, **kw): return pnl
+        def format_status(self): return "SlippageInjector: N/A"
+        def stats(self): return {}
+
+try:
+    from latency_tracker import LatencyTracker
+    _LATENCY_OK = True
+except ImportError:
+    _LATENCY_OK = False
+    class LatencyTracker:  # stub no-op
+        def __init__(self, *a, **kw): pass
+        def measure(self, instrument): return _NoOpCtx()
+        def start(self, instrument): return 0.0
+        def end(self, *a, **kw): return 0.0
+        def get_stats(self, *a, **kw): return {}
+        def format_report(self): return ""
+        def top_slowest(self, n=5): return []
+    class _NoOpCtx:
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+
+try:
+    from golive_checklist import GoLiveChecker, GO_LIVE_SQL_QUERIES
+    _GOLIVE_OK = True
+except ImportError:
+    _GOLIVE_OK = False
+    class GoLiveChecker:
+        def __init__(self, *a, **kw): pass
+        def run_full_check(self): return {"_ready_for_live": False}
+        def send_telegram_report(self): pass
+        def get_sql_queries(self): return {}
+    GO_LIVE_SQL_QUERIES = {}
+
+
 

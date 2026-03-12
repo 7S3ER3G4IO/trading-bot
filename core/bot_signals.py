@@ -370,9 +370,21 @@ class BotSignalsMixin:
                             f"⚠️ Corrélation {instrument}↔{open_inst}: {corr:.2f} — positions corrélées"
                         )
 
+        # ─── Étape 1: Reality Slippage Injector (mode DEMO seulement) ────────
+        # Dégrade le prix d'entrée enregistré pour refléter le slippage réel
+        _recorded_entry = entry
+        if hasattr(self, 'slippage'):
+            try:
+                _ob_imb = 0.5  # imbalance neutre par défaut
+                _recorded_entry = self.slippage.apply_market_slippage(
+                    entry=entry, direction=direction, ob_imbalance=_ob_imb
+                )
+            except Exception as _slip_e:
+                logger.debug(f"Slippage {instrument}: {_slip_e}")
+
         self.capital_trades[instrument] = {
             "refs":      [ref, None, None],
-            "entry":     entry,
+            "entry":     _recorded_entry,   # Prix dégradé en DEMO, réel en LIVE
             "sl":        sl,
             "tp1":       tp1,
             "tp2":       tp1,   # 1-TP mode
@@ -392,6 +404,7 @@ class BotSignalsMixin:
             "ml_features": _ml_features,
             "market_regime": self.context.regime if hasattr(self, 'context') else "NEUTRAL",
         }
+
 
         name    = CAPITAL_NAMES.get(instrument, instrument)
         hour    = datetime.now(timezone.utc).hour

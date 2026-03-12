@@ -135,9 +135,21 @@ class BotInitMixin:
             capital_client=self.capital,
         )
 
+        # ─── Audit Quantitatif Go-Live ────────────────────────────────────────
+        tg_router = self.telegram.router if self.telegram else None
+        self.slippage  = SlippageInjector()              # Étape 1: Reality Slippage
+        self.latency   = LatencyTracker(tg_router)       # Étape 2: Latency Tracker
+        self.golive    = GoLiveChecker(                  # Étape 3: Go-Live Checklist
+            db=self.db,
+            rate_limiter=self.rate_limiter,
+            telegram_router=tg_router,
+        )
+
         # CRON trackers
         self._last_eod_date             = None   # date de dernier audit EoD
         self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
+
+
 
 
 

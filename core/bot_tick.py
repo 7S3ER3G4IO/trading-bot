@@ -553,7 +553,9 @@ class BotTickMixin:
             _scan_sem.acquire()
             try:
                 _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
-                self._process_capital_symbol(instrument, balance)
+                # ⏱️ Latency Tracker: mesure le cycle complet par instrument
+                with self.latency.measure(instrument):
+                    self._process_capital_symbol(instrument, balance)
                 _open_after = sum(1 for s in self.capital_trades.values() if s is not None)
                 if _open_after > _open_before:
                     signals_found += 1
@@ -561,6 +563,7 @@ class BotTickMixin:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
             finally:
                 _scan_sem.release()
+
 
         # A-1: Parallel scan — 48 instruments in ~2-3s instead of ~14.4s
         from concurrent.futures import ThreadPoolExecutor, as_completed
