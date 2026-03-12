@@ -271,9 +271,9 @@ class HMMPortfolio:
             if not self._cache:
                 return self._get_observations_from_db()
 
-            # Utiliser EURUSD/XAUUSD comme proxies de stress
+            # Utiliser EURUSD/GOLD comme proxies de stress
             returns = []
-            for inst in ["EURUSD", "XAUUSD", "XBTUSD"]:
+            for inst in ["EURUSD", "GOLD", "BTCUSD"]:
                 try:
                     df = self._cache.get(inst) if hasattr(self._cache, 'get') else None
                     if df is not None and "close" in df.columns and len(df) >= 30:

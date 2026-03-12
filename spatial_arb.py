@@ -51,7 +51,7 @@ _MAX_OPEN_LEGS    = 2      # Max arbs simultanés
 
 # ─── Mapping symbol exchange-specific ────────────────────────────────────────
 _SYMBOL_MAP = {
-    "XBTUSD":  {"binance": "BTCUSDT",  "bybit": "BTCUSDT",  "okx": "BTC-USDT"},
+    "BTCUSD":  {"binance": "BTCUSDT",  "bybit": "BTCUSDT",  "okx": "BTC-USDT"},
     "ETHUSD":  {"binance": "ETHUSDT",  "bybit": "ETHUSDT",  "okx": "ETH-USDT"},
     "SOLUSD":  {"binance": "SOLUSDT",  "bybit": "SOLUSDT",  "okx": "SOL-USDT"},
     "XRPUSD":  {"binance": "XRPUSDT",  "bybit": "XRPUSDT",  "okx": "XRP-USDT"},

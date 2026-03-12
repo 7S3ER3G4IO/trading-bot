@@ -142,7 +142,7 @@ class VPINGuard:
         # Aussi traquer quelques actifs clés même sans position ouverte
         if self._capital:
             try:
-                key_assets = ["XBTUSD", "ETHUSD", "EURUSD", "XAUUSD", "USOIL"]
+                key_assets = ["BTCUSD", "ETHUSD", "EURUSD", "GOLD", "OIL_CRUDE"]
                 instruments = list(set(instruments + key_assets))
             except Exception:
                 pass

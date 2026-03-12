@@ -15,7 +15,7 @@ Filtre: si sen_score très négatif pour un signal BUY → annulation.
 
 Usage:
     alt = AltDataEngine(telegram_router)
-    score = alt.get_sentiment(instrument)  # ex: "XBTUSD" ou "EURUSD"
+    score = alt.get_sentiment(instrument)  # ex: "BTCUSD" ou "EURUSD"
     if score < -0.5 and direction == "BUY":
         return  # Signal annulé par le sentiment
 """
@@ -54,16 +54,19 @@ _RSS_FEEDS = [
     "https://www.cnbc.com/id/100727362/device/rss/rss.html",
 ]
 
-# Mapping partiel instrument → keywords de recherche
+# Mapping instrument Capital.com → keywords de recherche
 _ASSET_KEYWORDS: Dict[str, list] = {
-    "XBTUSD": ["bitcoin", "btc", "crypto"],
-    "ETHUSD": ["ethereum", "eth", "defi"],
-    "EURUSD": ["euro", "ecb", "eurozone"],
-    "GBPUSD": ["pound", "boe", "uk", "britain"],
-    "USDJPY": ["yen", "boj", "japan"],
-    "XAUUSD": ["gold", "xau", "inflation"],
-    "USOIL":  ["oil", "opec", "crude"],
+    "BTCUSD":    ["bitcoin", "btc", "crypto"],
+    "ETHUSD":    ["ethereum", "eth", "defi"],
+    "EURUSD":    ["euro", "ecb", "eurozone"],
+    "GBPUSD":    ["pound", "boe", "uk", "britain"],
+    "USDJPY":    ["yen", "boj", "japan"],
+    "GOLD":      ["gold", "xau", "inflation"],
+    "OIL_CRUDE": ["oil", "opec", "crude", "wti"],
+    "US500":     ["s&p", "sp500", "wall street"],
+    "US100":     ["nasdaq", "tech", "silicon valley"],
 }
+
 
 
 class AltDataEngine:

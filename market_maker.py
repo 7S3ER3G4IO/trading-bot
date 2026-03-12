@@ -55,7 +55,7 @@ _MAX_INVENTORY = 2.0   # Inventaire max avant skew maximum
 _REFRESH_S    = 5.0    # Refresh des quotes toutes les 5s
 
 # ─── Instruments autorisés au Market Making ──────────────────────────────────
-_MM_INSTRUMENTS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]   # Spread naturellement large
+_MM_INSTRUMENTS = ["EURUSD", "GBPUSD", "USDJPY", "GOLD"]   # Spread naturellement large
 
 
 class InventoryManager:
