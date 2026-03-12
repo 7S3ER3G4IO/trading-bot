@@ -234,7 +234,7 @@ class BotTickMixin:
                             )
 
         # ── SPRINT 4 : Backup Supabase automatique (toutes les 5 min) ──────────
-        # Survie au crash/redémarrage Railway sans perdre l'état des positions.
+        # Survie aux redémarrages Docker sans perdre l'état des positions.
         elapsed_backup = (now - self._last_backup_time).total_seconds()
         if elapsed_backup >= 300:  # 5 minutes
             self._last_backup_time = now
@@ -391,7 +391,7 @@ class BotTickMixin:
                 _dd_limit = self.risk.dynamic_dd_limit
                 if dd_pct >= _dd_limit:
                     self._dd_paused = True
-                    # C-4: Persist across Railway redeploys
+                    # C-4: Persist across Docker restarts
                     try:
                         self.db.save_bot_state("dd_paused", "1")
                         self.db.save_bot_state("dd_paused_date", today.isoformat())

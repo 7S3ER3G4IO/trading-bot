@@ -5,7 +5,7 @@ Serveur Flask léger qui reçoit les alertes TradingView
 et les injecte dans la file de signaux d'Nemesis.
 
 Configuration TradingView (Alert → Webhook URL) :
-  URL : http://YOUR_RAILWAY_URL/webhook/tradingview
+  URL : http://localhost:8080/webhook/tradingview
   Body JSON :
     {
       "secret": "{{strategy.order.alert_message}}",
@@ -27,8 +27,8 @@ except ImportError:
     logger.warning("⚠️  Flask non installé — webhook désactivé")
 
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "nemesis_webhook_2026")
-# Sur Railway le port PUBLIC est fourni par $PORT (généralement 8080)
-# On utilise ce port pour que Railway route vers notre webhook
+# Port défini par $PORT dans docker-compose (défaut 8080)
+# Ce port est exposé par Docker dans docker-compose.yml
 WEBHOOK_PORT   = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8081")))
 
 

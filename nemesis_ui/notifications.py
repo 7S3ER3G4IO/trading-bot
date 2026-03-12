@@ -163,7 +163,7 @@ class NotificationFormatter:
             f"⏰ {R.utc_time()}\n"
             f"🔄 <b>{consecutive} erreurs consécutives</b>\n\n"
             f"<code>{error[:200]}</code>\n\n"
-            f"⚠️ Action requise : vérifier Railway"
+            f"⚠️ Action requise : vérifier les containers Docker"
         )
 
     # ── Session Open ──────────────────────────────────────────────────────────

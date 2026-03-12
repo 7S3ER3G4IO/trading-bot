@@ -80,7 +80,7 @@ services:
       DATABASE_URL:        postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
 
       REDIS_URL:           redis://redis:6379/0
-      # Mode local — pas de charge network sur Railway
+      # Mode local — déploiement 100% Docker
       DEPLOYMENT_ENV:      local
       # Moteur 22: le bot sait qu'il tourne en local (sleep guard actif)
       LOCAL_DEPLOYMENT:    "true"

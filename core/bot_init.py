@@ -25,7 +25,7 @@ class BotInitMixin:
         self.capital = CapitalClient()
         if self.capital.available:
             logger.info(f"🏦 Capital.com actif — {len(CAPITAL_INSTRUMENTS)} instruments : {', '.join(CAPITAL_INSTRUMENTS)}")
-            # Validation optionnelle : VALIDATE_EPICS=1 dans env vars Railway
+            # Validation optionnelle : VALIDATE_EPICS=1 dans le .env local
             if os.environ.get("VALIDATE_EPICS", "0") == "1":
                 self.capital.validate_epics()
         else:
