@@ -130,6 +130,7 @@ class ClusterManager:
     def start(self):
         self._running = True
         self._state   = STATE_RUNNING
+        self._cleanup_stale_workers()   # Nettoyer les workers morts des précédents containers
         self._determine_role()
 
         # Thread heartbeat
@@ -354,6 +355,24 @@ class ClusterManager:
                 )
         except Exception as e:
             logger.debug(f"Protect legs: {e}")
+
+    def _cleanup_stale_workers(self):
+        """Supprime les workers morts des précédents containers Docker au démarrage."""
+        if not self._db or not getattr(self._db, '_pg', False):
+            return
+        try:
+            cur = self._db._execute(
+                "DELETE FROM cluster_workers "
+                "WHERE heartbeat_at < NOW() - INTERVAL '2 minutes' "
+                "RETURNING worker_id",
+                fetch=True
+            )
+            removed = cur.fetchall()
+            if removed:
+                ids = [r[0] for r in removed]
+                logger.info(f"🌐 Cleanup: {len(ids)} stale worker(s) supprimé(s) → {ids}")
+        except Exception as e:
+            logger.debug(f"Cleanup stale workers: {e}")
 
     def _determine_role(self):
         """Détermine si ce worker est PRIMARY ou STANDBY (premier arrivé = PRIMARY)."""
