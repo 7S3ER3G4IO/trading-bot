@@ -604,4 +604,47 @@ except ImportError:
         def stats(self): return {}
         def format_report(self): return ""
 
+# ─── Olympe Tier — Moteurs 26-28 ─────────────────────────────────────────────
+try:
+    from macro_nlp import MacroNLP
+    _MACRO_OK = True
+except ImportError:
+    _MACRO_OK = False
+    class MacroNLP:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_macro_signal(self, inst): return "NONE", 0.0, ""
+        def get_current_sentiment(self): return {"sentiment": 0.0, "label": "NEUTRAL", "events": 0}
+        def stats(self): return {}
+        def format_report(self): return ""
 
+try:
+    from swarm_intel import SwarmIntelligence
+    _SWARM_OK = True
+except ImportError:
+    _SWARM_OK = False
+    class SwarmIntelligence:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_swarm_signal(self, inst): return False, "", 0.0
+        def get_agent_state(self, inst): return {}
+        def broadcast_event(self, *a, **kw): pass
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from synthetic_router import SyntheticRouter
+    _SYNTH_OK = True
+except ImportError:
+    _SYNTH_OK = False
+    class SyntheticRouter:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_optimal_route(self, f, t): return None
+        def get_synthetic_cost(self, pair): return 0, 0, False
+        def get_triangular_opportunities(self): return []
+        def stats(self): return {}
+        def format_report(self): return ""

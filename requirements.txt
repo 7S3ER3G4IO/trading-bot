@@ -31,3 +31,6 @@ loguru==0.7.2
 
 # Graph Neural Network (M23 On-Chain GNN)
 networkx>=3.2
+
+# Macro NLP RSS (M26 Fed Sniping)
+feedparser>=6.0

@@ -262,12 +262,31 @@ class BotInitMixin:
         )
         self.vol_surface.start()
 
+        # ─── Olympe Tier (Moteurs 26-28) ─────────────────────────────────
+        self.macro_nlp = MacroNLP(                     # Moteur 26: Macro NLP
+            db=self.db,
+            capital_client=self.capital,
+            telegram_router=tg_router,
+        )
+        self.macro_nlp.start()
+
+        self.swarm = SwarmIntelligence(                # Moteur 27: Swarm Intel
+            db=self.db,
+            capital_client=self.capital,
+            capital_ws=self.capital_ws,
+            telegram_router=tg_router,
+            instruments=list(CAPITAL_INSTRUMENTS),
+        )
+        self.swarm.start()
+
+        self.synth_router = SyntheticRouter(           # Moteur 28: Tri-Arb
+            db=self.db,
+            capital_client=self.capital,
+            telegram_router=tg_router,
+        )
+        self.synth_router.start()
+
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
-
-
-
-
-
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
