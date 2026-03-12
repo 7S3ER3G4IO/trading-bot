@@ -276,8 +276,6 @@ class BotSignalsMixin:
         _dec = PRICE_DECIMALS.get(instrument, 5)
         sl  = round(sl,  _dec)
         tp1 = round(tp1, _dec)
-        tp2 = round(tp2, _dec)
-        tp3 = round(tp3, _dec)
 
         # ─── S-5: Dynamic Spread Filter (anti-frais) ─────────────────────
         try:
@@ -288,53 +286,35 @@ class BotSignalsMixin:
                 if _tp1_dist > 0 and _spread / _tp1_dist > 0.25:
                     logger.info(
                         f"⛔ S-5 Spread filter {instrument} | spread={_spread:.5f} "
-                        f"/ TP1_dist={_tp1_dist:.5f} = {_spread/_tp1_dist:.0%} > 25% — skip"
+                        f"/ TP_dist={_tp1_dist:.5f} = {_spread/_tp1_dist:.0%} > 25% — skip"
                     )
                     return
         except Exception as _sp_e:
             logger.debug(f"Spread check {instrument}: {_sp_e}")
 
-        # ─── E-2: PARALLEL ORDER PLACEMENT (3 positions concurrently) ──────
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        # ─── SINGLE ORDER PLACEMENT ──────────────────────────────────────
+        # 1 position / 1 TP / 1 SL — no throttling, no duplicates
+        ref = self.capital.place_market_order(
+            epic=instrument, direction=direction,
+            size=size1, sl_price=sl, tp_price=tp1,
+        )
 
-        def _place_limit(tp):
-            return self.capital.place_limit_order(instrument, direction, size1, sl, tp, timeout_s=15)
-
-        def _place_market(tp):
-            return self.capital.place_market_order(instrument, direction, size1, sl, tp)
-
-        # E-2: Execute all 3 positions in parallel (~0.5s vs ~1.5s sequential)
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="E2_order") as pool:
-            f1 = pool.submit(_place_limit, tp1)   # E-1: Limit for TP1
-            f2 = pool.submit(_place_market, tp2)   # Market for TP2
-            f3 = pool.submit(_place_market, tp3)   # Market for TP3
-
-        ref1 = f1.result(timeout=30) if f1 else None
-        ref2 = f2.result(timeout=30) if f2 else None
-        ref3 = f3.result(timeout=30) if f3 else None
-
-        if not any([ref1, ref2, ref3]):
-            logger.warning(f"⛔ {instrument} — tous les ordres rejetés (marché fermé ou erreur)")
+        if not ref:
+            logger.warning(f"⛔ {instrument} — ordre rejeté (marché fermé ou erreur)")
             return
 
-        # EC-1: If TP1 order (ref1) was rejected but ref2/ref3 succeeded,
-        # TP1 poll detection will never fire (refs[0] is None).
-        # → Immediately mark tp1_hit and log the partial failure.
-        _partial_tp1_failed = (ref1 is None and any([ref2, ref3]))
-
-        # ─── WebSocket monitoring BE temps réel ───
+        # ─── WebSocket monitoring ────────────────────────────────────────
         self.capital_ws.watch(
             instrument=instrument,
             entry=entry,
             tp1=tp1,
-            tp2=tp2,
-            tp1_ref=ref1 or "",
-            ref2=ref2 or "",
-            ref3=ref3 or "",
+            tp2=tp1,       # same as tp1 for 1-TP mode
+            tp1_ref=ref,
+            ref2="",
+            ref3="",
         )
 
-        # ─── Sauvegarde état ──────────────────────────────────────
-        # Wave 13: Detect overlap and log correlation
+        # ─── Session context ─────────────────────────────────────────────
         _is_overlap = self.context.is_overlap() if hasattr(self, 'context') else False
         _session_quality = self.context.session_quality() if hasattr(self, 'context') else ""
 
@@ -349,17 +329,17 @@ class BotSignalsMixin:
                         )
 
         self.capital_trades[instrument] = {
-            "refs":      [ref1, ref2, ref3],
+            "refs":      [ref, None, None],
             "entry":     entry,
             "sl":        sl,
             "tp1":       tp1,
-            "tp2":       tp2,
-            "tp3":       tp3,
+            "tp2":       tp1,   # 1-TP mode
+            "tp3":       tp1,
             "direction": direction,
             "size":      size1,
-            "tp1_hit":   _partial_tp1_failed,
+            "tp1_hit":   False,
             "tp2_hit":   False,
-            "score":      score,
+            "score":     score,
             "confirmations": confirmations,
             "regime":    regime_result.get("name", "RANGING"),
             "fear_greed": self.context._fg_value,
@@ -370,14 +350,11 @@ class BotSignalsMixin:
             "ml_features": _ml_features,
             "market_regime": self.context.regime if hasattr(self, 'context') else "NEUTRAL",
         }
-        if _partial_tp1_failed:
-            logger.warning(
-                f"⚠️ {instrument} — ref1 (TP1) rejeté, tp1_hit=True auto — "
-                f"BE immédiat sur pos2/pos3"
-            )
+
         name    = CAPITAL_NAMES.get(instrument, instrument)
         hour    = datetime.now(timezone.utc).hour
         minute  = datetime.now(timezone.utc).minute
+
         session = "London" if (hour < 13 or (hour == 13 and minute < 30)) else "NY"
         tracker = self._london_tracker if session == "London" else self._ny_tracker
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)

@@ -42,25 +42,12 @@ class BotMonitorMixin:
         pip  = CAPITAL_PIP.get(instrument, 0.0001)
 
         if event == "TP1":
+            # In 1-TP mode, TP1 = full close. Mark and let poll detect it.
             state["tp1_hit"] = True
-            # Use actual TP1 distance, not hardcoded 0.8
             tp1_price = state.get("tp1", state["entry"])
-            pips_tp1 = round(abs(tp1_price - state["entry"]) / pip)
-            logger.info(f"⚡ WS BE instant — {instrument} @ {entry_or_sl:.5f}")
-            tgc.notify_tp1_be(
-                name=name, instrument=instrument,
-                entry=entry_or_sl, pips_tp1=pips_tp1, size=0,
-            )
-        elif event == "TP2":
-            state["tp2_hit"] = True
-            pips_tp2 = round(abs(state["entry"] - entry_or_sl) / pip)
-            logger.info(f"⚡ WS TP2 trailing activé — {instrument} SL pos3 → {entry_or_sl:.5f}")
-            if self.telegram.router:
-                self.telegram.router.send_trade(
-                    f"🎯 <b>TP2 touché — {name}</b>\n"
-                    f"SL pos3 déplacé à TP1 (<code>{entry_or_sl:.5f}</code>)\n"
-                    f"🟢 Gains TP1 verrouillés sur position 3 !"
-                )
+            pip_ws    = CAPITAL_PIP.get(instrument, 0.0001)
+            pips_tp1  = round(abs(tp1_price - state["entry"]) / pip_ws)
+            logger.info(f"🎯 WS TP touché — {instrument} | {pips_tp1} pips")
 
     def _monitor_capital_positions(self):
         """
@@ -84,102 +71,35 @@ class BotMonitorMixin:
             entry    = state["entry"]
             tp1_hit  = state.get("tp1_hit", False)
 
-            ref1_open = refs[0] in open_refs if refs[0] else False
-            ref2_open = refs[1] in open_refs if refs[1] else False
-            ref3_open = refs[2] in open_refs if refs[2] else False
+            ref_open = refs[0] in open_refs if refs[0] else False
 
-            # ── Time-based Stop Loss (max_hold from profile, default 12h) ──────
-            if not state.get("tp1_hit"):
-                open_time = state.get("open_time")
-                if open_time:
-                    age_minutes = (datetime.now(timezone.utc) - open_time).total_seconds() / 60
-                    from brokers.capital_client import ASSET_PROFILES
-                    _prof = ASSET_PROFILES.get(instrument, {})
-                    max_hold_min = _prof.get("max_hold", 12) * 60
-                    if age_minutes > max_hold_min:
-                        name_ts = CAPITAL_NAMES.get(instrument, instrument)
-                        logger.warning(
-                            f"⏱️  Time-Stop {instrument} — {age_minutes:.0f}min sans TP1 "
-                            f"→ fermeture forcée"
+            # ── Time-based Stop Loss (max_hold, default 12h) ────────────────
+            open_time = state.get("open_time")
+            if open_time and ref_open:
+                age_minutes = (datetime.now(timezone.utc) - open_time).total_seconds() / 60
+                from brokers.capital_client import ASSET_PROFILES
+                _prof = ASSET_PROFILES.get(instrument, {})
+                max_hold_min = _prof.get("max_hold", 12) * 60
+                if age_minutes > max_hold_min:
+                    name_ts = CAPITAL_NAMES.get(instrument, instrument)
+                    logger.warning(
+                        f"⏱️  Time-Stop {instrument} — {age_minutes:.0f}min → fermeture forcée"
+                    )
+                    try:
+                        self.capital.close_position(refs[0])
+                    except Exception as _ts_e:
+                        logger.debug(f"Time-stop close {refs[0]}: {_ts_e}")
+                    if self.telegram.router:
+                        self.telegram.router.send_trade(
+                            f"⏱️ <b>Time-Stop — {name_ts}</b>\n"
+                            f"Ouvert depuis <b>{age_minutes:.0f} min</b> → fermé."
                         )
-                        for ref in refs:
-                            if ref and ref in open_refs:
-                                try:
-                                    self.capital.close_position(ref)
-                                except Exception as _ts_e:
-                                    logger.debug(f"Time-stop close {ref}: {_ts_e}")
-                        if self.telegram.router:
-                            self.telegram.router.send_trade(
-                                f"⏱️ <b>Time-Stop déclenché — {name_ts}</b>\n"
-                                f"Ouvert depuis <b>{age_minutes:.0f} min</b> sans atteindre TP1.\n"
-                                f"Fermeture de toutes les positions (trade zombie évité)."
-                            )
-                        self.capital_trades[instrument] = None
-                        self._pending_retest[instrument] = None
-                        continue
+                    self.capital_trades[instrument] = None
+                    self._pending_retest[instrument] = None
+                    continue
 
-
-            # TP1 touché si ref1 a disparu (fallback polling)
-            if not tp1_hit and refs[0] and not ref1_open:
-                state["tp1_hit"] = True
-                name = CAPITAL_NAMES.get(instrument, instrument)
-                pip  = CAPITAL_PIP.get(instrument, 0.0001)
-                # Use actual TP1 distance
-                tp1_price = state.get("tp1", entry)
-                pips_tp1 = round(abs(tp1_price - entry) / pip)
-                logger.info(f"🎯 [POLL FALLBACK] TP1 touché {instrument} — activation Break-Even")
-
-                for ref in [refs[1], refs[2]]:
-                    if ref and ref in open_refs:
-                        # BE at entry + 1 pip (covers spread)
-                        be_price = entry + pip if state.get("direction") == "BUY" else entry - pip
-                        self.capital.modify_position_stop(ref, be_price)
-
-                try:
-                    self.db.save_capital_trade(instrument, state)
-                except Exception:
-                    pass
-
-                tgc.notify_tp1_be(name=name, instrument=instrument,
-                                   entry=entry, pips_tp1=pips_tp1, size=0)
-
-            # ── ATR Trailing Stop (après TP1 / BE activé) ───────────────────
-            if state.get("tp1_hit"):
-                try:
-                    df_trail = self.capital.fetch_ohlcv(instrument, "5m", count=20)
-                    if df_trail is not None and len(df_trail) >= 14:
-                        df_trail = self.strategy.compute_indicators(df_trail)
-                        atr = self.strategy.get_atr(df_trail)
-                        if atr > 0:
-                            px = self.capital.get_current_price(instrument)
-                            if px:
-                                mid = px["mid"]
-                                direction = state.get("direction", "BUY")
-                                if direction == "BUY":
-                                    new_trail_sl = round(mid - atr * 1.5, 5)
-                                    # Minimum = BE price (entry + 1pip), never below
-                                    be_floor = entry + pip
-                                    new_trail_sl = max(new_trail_sl, be_floor)
-                                else:
-                                    new_trail_sl = round(mid + atr * 1.5, 5)
-                                    be_floor = entry - pip
-                                    new_trail_sl = min(new_trail_sl, be_floor)
-
-                                for ref in [refs[1], refs[2]]:
-                                    if ref and ref in open_refs:
-                                        self.capital.modify_position_stop(ref, new_trail_sl)
-                                        time.sleep(0.3)  # R-2: rate-limit trailing API calls
-                                state["trailing_sl"] = new_trail_sl
-                                logger.debug(
-                                    f"🔄 Trailing Stop {instrument} {direction} "
-                                    f"| prix={mid:.5f} | SL→{new_trail_sl:.5f} (ATR={atr:.5f})"
-                                )
-                except Exception as _te:
-                    logger.debug(f"Trailing stop {instrument}: {_te}")
-
-
-            # Toutes les positions fermées → reset + unwatch WS
-            if not ref1_open and not ref2_open and not ref3_open:
+            # Position fermée (TP ou SL atteint) → reset
+            if not ref_open:
                 logger.info(f"✅ Capital.com {instrument} — toutes positions fermées")
                 name_close = CAPITAL_NAMES.get(instrument, instrument)
                 pip_close  = CAPITAL_PIP.get(instrument, 0.0001)
@@ -192,9 +112,8 @@ class BotMonitorMixin:
                     close_px = current["mid"] if current else entry
                     diff     = (close_px - entry) * (1 if state["direction"] == "BUY" else -1)
                     pips_pnl = round(diff / pip_close)
-                    # C-2: PnL = price_diff × size × n_positions
-                    n_positions = sum(1 for r in refs if r)
-                    pnl_est  = round(diff * size_per * n_positions, 4)
+                    # 1-TP mode: 1 position only
+                    pnl_est  = round(diff * size_per, 4)
                     result   = "WIN" if pnl_est > 0 else "LOSS"
                     self._capital_closed_today.append({
                         "instrument": instrument,
@@ -207,7 +126,7 @@ class BotMonitorMixin:
                         _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
                         self.risk.record_loss(instrument, category=_cat)
                     # R-1: Record trade result for Kelly tracker
-                    _risk_amt = abs(entry - state.get("sl", entry)) * size_per * n_positions
+                    _risk_amt = abs(entry - state.get("sl", entry)) * size_per
                     self.risk.record_trade_result(instrument, pnl_est, _risk_amt)
                     # S-4: Record ML outcome for self-learning
                     _ml_feats = state.get("ml_features", {})
