@@ -334,6 +334,27 @@ class BotInitMixin:
         )
         self.hdc.start()
 
+        # ─── Consciousness Tier (Moteurs 35-37) ─────────────────────────
+        self.ast_mutator = SelfRewritingKernel(         # Moteur 35: AST
+            db=self.db,
+            algo_hunter=self.algo_hunter,
+            telegram_router=tg_router,
+        )
+        self.ast_mutator.start()
+
+        self.cfr = CFREngine(                           # Moteur 36: CFR
+            db=self.db,
+            capital_client=self.capital,
+            quantum_engine=self.quantum,
+            telegram_router=tg_router,
+        )
+        self.cfr.start()
+
+        self.fpga = VirtualFPGA(                        # Moteur 37: FPGA
+            db=self.db,
+        )
+        self.fpga.start()
+
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)

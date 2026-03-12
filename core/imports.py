@@ -740,3 +740,47 @@ except ImportError:
         def store_outcome(self, *a, **kw): pass
         def stats(self): return {}
         def format_report(self): return ""
+
+# ─── Consciousness Tier — Moteurs 35-37 ──────────────────────────────────────
+try:
+    from ast_mutator import SelfRewritingKernel
+    _ASTMUT_OK = True
+except ImportError:
+    _ASTMUT_OK = False
+    class SelfRewritingKernel:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def register_mutable(self, *a, **kw): pass
+        def mutate_function(self, *a, **kw): return False
+        def rollback(self, *a, **kw): return False
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from cfr_engine import CFREngine
+    _CFR_OK = True
+except ImportError:
+    _CFR_OK = False
+    class CFREngine:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_nash_action(self, inst): return "HOLD", 0.0, "no_data"
+        def get_exploitability(self, inst): return 1.0
+        def stats(self): return {}
+        def format_report(self): return ""
+
+try:
+    from virtual_fpga import VirtualFPGA
+    _FPGA_OK = True
+except ImportError:
+    _FPGA_OK = False
+    class VirtualFPGA:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_kernel(self, name): return None
+        def get_profiler(self): return None
+        def stats(self): return {}
+        def format_report(self): return ""

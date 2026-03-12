@@ -40,3 +40,6 @@ web3>=6.0
 
 # Flashbots Bundle Signing (M33 Dark Forest MEV)
 eth_account>=0.10
+
+# Virtual FPGA JIT Compilation (M37)
+numba>=0.59
