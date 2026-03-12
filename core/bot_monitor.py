@@ -82,7 +82,7 @@ class BotMonitorMixin:
 
             refs     = state["refs"]
             entry    = state["entry"]
-            tp1_hit  = state["tp1_hit"]
+            tp1_hit  = state.get("tp1_hit", False)
 
             ref1_open = refs[0] in open_refs if refs[0] else False
             ref2_open = refs[1] in open_refs if refs[1] else False
