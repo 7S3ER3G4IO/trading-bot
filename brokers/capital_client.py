@@ -463,26 +463,39 @@ class CapitalClient:
             return 0.0
 
     def get_current_price(self, epic: str) -> Optional[dict]:
-        """Retourne le bid/ask actuel d'un instrument."""
+        """Retourne le bid/ask actuel d'un instrument. Retry on 429."""
         if not self.available:
             return None
-        try:
-            r = self._session.get(
-                f"{self._base_url}/markets/{epic}",
-                headers=self._headers(),
-                timeout=10,
-            )
-            r.raise_for_status()
-            data = r.json()
-            snap = data.get("snapshot", {})
-            return {
-                "bid": float(snap.get("bid", 0)),
-                "ask": float(snap.get("offer", 0)),
-                "mid": (float(snap.get("bid", 0)) + float(snap.get("offer", 0))) / 2,
-            }
-        except Exception as e:
-            logger.error(f"❌ Capital.com get_price {epic}: {e}")
-            return None
+        for attempt in range(3):
+            try:
+                self._rate_limit()
+                r = self._session.get(
+                    f"{self._base_url}/markets/{epic}",
+                    headers=self._headers(),
+                    timeout=10,
+                )
+                if r.status_code == 429:
+                    wait = 3 * (attempt + 1)  # 3s, 6s, 9s
+                    logger.debug(f"⏳ get_price {epic} 429 — retry in {wait}s ({attempt+1}/3)")
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                data = r.json()
+                snap = data.get("snapshot", {})
+                return {
+                    "bid": float(snap.get("bid", 0)),
+                    "ask": float(snap.get("offer", 0)),
+                    "mid": (float(snap.get("bid", 0)) + float(snap.get("offer", 0))) / 2,
+                }
+            except Exception as e:
+                if "429" in str(e) and attempt < 2:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                logger.error(f"❌ Capital.com get_price {epic}: {e}")
+                return None
+        logger.warning(f"⚠️ get_price {epic}: 429 persistant après 3 retries")
+        return None
+
 
     # ─── E-3: Request with Exponential Backoff ─────────────────────────────
 
