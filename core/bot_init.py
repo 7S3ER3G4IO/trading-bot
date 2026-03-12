@@ -194,9 +194,21 @@ class BotInitMixin:
             telegram_router=tg_router,
         )
 
+        self.meta    = MetaAgent(                          # Moteur 13: Cerveau du Cerveau
+            db=self.db,
+            telegram_router=tg_router,
+        )
+        self.meta.ensure_table()
+
+        self.mev     = MEVShield()                         # Moteur 12: Anti-FrontRun
+
+        # Moteur 11: Memory Pool (GC tuning + buffers numpy) — singleton global
+        self.mem     = MEMORY_POOL if MEMORY_POOL else MemoryPool.get_instance()
+
         # CRON trackers
         self._last_eod_date             = None   # date de dernier audit EoD
         self._last_quarantine_refresh   = datetime.now(timezone.utc)  # refresh 15min
+
 
 
 

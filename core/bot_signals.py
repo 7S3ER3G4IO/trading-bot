@@ -372,28 +372,88 @@ class BotSignalsMixin:
             except Exception as _alt_e:
                 logger.debug(f"AltData {instrument}: {_alt_e}")
 
-        # ─── SINGLE ORDER PLACEMENT (Moteur 7 : TWAP/Iceberg ou direct) ──────
-        ref = None
-        if hasattr(self, 'smart_router') and size1 >= 0.5:
-            # Ordres ≥0.5 lot → exécution TWAP (institutionnel)
+        # ─── MOTEUR 13: Meta-Agent Consensus ─────────────────────────────────
+        if hasattr(self, 'meta'):
             try:
+                _meta_signals = {
+                    "technical_score":  score,
+                    "ml_score":         getattr(self, '_last_ml_score', 0.5),
+                    "rl_action":        getattr(self, '_last_rl_action', 1),
+                    "rl_confidence":    getattr(self, '_last_rl_conf', 0.5),
+                    "sentiment_score":  self.alt_data.get_sentiment(instrument) if hasattr(self, 'alt_data') else 0.0,
+                    "hmm_kelly_mult":   self.hmm.get_kelly_multiplier(instrument) if hasattr(self, 'hmm') else 1.0,
+                    "hmm_regime":       self.hmm.get_current_regime() if hasattr(self, 'hmm') else "RANGE_MID_VOL",
+                    "vpin_score":       self.vpin.get_all_scores().get(instrument, {}).get("vpin", 0.0) if hasattr(self, 'vpin') else 0.0,
+                }
+                _meta_dec = self.meta.decide(instrument, direction, _meta_signals)
+                if not _meta_dec.approved:
+                    logger.info(f"🧬 MetaAgent: {instrument} {direction} bloqué — {_meta_dec.reason}")
+                    return
+                # Appliquer le multiplicateur de taille (conviction du consensus)
+                size1 = max(round(size1 * _meta_dec.size_multiplier, 2), 0.01)
+                logger.debug(f"🧬 MetaAgent: score={_meta_dec.score:.3f} mult={_meta_dec.size_multiplier}x → size={size1}")
+            except Exception as _meta_e:
+                logger.debug(f"MetaAgent {instrument}: {_meta_e}")
+
+
+
+        # ─── SINGLE ORDER PLACEMENT (Moteur 7 TWAP + Moteur 12 MEV obfusqué) ─
+        ref = None
+
+        # Enregistrer le prix courant AVANT l'ordre (frontrun baseline)
+        if hasattr(self, 'mev'):
+            try:
+                self.mev.record_price(instrument, entry)
+                _decoy = self.mev.inject_decoy_delay()
+                if _decoy > 0:
+                    import time as _t; _t.sleep(_decoy)
+            except Exception:
+                pass
+
+        if hasattr(self, 'smart_router') and size1 >= 0.5:
+            # Ordres ≥0.5 lot → TWAP obfusqué via MEV Shield
+            try:
+                # Obfuscation: schedule log-normal (MEV) au lieu de fixed 8s
+                if hasattr(self, 'mev') and hasattr(self.mev, 'get_twap_schedule'):
+                    _mev_schedule = self.mev.get_twap_schedule(size1, base_interval=8)
+                    _n_slices = len(_mev_schedule)
+                    _avg_interval = sum(iv for _, iv in _mev_schedule) / _n_slices
+                else:
+                    _n_slices, _avg_interval = 3, 8
+
                 twap_result = self.smart_router.execute_twap(
                     epic=instrument, direction=direction,
-                    total_size=size1, num_slices=3, interval_s=8,
+                    total_size=size1, num_slices=_n_slices,
+                    interval_s=_avg_interval,
                     sl_price=sl, tp_price=tp1, blocking=False,
                 )
-                # ref = premier ordre (pour le monitoring)
                 ref = twap_result.get("order_id", f"twap_{instrument}")
             except Exception as _twap_e:
-                logger.debug(f"TWAP {instrument}: {_twap_e} — fallback direct")
+                logger.debug(f"TWAP MEV {instrument}: {_twap_e} — fallback direct")
 
         if ref is None:
-            # Fallback: ordre direct classique (petit size ou TWAP échoué)
             ref = self.capital.place_market_order(
                 epic=instrument, direction=direction,
                 size=size1, sl_price=sl, tp_price=tp1,
             )
+            # Frontrun detection post-placement
+            if hasattr(self, 'mev') and ref:
+                try:
+                    _exec_px = self.capital.get_current_price(instrument)
+                    if _exec_px:
+                        _mid = _exec_px.get("mid", entry)
+                        _fr = self.mev.detect_frontrun(instrument, direction, _mid)
+                        if _fr:
+                            logger.warning(f"🥷 FrontRun confirmé sur {instrument}")
+                except Exception:
+                    pass
 
+        # Memory Pool: push signal pour analytics
+        if hasattr(self, 'mem') and self.mem:
+            try:
+                self.mem.push_signal(instrument, direction, score)
+            except Exception:
+                pass
 
 
         if not ref:

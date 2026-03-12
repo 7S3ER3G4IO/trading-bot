@@ -395,6 +395,56 @@ except ImportError:
         def stats(self): return {}
         def stop(self): pass
 
+# ─── Niveau Apex — Moteurs 11-13 ──────────────────────────────────────────────
+try:
+    from meta_agent import MetaAgent, Decision
+    _META_OK = True
+except ImportError:
+    _META_OK = False
+    class Decision:
+        def __init__(self, *a, **kw):
+            self.approved = True; self.score = 0.5
+            self.size_multiplier = 1.0; self.reason = "stub"
+    class MetaAgent:
+        def __init__(self, *a, **kw): pass
+        def decide(self, *a, **kw): return Decision()
+        def record_outcome(self, *a, **kw): pass
+        def ensure_table(self): pass
+        def format_report(self): return ""
+        def stats(self): return {}
+        def stop(self): pass
+
+try:
+    from memory_pool import MemoryPool, MEMORY_POOL
+    _MEMPOOL_OK = True
+except ImportError:
+    _MEMPOOL_OK = False
+    MEMORY_POOL = None
+    class MemoryPool:
+        @classmethod
+        def get_instance(cls): return cls()
+        def compute_correlation_fast(self, a, b, **kw): return 0.0
+        def compute_covariance(self, m, **kw): return None
+        def push_signal(self, *a, **kw): pass
+        def stats(self): return {}
+
+try:
+    from mev_shield import MEVShield
+    _MEV_OK = True
+except ImportError:
+    _MEV_OK = False
+    class MEVShield:
+        def __init__(self, *a, **kw): pass
+        def get_twap_schedule(self, total_size, base_interval=12, **kw):
+            n = 3; s = total_size / n
+            return [(s, base_interval)] * n
+        def inject_decoy_delay(self): return 0.0
+        def record_price(self, *a, **kw): pass
+        def detect_frontrun(self, *a, **kw): return False
+        def stats(self): return {}
+        def format_report(self): return ""
+
+
 
 
 
