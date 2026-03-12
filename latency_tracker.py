@@ -27,8 +27,8 @@ from typing import Optional
 from loguru import logger
 
 # ─── Paramètres ───────────────────────────────────────────────────────────────
-_ALERT_THRESHOLD_MS = 200    # Alerte si > 200ms
-_CRITICAL_MS        = 500    # Log ERROR si > 500ms
+_ALERT_THRESHOLD_MS = 500    # Alerte si > 500ms (Docker local = overhead réseau)
+_CRITICAL_MS        = 1500   # Log ERROR si > 1500ms
 _HISTORY_LEN        = 50     # Fenêtre glissante pour stats
 _ALERT_COOLDOWN_S   = 300    # 5 min entre deux alertes Telegram pour le même actif
 

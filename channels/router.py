@@ -96,11 +96,16 @@ class ChannelRouter:
 
     _send_count = 0
     _send_count_reset = 0.0
+    _muted_channels: set = set()   # channels that returned 401 — warn once then silence
 
     def _send(self, chat_id: str, text: str, parse_mode: str = "HTML",
               silent: bool = False, reply_to: int = None) -> Optional[int]:
         """Send a message via Telegram API. Returns message_id. Retries on failure."""
         if not self._api or not _requests:
+            return None
+
+        # Skip channels that already returned 401 (bot not admin)
+        if chat_id in ChannelRouter._muted_channels:
             return None
 
         import time as _time
@@ -129,6 +134,11 @@ class ChannelRouter:
                 r = _requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
                 if r.ok:
                     return r.json().get("result", {}).get("message_id")
+                elif r.status_code == 401:
+                    # Bot not admin of this channel — mute and warn once
+                    ChannelRouter._muted_channels.add(chat_id)
+                    logger.warning(f"⚠️ Canal {chat_id} → 401 Unauthorized (bot pas admin) — muted")
+                    return None
                 elif r.status_code == 429:
                     # Rate limited by Telegram — wait and retry
                     retry_after = r.json().get("parameters", {}).get("retry_after", 5)
@@ -144,6 +154,7 @@ class ChannelRouter:
                     continue
                 logger.error(f"❌ Router send (attempt {attempt+1}): {e}")
         return None
+
 
     def _pin(self, chat_id: str, message_id: int):
         """Pin a message in a channel."""

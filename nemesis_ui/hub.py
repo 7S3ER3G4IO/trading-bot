@@ -164,8 +164,10 @@ class NemesisHub:
 
     # ── Telegram REST API ─────────────────────────────────────────────────────
 
+    _hub_muted = False
+
     def _send_message(self, text: str, markup: dict = None) -> Optional[int]:
-        if not self._api or not requests:
+        if not self._api or not requests or NemesisHub._hub_muted:
             return None
         try:
             payload = {
@@ -178,11 +180,15 @@ class NemesisHub:
             r = requests.post(f"{self._api}/sendMessage", json=payload, timeout=10)
             if r.ok:
                 return r.json().get("result", {}).get("message_id")
+            elif r.status_code == 401:
+                NemesisHub._hub_muted = True
+                logger.warning(f"⚠️ Hub 401 Unauthorized — bot pas admin du chat {self._chat_id} — muted")
             else:
                 logger.warning(f"⚠️ Hub send: {r.status_code} {r.text[:80]}")
         except Exception as e:
             logger.error(f"❌ Hub send: {e}")
         return None
+
 
     def _edit_message(self, message_id: int, text: str, markup: dict = None):
         if not self._api or not requests:
