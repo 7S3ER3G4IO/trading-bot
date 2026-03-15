@@ -59,3 +59,4 @@ docker>=7.0
 # Briefing marché
 yfinance>=0.2
 newsapi-python>=0.2
+uvloop>=0.21.0
