@@ -4,15 +4,17 @@ depuis le flux RSS gratuit de ForexFactory.
 Pause trading 30min avant et 30min après chaque annonce critique.
 """
 
+import os
 import xml.etree.ElementTree as ET
 from typing import Optional, Tuple
 from datetime import datetime, timezone, timedelta
-from urllib.request import urlopen
-from urllib.error import URLError
 from loguru import logger
 
-# Flux RSS ForexFactory (gratuit, pas d'API key)
+# Flux RSS ForexFactory (via proxy WARP si disponible)
 FF_RSS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
+
+# Compteur d'erreurs RSS (log silencieux après 1er échec)
+_ff_fail_count: int = 0
 
 # Fenêtre de pause autour des news (minutes)
 PAUSE_BEFORE_MIN = 30
@@ -36,14 +38,22 @@ class EconomicCalendar:
 
     def refresh(self):
         """Télécharge et parse le calendrier RSS de la semaine."""
+        global _ff_fail_count
         try:
-            from urllib.request import Request
-            req = Request(
-                FF_RSS_URL,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; TradingBot/1.0)"}
-            )
-            with urlopen(req, timeout=10) as resp:
-                raw = resp.read()
+            import requests as _rq
+            # Utiliser WARP proxy si disponible (Hetzner bloque faireconomy.media directement)
+            _proxy = os.getenv("HTTPS_PROXY", "") or os.getenv("HTTP_PROXY", "")
+            _px = {"https": _proxy, "http": _proxy} if _proxy else {}
+            _headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                )
+            }
+            resp = _rq.get(FF_RSS_URL, headers=_headers, proxies=_px, timeout=12)
+            resp.raise_for_status()
+            raw = resp.content
             root = ET.fromstring(raw)
             events = []
             for item in root.iter("item"):
@@ -70,12 +80,15 @@ class EconomicCalendar:
 
             self._events = events
             self._last_fetch = datetime.now(timezone.utc)
+            _ff_fail_count = 0  # Reset compteur d'erreurs
             logger.info(f"📅 Calendrier économique : {len(events)} events HIGH impact chargés")
 
-        except URLError as e:
-            logger.warning(f"⚠️  ForexFactory RSS inaccessible : {e} — trading autorisé.")
         except Exception as e:
-            logger.error(f"❌ Erreur parsing calendrier : {e}")
+            _ff_fail_count += 1
+            if _ff_fail_count == 1:
+                logger.warning(f"⚠️  ForexFactory RSS inaccessible : {e} — trading autorisé.")
+            elif _ff_fail_count % 10 == 0:
+                logger.debug(f"ForexFactory RSS inaccessible ({_ff_fail_count}x) — trading autorisé: {e}")
 
     def start_background_refresh(self):
         """

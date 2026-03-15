@@ -39,8 +39,9 @@ class PairsTrader:
     """
 
     def __init__(self, capital_client=None, ohlcv_cache=None,
-                 db=None, telegram_router=None):
-        self._capital  = capital_client
+                 db=None, telegram_router=None, broker=None):
+        self._broker   = broker or capital_client   # broker actif (MT5 ou Capital)
+        self._capital  = capital_client             # gardé pour compatibilité
         self._cache    = ohlcv_cache
         self._db       = db
         self._tg       = telegram_router
@@ -191,10 +192,10 @@ class PairsTrader:
         )
 
         ref_a = ref_b = None
-        if self._capital:
+        if self._broker:
             try:
-                ref_a = self._capital.place_market_order(a, dir_a, 0.1)
-                ref_b = self._capital.place_market_order(b, dir_b, 0.1)
+                ref_a = self._broker.place_market_order(a, dir_a, 0.1)
+                ref_b = self._broker.place_market_order(b, dir_b, 0.1)
             except Exception as e:
                 logger.warning(f"PairsTrader order: {e}")
 
@@ -285,7 +286,7 @@ class PairsTrader:
         a, b = key
         logger.info(f"📐 Pairs CLOSE {a}/{b} | z={current_z:.2f} | {reason} | PnL≈{pnl_est:+.4f}")
 
-        if self._capital:
+        if self._broker:
             for inst, ref, direction in [
                 (a, state.get("ref_a"), state["direction_a"]),
                 (b, state.get("ref_b"), state["direction_b"]),
@@ -293,7 +294,7 @@ class PairsTrader:
                 if ref:
                     try:
                         close_dir = "SELL" if direction == "BUY" else "BUY"
-                        self._capital.place_market_order(inst, close_dir, 0.1)
+                        self._broker.place_market_order(inst, close_dir, 0.1)
                     except Exception as e:
                         logger.warning(f"PairClose {inst}: {e}")
 
@@ -330,8 +331,8 @@ class PairsTrader:
     def _get_mid(self, instrument: str) -> Optional[float]:
         """Prix mid actuel depuis Capital.com."""
         try:
-            if self._capital:
-                px = self._capital.get_current_price(instrument)
+            if self._broker:
+                px = self._broker.get_current_price(instrument)
                 if px:
                     return px.get("mid", px.get("bid", 0))
         except Exception:

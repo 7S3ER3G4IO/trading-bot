@@ -54,10 +54,10 @@ class VPINGuard:
     Tourne en daemon thread indépendant.
     """
 
-    def __init__(self, capital_client=None, capital_trades_ref: dict = None,
+    def __init__(self, capital_client=None, positions_ref: dict = None,
                  db=None, telegram_router=None, close_fn=None):
         self._capital  = capital_client
-        self._trades   = capital_trades_ref   # pointeur dict des trades ouverts
+        self._trades   = positions_ref   # pointeur dict des trades ouverts
         self._db       = db
         self._tg       = telegram_router
         self._close_fn = close_fn  # fn(instrument, reason) pour fermer une position

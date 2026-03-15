@@ -8,7 +8,7 @@ class BotCommandsMixin:
 
     def _force_close(self, instrument: str) -> str:
         """Ferme de force une position Capital.com via commande Telegram."""
-        state = self.capital_trades.get(instrument)
+        state = self.positions.get(instrument)
         if state is None:
             return f"⚠️ Aucune position ouverte sur {instrument}"
         try:
@@ -16,14 +16,14 @@ class BotCommandsMixin:
             closed = 0
             for ref in refs:
                 if ref:
-                    ok = self.capital.close_position(ref)
+                    ok = self.broker.close_position(ref)
                     if ok:
                         closed += 1
             name = CAPITAL_NAMES.get(instrument, instrument)
-            self.capital_trades[instrument] = None
+            self.positions[instrument] = None
             self.capital_ws.unwatch(instrument)
             try:
-                self.db.close_capital_trade(instrument)
+                self.db.close_position(instrument)
             except Exception:
                 pass
             try:
@@ -36,7 +36,7 @@ class BotCommandsMixin:
 
     def _force_be(self, instrument: str) -> str:
         """Active manuellement le Break-Even sur une position Capital.com."""
-        state = self.capital_trades.get(instrument)
+        state = self.positions.get(instrument)
         if state is None:
             return f"⚠️ Aucune position ouverte sur {instrument}"
         entry = state.get("entry", 0)
@@ -68,7 +68,7 @@ class BotCommandsMixin:
     def _do_brief(self) -> str:
         """Envoie la matinale à la demande."""
         try:
-            balance = self.capital.get_balance() if self.capital.available else 0.0
+            balance = self.broker.get_balance() if self.broker.available else 0.0
             _, reason = self.calendar.should_pause_trading()
             brief = self.context.build_morning_brief(balance, reason or None)
             self.telegram.notify_morning_brief(brief, nb_instruments=len(CAPITAL_INSTRUMENTS))
@@ -107,8 +107,8 @@ class BotCommandsMixin:
 
     def _cmd_risk(self) -> str:
         """Résumé de l'exposition et du drawdown actuel."""
-        balance = self.capital.get_balance() if self.capital.available else 0.0
-        open_count = sum(1 for s in self.capital_trades.values() if s is not None)
+        balance = self.broker.get_balance() if self.broker.available else 0.0
+        open_count = sum(1 for s in self.positions.values() if s is not None)
         daily_dd = 0.0
         if self._daily_start_balance > 0 and balance > 0:
             daily_dd = (self._daily_start_balance - balance) / self._daily_start_balance * 100
@@ -129,7 +129,7 @@ class BotCommandsMixin:
         """Retourne le régime HMM pour les instruments avec positions ouvertes."""
         REGIME_EMOJI = {0: "⬛ RANGING", 1: "🟢 TREND_UP", 2: "🔴 TREND_DOWN"}
         # Seulement les instruments avec position ouverte (pas les 39)
-        active_instruments = [inst for inst, st in self.capital_trades.items() if st is not None]
+        active_instruments = [inst for inst, st in self.positions.items() if st is not None]
         if not active_instruments:
             return "🧠 <b>Régimes HMM</b>\nAucune position ouverte."
         lines = []
@@ -155,7 +155,7 @@ class BotCommandsMixin:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _status_text(self) -> str:
-        balance = self.capital.get_balance() if self.capital.available else 0.0
+        balance = self.broker.get_balance() if self.broker.available else 0.0
         pnl_total = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
         pnl_pct   = (pnl_total / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
         bal_str   = f"{balance:,.2f}€"
@@ -165,7 +165,7 @@ class BotCommandsMixin:
         cap_lines = ""
         cap_open  = 0
         total_unrealized = 0.0
-        for epic, state in self.capital_trades.items():
+        for epic, state in self.positions.items():
             if state is None:
                 continue
             cap_open += 1
@@ -175,7 +175,9 @@ class BotCommandsMixin:
             tp1_icon  = "✅" if state.get("tp1_hit") else "○"
             unrealized = 0.0
             try:
-                px = self.capital.get_current_price(epic)
+                px = (self.broker.get_current_price(epic)
+                      if self.broker.available else None) \
+                     or self.capital.get_current_price(epic)
                 if px:
                     mid = px["mid"]
                     n_refs = sum(1 for r in state.get("refs", []) if r)
@@ -210,7 +212,7 @@ class BotCommandsMixin:
         """Retourne le texte + markup des positions Capital.com actives."""
         lines, markup_epic = [], None
 
-        for epic, state in self.capital_trades.items():
+        for epic, state in self.positions.items():
             if state is None:
                 continue
             name     = CAPITAL_NAMES.get(epic, epic)
@@ -218,7 +220,9 @@ class BotCommandsMixin:
             direction = state.get("direction", "?")
             tp1_icon  = "✅" if state.get("tp1_hit") else "○"
 
-            price_data = self.capital.get_current_price(epic)
+            price_data = (self.broker.get_current_price(epic)
+                          if self.broker.available else None) \
+                         or self.capital.get_current_price(epic)
             if price_data:
                 price   = price_data["mid"]
                 pip     = CAPITAL_PIP.get(epic, 0.0001)
@@ -245,7 +249,7 @@ class BotCommandsMixin:
 
     def _hub_data(self) -> tuple:
         """Returns (balance, pnl_today) for Hub display."""
-        balance = self.capital.get_balance() if self.capital.available else 0.0
+        balance = self.broker.get_balance() if self.broker.available else 0.0
         pnl_today = sum(t.get("pnl", 0) for t in self._capital_closed_today)
         return balance, pnl_today
 
@@ -254,7 +258,7 @@ class BotCommandsMixin:
         stats = {
             "trades_today": len(self._capital_closed_today),
             "pnl_today": sum(t.get("pnl", 0) for t in self._capital_closed_today),
-            "active_positions": sum(1 for s in self.capital_trades.values() if s is not None),
+            "active_positions": sum(1 for s in self.positions.values() if s is not None),
         }
         # OHLCV Cache stats
         if hasattr(self, 'ohlcv_cache'):

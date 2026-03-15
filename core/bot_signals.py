@@ -166,7 +166,18 @@ class BotSignalsMixin:
             except Exception as _cf_e:
                 logger.debug(f"CorrelationFilter {instrument}: {_cf_e}")
 
+        # ─── MAX TRADES PAR INSTRUMENT PAR JOUR ────────────────────────────
+        _max_per_day = int(os.getenv("MAX_TRADES_PER_INST_DAY", "2"))
+        _today_count = getattr(self, '_daily_inst_trades', {}).get(instrument, 0)
+        if _today_count >= _max_per_day:
+            logger.info(
+                f"⛔ Max {_max_per_day} trades/jour atteint pour {instrument} "
+                f"({_today_count}/{_max_per_day})"
+            )
+            return
+
         # S-2: MTF Confluence Scoring (replace binary blocking)
+
         mtf_bonus = self.mtf.score_confluence(instrument, sig)
         score = score + mtf_bonus  # Adjust score with MTF bonus/penalty
         if mtf_bonus < -0.05:
@@ -623,6 +634,9 @@ class BotSignalsMixin:
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
 
         self.risk.on_trade_opened(instrument=instrument)
+        # Incrémenter compteur journalier par instrument
+        if hasattr(self, '_daily_inst_trades'):
+            self._daily_inst_trades[instrument] = self._daily_inst_trades.get(instrument, 0) + 1
         # M38: Enregistrer le trade pour le trailing stop dynamique
         self.convexity.register_trade(instrument, entry, sl, direction)
 

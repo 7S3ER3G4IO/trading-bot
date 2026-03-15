@@ -1,0 +1,61 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy NEMESIS Bot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 46.225.186.152 >> ~/.ssh/known_hosts
+
+      - name: Deploy files to VPS
+        run: |
+          VPS=root@46.225.186.152
+
+          # Transfer all changed Python files
+          rsync -avz --include="*.py" --include="*.yml" --include="*.sql" \
+            --include="*.json" --include="*.sh" --include=".env.example" \
+            --include="Dockerfile" --include="requirements.txt" \
+            --exclude=".git/" --exclude="venv/" --exclude="__pycache__/" \
+            --exclude=".env" --exclude="*.log" --exclude="research_labs/" \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            ./ $VPS:/root/trading-bot/
+
+      - name: Inject files into containers
+        run: |
+          VPS="ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@46.225.186.152"
+          CORE_FILES="database.py risk_manager.py config.py monitor.py strategy.py"
+          BOT_CORE="core/bot_init.py core/bot_tick.py core/bot_monitor.py core/bot_signals.py core/bot_commands.py"
+
+          for f in $CORE_FILES; do
+            $VPS "docker exec -i nemesis_bot sh -c 'cat > /app/$f' < /root/trading-bot/$f" && echo "✅ $f"
+          done
+          for f in $BOT_CORE; do
+            $VPS "docker exec -i nemesis_bot sh -c 'cat > /app/$f' < /root/trading-bot/$f" && echo "✅ $f"
+          done
+
+      - name: Restart bot
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@46.225.186.152 \
+            "docker restart nemesis_bot && sleep 8 && docker logs nemesis_bot --tail=10 2>&1"
+
+      - name: Health check
+        run: |
+          sleep 5
+          STATUS=$(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@46.225.186.152 \
+            "docker inspect --format='{{.State.Health.Status}}' nemesis_bot 2>&1")
+          echo "Bot status: $STATUS"
+          [[ "$STATUS" == "healthy" || "$STATUS" == "starting" ]] && echo "✅ Deploy OK" || exit 1

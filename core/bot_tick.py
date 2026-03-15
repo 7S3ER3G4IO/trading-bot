@@ -201,6 +201,9 @@ class BotTickMixin:
             self.risk.reset_daily(balance)
             self._daily_start_balance = balance  # Also reset the tick-level DD check
             self._equity_warmup_ticks = 0  # Skip equity circuit breaker for first 5 ticks
+            # Reset compteur trades journaliers par instrument
+            if hasattr(self, '_daily_inst_trades'):
+                self._daily_inst_trades = {s: 0 for s in self._daily_inst_trades}
             logger.info(f"🔄 Equity curve + risk manager nettoyés (fresh deploy) — daily_start={balance:.2f}")
 
         if balance > 0:
@@ -718,6 +721,14 @@ class BotTickMixin:
                     logger.debug(f"A-1 scan future: {e}")
         _scan_elapsed = time.time() - _scan_t0
         logger.debug(f"⚡ A-1 scan complete: {len(CAPITAL_INSTRUMENTS)} instruments in {_scan_elapsed:.1f}s")
+
+        # ── Slippage Discord Alert (vérifié après chaque scan) ──────────────
+        try:
+            st = getattr(self, 'slippage_tracker', None)
+            if st:
+                st.check_discord_alert(window=5, threshold_pips=3.0)
+        except Exception:
+            pass
 
         # ── S-3: Micro-Timeframe Scan (5m/15m — additional signals) ──────
         if MICRO_TF_PROFILES and not self._dd_paused and not self._manual_pause:

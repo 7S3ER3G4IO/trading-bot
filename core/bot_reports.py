@@ -40,7 +40,7 @@ class BotReportsMixin:
         import numpy as np
 
         try:
-            balance = self.capital.get_balance() if self.capital.available else 0.0
+            balance = self.broker.get_balance() if self.broker.available else 0.0
             pnl_total = round(balance - self.initial_balance, 2) if balance > 0 else 0.0
             wins  = sum(1 for t in self._capital_closed_today if t.get("pnl", 0) > 0)
             total = len(self._capital_closed_today)
@@ -121,20 +121,26 @@ class BotReportsMixin:
                 f"🎯 Win Rate  : <b>{wr:.0f}%</b> ({wins}/{total} trades)\n"
                 f"📅 {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC"
             )
-            # Send to Performance channel instead of main chat
-            import io as _io
-            from config import CHANNELS
-            import requests as _rq
-            _token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-            _perf_id = CHANNELS.get("performance", {}).get("id", "")
-            if _token and _perf_id:
-                try:
-                    _api = f"https://api.telegram.org/bot{_token}"
-                    _files = {"photo": ("report.png", _io.BytesIO(buf.read()), "image/png")}
-                    _data = {"chat_id": _perf_id, "caption": caption, "parse_mode": "HTML"}
-                    _rq.post(f"{_api}/sendPhoto", data=_data, files=_files, timeout=30)
-                except Exception:
-                    pass
-            logger.info("📊 Rapport journalier PNG envoyé → Performance")
+            # Rapport PNG → Discord #monitoring webhook
+            try:
+                import requests as _rq
+                _webhook = os.getenv("DISCORD_WEBHOOK_MONITORING", "")
+                _proxy   = os.getenv("HTTPS_PROXY", "") or os.getenv("HTTP_PROXY", "")
+                _proxies = {"https": _proxy, "http": _proxy} if _proxy else {}
+                if _webhook:
+                    import re as _re
+                    _caption_clean = _re.sub(r'<[^>]+>', '', caption)
+                    buf.seek(0)
+                    _rq.post(
+                        _webhook,
+                        data={"content": f"📊 **Rapport Journalier Nemesis**\n{_caption_clean}"},
+                        files={"file": ("report.png", buf, "image/png")},
+                        timeout=30,
+                        proxies=_proxies,
+                    )
+                    logger.info("📊 Rapport journalier PNG → Discord #monitoring")
+            except Exception as _disc_e:
+                logger.debug(f"Daily report Discord send: {_disc_e}")
+
         except Exception as _rp_e:
-            logger.error(f"❌ Daily report: {_rp_e}")
+            logger.error(f"Daily report: {_rp_e}")

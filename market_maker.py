@@ -361,9 +361,9 @@ class MarketMaker:
                 f"INSERT INTO market_maker_quotes "
                 f"(instrument,mid,bid,ask,spread_pct,reservation,inventory,sigma) "
                 f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
-                (instrument, q["mid"], q["bid"], q["ask"],
-                 q["spread_pct"], q["reservation_price"],
-                 q["inventory"], q["sigma"])
+                (instrument, float(q["mid"]), float(q["bid"]), float(q["ask"]),
+                 float(q["spread_pct"]), float(q["reservation_price"]),
+                 float(q["inventory"]), float(q["sigma"]))
             )
         except Exception as e:
             logger.debug(f"MM quote save: {e}")

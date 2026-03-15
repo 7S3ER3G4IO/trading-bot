@@ -675,9 +675,10 @@ class TDAEngine:
                 f"(instrument,signal_type,severity,betti_0,betti_1,betti_2,"
                 f"lyapunov,fractal_dim,hurst) "
                 f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
-                (sig.instrument, sig.signal_type, sig.severity,
-                 sig.betti.b0, sig.betti.b1, sig.betti.b2,
-                 sig.chaos.lyapunov, sig.chaos.fractal_dim, sig.chaos.hurst)
+                (sig.instrument, sig.signal_type, float(sig.severity),
+                 int(sig.betti.b0), int(sig.betti.b1), int(sig.betti.b2),
+                 float(sig.chaos.lyapunov), float(sig.chaos.fractal_dim),
+                 float(sig.chaos.hurst))
             )
         except Exception:
             pass

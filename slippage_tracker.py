@@ -134,6 +134,41 @@ class SlippageTracker:
             f"Trades mesurés : {len(self._history)}"
         )
 
+    def check_discord_alert(self, window: int = 5, threshold_pips: float = 3.0) -> bool:
+        """Envoie alerte Discord si slippage moyen > threshold sur les N derniers trades.
+        Retourne True si alerte envoyée.
+        """
+        if len(self._history) < window:
+            return False
+
+        recent = self._history[-window:]
+        avg = round(sum(s for _, s in recent) / len(recent), 2)
+
+        if avg <= threshold_pips:
+            return False
+
+        webhook = os.getenv("DISCORD_MONITORING_WEBHOOK", "")
+        if not webhook:
+            logger.warning(f"⚠️ Slippage moyen élevé ({avg:+.1f} pips) mais pas de webhook Discord configuré")
+            return False
+
+        try:
+            import requests
+            msg = (
+                f"⚠️ **SLIPPAGE ALERT — NEMESIS**\n"
+                f"Slippage moyen : **{avg:+.1f} pips** (seuil: {threshold_pips} pips)\n"
+                f"Basé sur les {window} derniers trades\n"
+                f"Pire : {max(recent, key=lambda x: abs(x[1]))[0]} "
+                f"{max(recent, key=lambda x: abs(x[1]))[1]:+.1f} pips"
+            )
+            requests.post(webhook, json={"content": msg}, timeout=5)
+            logger.warning(f"🚨 Slippage Alert envoyée Discord: {avg:+.1f} pips > {threshold_pips}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Slippage Discord alert: {e}")
+            return False
+
+
 
 # ─── Stub pour compatibilité bot_init.py ─────────────────────────────────────
 # SlippageInjector était utilisé en mode DEMO pour dégrader le prix artificiellement.

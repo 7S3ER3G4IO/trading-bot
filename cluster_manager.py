@@ -94,10 +94,11 @@ class ClusterManager:
     """
 
     def __init__(self, db=None, telegram_router=None,
-                 capital_client=None, arb_engine=None):
+                 capital_client=None, arb_engine=None, broker=None):
         self._db      = db
         self._tg      = telegram_router
-        self._capital = capital_client
+        self._broker  = broker or capital_client   # broker actif (MT5 ou Capital)
+        self._capital = capital_client             # gardé pour compatibilité
         self._arb     = arb_engine
 
         # Identité de ce worker
@@ -122,32 +123,22 @@ class ClusterManager:
         self._heartbeat_thread = None
         self._watcher_thread   = None
 
-        self._ensure_tables()
+        # _ensure_tables() skipped — failover disabled in single-node mode
         logger.info(f"🌐 Cluster Manager: worker_id={self._worker_id} host={self._host}")
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 
     def start(self):
-        self._running = True
+        # ── Single-node mode: no heartbeat/failover threads ──────────────
+        # The failover system was designed for multi-node horizontal scaling.
+        # On a single Mac with one Docker container, it causes a death loop:
+        # each restart generates a new worker_id, detects the old one as
+        # "dead PRIMARY" in Supabase, and triggers failover + Telegram spam
+        # every 15 seconds indefinitely.
+        self._role    = STATE_PRIMARY
         self._state   = STATE_RUNNING
-        self._cleanup_stale_workers()   # Nettoyer les workers morts des précédents containers
-        self._determine_role()
-
-        # Thread heartbeat
-        self._heartbeat_thread = threading.Thread(
-            target=self._heartbeat_loop,
-            daemon=True, name="cluster_heartbeat"
-        )
-        self._heartbeat_thread.start()
-
-        # Thread failover watcher
-        self._watcher_thread = threading.Thread(
-            target=self._failover_watch_loop,
-            daemon=True, name="cluster_watcher"
-        )
-        self._watcher_thread.start()
-
-        logger.info(f"🌐 Cluster démarré | role={self._role} | state={self._state}")
+        self._running = False   # No background threads
+        logger.info(f"🌐 Cluster Manager: single-node mode (failover désactivé) | role=PRIMARY")
 
     def stop(self):
         self._running = False
@@ -342,9 +333,9 @@ class ClusterManager:
                 instrument, exchange, direction, ref = leg
                 logger.warning(f"🌐 Leg risk mitigation: cancel {instrument} {direction} on {exchange} (ref={ref})")
                 # Tentative d'annulation via le capital client principal
-                if self._capital:
+                if self._broker:
                     try:
-                        self._capital.close_position(ref, reason="leg_risk_failover")
+                        self._broker.close_position(ref, reason="leg_risk_failover")
                     except Exception as e:
                         logger.error(f"Leg cancel {ref}: {e}")
 

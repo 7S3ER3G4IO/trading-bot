@@ -41,6 +41,10 @@ class DriftDetector:
         self._pht_sum   = 0.0
         self._pht_min   = 0.0
         self._pht_n     = 0
+        # Cooldown: only log/check once per 60s to avoid duplicate warnings per tick
+        self._last_check_time = 0.0
+        self._last_check_result = {"drift": False, "reasons": [], "severity": "OK", "n_trades": 0}
+        self._CHECK_COOLDOWN = 60  # seconds
 
     def _load(self) -> dict:
         if os.path.exists(DRIFT_FILE):
@@ -92,10 +96,18 @@ class DriftDetector:
         """
         Vérifie tous les indicateurs de drift.
         Retourne un dict : {"drift": bool, "reasons": list, "severity": str}
+        Cooldown 60s : n'évalue rien entre deux appels rapprochés (évite double WARNING).
         """
+        now_ts = time.time()
+        if now_ts - self._last_check_time < self._CHECK_COOLDOWN:
+            return self._last_check_result  # Cached result — no duplicate log
+        self._last_check_time = now_ts
+
         recent = self._recent_trades(7)
         if len(recent) < 5:
-            return {"drift": False, "reasons": [], "severity": "OK", "n_trades": len(recent)}
+            result = {"drift": False, "reasons": [], "severity": "OK", "n_trades": len(recent)}
+            self._last_check_result = result
+            return result
 
         wins      = [t for t in recent if t["win"]]
         wr_7d     = len(wins) / len(recent) * 100
@@ -154,7 +166,7 @@ class DriftDetector:
                 + "\n".join(f"  • {r}" for r in reasons)
             )
 
-        return {
+        result = {
             "drift":     drift,
             "reasons":   reasons,
             "severity":  severity,
@@ -162,6 +174,20 @@ class DriftDetector:
             "sharpe_7d": round(sharpe_7d, 3),
             "n_trades":  len(recent),
         }
+        self._last_check_result = result
+        return result
+
+    def _get_result(self, drift, reasons, severity, wr_7d, sharpe_7d, recent):
+        result = {
+            "drift":     drift,
+            "reasons":   reasons,
+            "severity":  severity,
+            "wr_7d":     round(wr_7d, 1),
+            "sharpe_7d": round(sharpe_7d, 3),
+            "n_trades":  len(recent),
+        }
+        self._last_check_result = result
+        return result
 
     def needs_reoptimization(self) -> bool:
         """True si la stratégie devrait être re-hyperoptimisée."""

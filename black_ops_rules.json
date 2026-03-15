@@ -1,0 +1,110 @@
+{
+  "USDJPY": {
+    "engine": "M51_STAT",
+    "tf": "4h",
+    "z_threshold": 3.0,
+    "z_window": 100,
+    "pnl_net": 102.29,
+    "trades": 21,
+    "win_rate": 61.9,
+    "max_dd": -0.77,
+    "profit_factor": 2.96,
+    "fees": 124.24
+  },
+  "AUDJPY": {
+    "engine": "M51_STAT",
+    "tf": "4h",
+    "z_threshold": 3.5,
+    "z_window": 200,
+    "pnl_net": 62.28,
+    "trades": 7,
+    "win_rate": 71.4,
+    "max_dd": -0.29,
+    "profit_factor": 4.5,
+    "fees": 20.43
+  },
+  "NZDJPY": {
+    "engine": "M51_STAT",
+    "tf": "1h",
+    "z_threshold": 3.5,
+    "z_window": 200,
+    "pnl_net": 26.45,
+    "trades": 23,
+    "win_rate": 56.5,
+    "max_dd": -1.88,
+    "profit_factor": 1.8,
+    "fees": 199.2
+  },
+  "CHFJPY": {
+    "engine": "M51_STAT",
+    "tf": "4h",
+    "z_threshold": 3.0,
+    "z_window": 200,
+    "pnl_net": 17.43,
+    "trades": 12,
+    "win_rate": 58.3,
+    "max_dd": -0.51,
+    "profit_factor": 2.12,
+    "fees": 67.24
+  },
+  "FR40": {
+    "engine": "M51_STAT",
+    "tf": "4h",
+    "z_threshold": 2.5,
+    "z_window": 200,
+    "pnl_net": 71.41,
+    "trades": 23,
+    "win_rate": 65.2,
+    "max_dd": -0.64,
+    "profit_factor": 2.19,
+    "fees": 67.27
+  },
+  "US500": {
+    "engine": "M51_STAT",
+    "tf": "1h",
+    "z_threshold": 3.0,
+    "z_window": 200,
+    "pnl_net": 4.83,
+    "trades": 13,
+    "win_rate": 61.5,
+    "max_dd": -0.69,
+    "profit_factor": 1.37,
+    "fees": 44.8
+  },
+  "US100": {
+    "engine": "M51_STAT",
+    "tf": "1h",
+    "z_threshold": 3.5,
+    "z_window": 50,
+    "pnl_net": 18.29,
+    "trades": 20,
+    "win_rate": 55.0,
+    "max_dd": -1.97,
+    "profit_factor": 1.42,
+    "fees": 73.93
+  },
+  "US30": {
+    "engine": "M51_STAT",
+    "tf": "4h",
+    "z_threshold": 2.5,
+    "z_window": 100,
+    "pnl_net": 26.59,
+    "trades": 15,
+    "win_rate": 60.0,
+    "max_dd": -0.49,
+    "profit_factor": 1.68,
+    "fees": 34.5
+  },
+  "NVDA": {
+    "engine": "M51_STAT",
+    "tf": "1h",
+    "z_threshold": 2.5,
+    "z_window": 100,
+    "pnl_net": 41.86,
+    "trades": 40,
+    "win_rate": 50.0,
+    "max_dd": -1.49,
+    "profit_factor": 1.23,
+    "fees": 60.68
+  }
+}

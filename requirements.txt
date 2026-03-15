@@ -1,16 +1,30 @@
+# ─── PROD — requirements.txt ─────────────────────────────────────────────────
+# Dépendances de production uniquement.
+# Les dépendances de recherche (web3, numba, streamlit, etc.) → requirements-research.txt
+
 # Core data & analysis
 pandas==2.2.3
-numpy==2.2.3
+numpy==1.26.4  # pinned <2: torch 2.2.2+cpu requires numpy<2 (ABI incompatibility)
 ta==0.11.0
 scikit-learn==1.6.1
+statsmodels>=0.14
 
 # Broker & networking
 requests==2.31.0
+# FIX MAJEUR: urllib3<2 retiré — incompatible avec metaapi v29 et nouvelles dépendances
+urllib3>=1.26
 websocket-client==1.7.0
-aiohttp==3.11.14
+aiohttp>=3.9,<4       # compatible avec httpx et torch 2.4
+httpx[socks]>=0.28,<0.29  # FIX: [socks] extra requis pour proxy SOCKS5 via WARP
+socksio>=1.0               # Requis par httpx[socks] pour SOCKS5 proxy MetaApi
+PySocks>=1.7               # Requis par requests pour SOCKS5 proxy (Capital.com client)
 
-# Telegram
-python-telegram-bot==20.8
+# IC Markets MT5 via MetaApi Cloud
+# FIX MAJEUR: était >=9.0 — incompatible avec SDK installé v29.1.x (API changée)
+metaapi-cloud-sdk>=29.0
+
+# Telegram (removed — will be rebuilt later)
+# python-telegram-bot==20.8
 
 # Database & config
 psycopg2-binary==2.9.9
@@ -21,25 +35,27 @@ flask==3.0.2
 
 # Charts
 matplotlib==3.10.1
-mplfinance  # sans épinglage : utilise la dernière version stable (≥ 0.12.10)
+mplfinance
 Pillow==11.1.0
-
 
 # Scheduling & utils
 schedule==1.2.1
 loguru==0.7.2
 
-# Graph Neural Network (M23 On-Chain GNN)
+# Graph Neural Network (GNN on-chain — macro_nlp.py)
 networkx>=3.2
 
-# Macro NLP RSS (M26 Fed Sniping)
+# Macro NLP RSS (economic_calendar + macro_nlp.py)
 feedparser>=6.0
 
-# Flash Loan Web3 (M30)
-web3>=6.0
+# Project Argus: Local NLP (FinBERT)
+transformers>=4.36.0
+# torch installed CPU-only via Dockerfile (see --extra-index-url)
+APScheduler>=3.10
+# Monitor
+psutil>=5.9
+docker>=7.0
 
-# Flashbots Bundle Signing (M33 Dark Forest MEV)
-eth_account>=0.10
-
-# Virtual FPGA JIT Compilation (M37)
-numba>=0.59
+# Briefing marché
+yfinance>=0.2
+newsapi-python>=0.2

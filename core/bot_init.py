@@ -79,6 +79,10 @@ class BotInitMixin:
 
         # ─── État Capital.com ─────────────────────────────────────────────
         self.positions: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
+        self.capital_trades = self.positions  # alias pour compatibilité bot_commands/bot_monitor
+        self._daily_inst_trades: dict = {s: 0 for s in CAPITAL_INSTRUMENTS}  # max trades/instrument/jour
+
+
         self._capital_closed_today: list = []
         self._capital_closed_month: list = []  # F-6: monthly leaderboard data
         self._london_tracker = SessionTracker()
@@ -150,6 +154,11 @@ class BotInitMixin:
         # ─── Audit Quantitatif Go-Live ────────────────────────────────────────
         tg_router = self.telegram.router if self.telegram else None
         self.slippage  = SlippageInjector()              # Étape 1: Reality Slippage
+        try:
+            from slippage_tracker import SlippageTracker
+            self.slippage_tracker = SlippageTracker()     # Tracking réel + Discord alert
+        except Exception:
+            self.slippage_tracker = None
         self.latency   = LatencyTracker(tg_router)       # Étape 2: Latency Tracker
         self.golive    = GoLiveChecker(                  # Étape 3: Go-Live Checklist
             db=self.db,
@@ -192,11 +201,11 @@ class BotInitMixin:
         # ─── Singularité Algorithmique ────────────────────────────────────────
         self.vpin    = VPINGuard(                           # Moteur 9: VPIN Toxicity
             capital_client=self.capital,
-            positions_ref=self.positions,
             db=self.db,
             telegram_router=tg_router,
             close_fn=None,   # sera injecté après bot_monitor init
         )
+
         self.vpin.ensure_table()
         self.vpin.start()
 
@@ -240,8 +249,8 @@ class BotInitMixin:
             capital_client=self.capital,
             db=self.db,
             telegram_router=tg_router,
-            positions_ref=self.positions,
         )
+
         self.sleep_guard.ensure_table()
         self.sleep_guard.start()
 

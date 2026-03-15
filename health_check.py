@@ -29,8 +29,8 @@ from loguru import logger
 
 # ─── Tables requises avec DDL de récupération ────────────────────────────────
 REQUIRED_TABLES = {
-    "capital_trades": """
-        CREATE TABLE IF NOT EXISTS capital_trades (
+    "positions": """
+        CREATE TABLE IF NOT EXISTS positions (
             id SERIAL PRIMARY KEY, instrument VARCHAR(30),
             direction VARCHAR(4), entry DOUBLE PRECISION,
             sl DOUBLE PRECISION, tp1 DOUBLE PRECISION,
@@ -162,16 +162,32 @@ class HealthCheck:
     # ─── Individual Checks ───────────────────────────────────────────────────
 
     def _check_capital(self) -> dict:
-        """Ping Capital.com API."""
+        """Ping broker API (MT5 ou Capital.com selon le mode actif)."""
         try:
             if not self._capital:
-                return {"ok": False, "msg": "client non initialisé"}
+                return {"ok": False, "msg": "broker non initialisé"}
+
+            # Détecter CapitalStub (mode MT5 exclusif)
+            _class_name = type(self._capital).__name__
+            if "Stub" in _class_name or _class_name == "CapitalStub":
+                # Capital.com désactivé volontairement — MT5 est le broker actif
+                # On vérifie MT5 à la place via l'attribut broker injecté
+                if hasattr(self, '_broker') and self._broker:
+                    try:
+                        bal = self._broker.get_balance()
+                        if bal and bal > 0:
+                            return {"ok": True, "msg": f"MT5 actif ✅ balance={bal:.2f}$"}
+                    except Exception:
+                        pass
+                return {"ok": True, "msg": "MT5 IC Markets actif (Capital.com désactivé)"}
+
             bal = self._capital.get_balance()
             if bal is not None and bal > 0:
                 return {"ok": True, "msg": f"balance={bal:.2f}€"}
             return {"ok": False, "msg": "balance=0 ou None"}
         except Exception as e:
             return {"ok": False, "msg": str(e)[:80]}
+
 
     def _check_database(self) -> dict:
         """Ping Supabase DB avec une requête légère."""

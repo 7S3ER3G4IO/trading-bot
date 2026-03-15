@@ -60,20 +60,18 @@ TF_MAP = {
 # Objectif: 30+ trades/jour
 # ═══════════════════════════════════════════════════════════════════════════════
 CAPITAL_INSTRUMENTS = [
-    # ── 1H — Forex majeurs (11) ──
-    "EURUSD",   "USDJPY",   "GBPUSD",   "GBPJPY",   "EURJPY",
-    "USDCHF",   "AUDNZD",   "AUDJPY",   "NZDJPY",   "EURCHF",   "CHFJPY",
-    # ── 1H — Commodités (6) ──
-    "GOLD",     "SILVER",   "OIL_CRUDE",  "OIL_BRENT","COPPER",   "NATURALGAS",
-    # ── 1H — Indices (8) ──
-    "US500",    "US100",    "US30",     "DE40",     "FR40",     "UK100",    "J225",     "AU200",
-    # ── 1H — Crypto (6) ──
-    "BTCUSD",   "ETHUSD",   "BNBUSD",   "XRPUSD",   "SOLUSD",   "AVAXUSD",
-    # ── 1H — Stocks (8) ──
-    "AAPL",     "TSLA",     "NVDA",     "MSFT",     "META",     "GOOGL",    "AMZN",     "AMD",
-    # ── Daily — Forex MR low-vol (9) ──
-    "AUDUSD",   "NZDUSD",   "EURGBP",   "EURAUD",   "GBPAUD",
-    "AUDCAD",   "GBPCAD",   "GBPCHF",   "CADCHF",
+    # ── PROP FIRM ELITE 10 — validé 5/5 seeds, risque 0.35%, BK 1H ──
+    # Sélection depuis prop_firm_backtest.py — challenge PASSED sur tous les seeds
+    "GOLD",     # Commodité — wr=50%, rr=1.0, top performer BK
+    "SILVER",   # Commodité — wr=69%, rr=1.0, meilleur win_rate
+    "J225",     # Indice    — wr=60%, rr=1.0
+    "EURJPY",   # Forex     — wr=62%, rr=2.0
+    "DE40",     # Indice    — wr=62%, rr=1.0
+    "UK100",    # Indice    — wr=67%, rr=1.5
+    "AU200",    # Indice    — wr=67%, rr=1.0
+    "BTCUSD",   # Crypto    — wr=54%, rr=1.0
+    "GBPJPY",   # Forex     — wr=54%, rr=2.0
+    "TSLA",     # Action    — wr=57%, rr=1.0
 ]
 
 INSTRUMENT_NAMES = {
@@ -133,61 +131,53 @@ PRICE_DECIMALS = {k: max(0, int(round(-_math.log10(v)))) for k, v in PIP_FACTOR.
 #   tp1/tp2/tp3: en multiples ATR (1.5x / 3.0x / 5.0x pour tous les instruments)
 #   sl_buffer: multiplicateur ATR pour SL (MR/TF) ou % du range pour BK
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# ─── Asset Class Classification ───────────────────────────────────────────────
+# Maps cat → asset_class (CRYPTO = 24/7 markets | TRADFI = weekday-only markets)
+ASSET_CLASS_MAP = {
+    "crypto":      "CRYPTO",
+    "forex":       "TRADFI",
+    "forex_mr":    "TRADFI",
+    "indices":     "TRADFI",
+    "commodities": "TRADFI",
+    "stocks":      "TRADFI",
+}
+
+# Per-class risk parameters
+RISK_BY_CLASS = {
+    "CRYPTO": {"time_stop_h": 48, "rr_min": 1.5},
+    "TRADFI": {"time_stop_h": 24, "rr_min": 1.2},
+}
+
+# Friday Kill-Switch: TRADFI positions closed at Friday 20:50 UTC
+FRIDAY_KILLSWITCH_HOUR = 20
+FRIDAY_KILLSWITCH_MINUTE = 50
+
+def get_asset_class(instrument: str) -> str:
+    """Returns 'CRYPTO' or 'TRADFI' for a given instrument."""
+    profile = ASSET_PROFILES.get(instrument, {})
+    cat = profile.get("cat", "forex")
+    return ASSET_CLASS_MAP.get(cat, "TRADFI")
+
+def get_risk_params(instrument: str) -> dict:
+    """Returns {time_stop_h, rr_min} for a given instrument."""
+    cls = get_asset_class(instrument)
+    return RISK_BY_CLASS.get(cls, RISK_BY_CLASS["TRADFI"])
+
 ASSET_PROFILES = {
-    # ── 1H — Forex majeurs (haute liquidité, spreads bas) ──
-    "EURUSD":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "USDJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "GBPUSD":  {"strat":"TF","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "GBPJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "EURJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "USDCHF":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "AUDNZD":  {"strat":"MR","tf":"1h","cat":"forex_mr","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0,"max_hold":12,"adx_min":10,"bk_margin":0.03,"range_lb":4,"rsi_lo":30,"rsi_hi":70},
-    "AUDJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "NZDJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "EURCHF":  {"strat":"MR","tf":"1h","cat":"forex_mr","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0,"max_hold":12,"adx_min":10,"bk_margin":0.03,"range_lb":4,"rsi_lo":30,"rsi_hi":70},
-    "CHFJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    # ── 1H — Commodités (haute volatilité) ──
-    "GOLD":       {"strat":"BK","tf":"1h","cat":"commodities","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "SILVER":     {"strat":"BK","tf":"1h","cat":"commodities","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "OIL_CRUDE":  {"strat":"BK","tf":"1h","cat":"commodities","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "OIL_BRENT":  {"strat":"BK","tf":"1h","cat":"commodities","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "COPPER":     {"strat":"BK","tf":"1h","cat":"commodities","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "NATURALGAS": {"strat":"BK","tf":"1h","cat":"commodities","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":8, "adx_min":12,"bk_margin":0.03,"range_lb":4},
-    # ── 1H — Indices ──
-    "US500":   {"strat":"BK","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "US100":   {"strat":"BK","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "US30":    {"strat":"BK","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "DE40":    {"strat":"TF","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "FR40":    {"strat":"MR","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":12,"adx_min":10,"bk_margin":0.03,"range_lb":4,"rsi_lo":30,"rsi_hi":70},
-    "UK100":   {"strat":"BK","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "J225":    {"strat":"TF","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "AU200":   {"strat":"MR","tf":"1h","cat":"indices","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":12,"adx_min":10,"bk_margin":0.03,"range_lb":4,"rsi_lo":30,"rsi_hi":70},
-    # ── 1H — Crypto (haute vol, 24/7) ──
-    "BTCUSD":  {"strat":"BK","tf":"1h","cat":"crypto","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "ETHUSD":  {"strat":"BK","tf":"1h","cat":"crypto","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "BNBUSD":  {"strat":"BK","tf":"1h","cat":"crypto","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "XRPUSD":  {"strat":"BK","tf":"1h","cat":"crypto","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.10,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "SOLUSD":  {"strat":"BK","tf":"1h","cat":"crypto","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "AVAXUSD": {"strat":"BK","tf":"1h","cat":"crypto","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    # ── 1H — Stocks US (NY session) ──
-    "AAPL":    {"strat":"BK","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.10,"max_hold":8, "adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "TSLA":    {"strat":"BK","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.15,"max_hold":8, "adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "NVDA":    {"strat":"TF","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "MSFT":    {"strat":"BK","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":8, "adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "META":    {"strat":"BK","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":8, "adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "GOOGL":   {"strat":"TF","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "AMZN":    {"strat":"TF","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":1.0, "max_hold":12,"adx_min":12,"bk_margin":0.03,"range_lb":4},
-    "AMD":     {"strat":"BK","tf":"1h","cat":"stocks","tp1":1.5,"tp2":3.0,"tp3":5.0,"sl_buffer":0.12,"max_hold":8, "adx_min":12,"bk_margin":0.03,"range_lb":4},
-    # ── Daily — Forex MR low-vol (fiables, 1 signal/jour) ──
-    "AUDUSD":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":2.0,"tp2":3.0,"tp3":4.0,"sl_buffer":0.6, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
-    "NZDUSD":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":1.5,"tp2":2.5,"tp3":3.0,"sl_buffer":0.6, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
-    "EURGBP":  {"strat":"BK","tf":"1d","cat":"forex","tp1":1.0,"tp2":2.0,"tp3":3.0,"sl_buffer":0.10,"max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5},
-    "EURAUD":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":1.0, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
-    "GBPAUD":  {"strat":"TF","tf":"1d","cat":"forex","tp1":2.0,"tp2":3.5,"tp3":5.5,"sl_buffer":2.0, "max_hold":15,"adx_min":10,"bk_margin":0.05,"range_lb":5},
-    "AUDCAD":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":2.0,"tp2":3.0,"tp3":4.0,"sl_buffer":0.6, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
-    "GBPCAD":  {"strat":"BK","tf":"1d","cat":"forex","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":0.12,"max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5},
-    "GBPCHF":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":1.0, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
-    "CADCHF":  {"strat":"MR","tf":"1d","cat":"forex_mr","tp1":1.5,"tp2":2.0,"tp3":3.5,"sl_buffer":1.0, "max_hold":5,"adx_min":10,"bk_margin":0.05,"range_lb":5,"rsi_lo":30,"rsi_hi":70},
+    # ═══ V1 ULTIMATE: All 10 Elite → BK (Breakout) × 1H × TP 2.5R ═══
+    # tp1 = 2.5 (single TP, Multi-TP managed by bot_monitor)
+    # sl_buffer = 0.10 (10% of range for BK SL placement)
+    "EURJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "AUDNZD":  {"strat":"BK","tf":"1h","cat":"forex","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "ETHUSD":  {"strat":"BK","tf":"1h","cat":"crypto","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.12,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "GOLD":    {"strat":"BK","tf":"1h","cat":"commodities","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "GBPUSD":  {"strat":"BK","tf":"1h","cat":"forex","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "GBPJPY":  {"strat":"BK","tf":"1h","cat":"forex","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "SILVER":  {"strat":"BK","tf":"1h","cat":"commodities","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "EURUSD":  {"strat":"BK","tf":"1h","cat":"forex","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "AUDUSD":  {"strat":"BK","tf":"1h","cat":"forex","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
+    "DE40":    {"strat":"BK","tf":"1h","cat":"indices","tp1":2.5,"tp2":2.5,"tp3":2.5,"sl_buffer":0.10,"max_hold":18,"adx_min":12,"bk_margin":0.03,"range_lb":6},
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -209,11 +199,20 @@ MICRO_TF_PROFILES = {
     "GBPUSD_5M":  {"epic":"GBPUSD","strat":"MR","tf":"5m","cat":"forex_mr","tp1":1.0,"tp2":1.5,"tp3":2.0,"sl_buffer":0.8,"max_hold":60,"adx_min":8,"rsi_lo":25,"rsi_hi":75,"range_lb":12,"bk_margin":0.02,"max_per_hour":3},
 }
 
-
-
-
-
-
+# ═══════════════════════════════════════════════════════════════════════════════
+# GOD MODE — Override ASSET_PROFILES with research-proven strategies
+# ═══════════════════════════════════════════════════════════════════════════════
+try:
+    from god_mode import apply_god_mode, HARD_BAN
+    apply_god_mode()
+    # Remove HARD_BAN micro-TF entries too
+    _micro_ban = [k for k in MICRO_TF_PROFILES if MICRO_TF_PROFILES[k].get("epic") in HARD_BAN]
+    for k in _micro_ban:
+        del MICRO_TF_PROFILES[k]
+except Exception as _gm_e:
+    import traceback
+    print(f"⚠️ GOD MODE init skipped: {_gm_e}")
+    traceback.print_exc()
 
 
 class CapitalClient:
@@ -801,6 +800,55 @@ class CapitalClient:
             logger.error(f"❌ Capital.com close_position {deal_id}: {e}")
             return False
 
+    def close_partial(self, epic: str, direction: str, partial_size: float) -> bool:
+        """
+        Ferme partiellement une position CFD en passant un ordre opposé.
+        Capital.com matche automatiquement contre la position existante.
+
+        Args:
+            epic:         Symbole (ex: "GOLD")
+            direction:    Direction de la position OUVERTE ("BUY" ou "SELL")
+            partial_size: Taille à fermer (ex: 40% de la position totale)
+
+        Returns:
+            True si l'ordre opposé a été placé avec succès
+        """
+        if not self.available or partial_size <= 0:
+            return False
+        # Ordre opposé = close partiel
+        close_direction = "SELL" if direction == "BUY" else "BUY"
+        # Taille minimum
+        min_sz = self.MIN_SIZE.get(epic, 0.01)
+        if partial_size < min_sz:
+            logger.warning(
+                f"close_partial {epic}: taille {partial_size:.4f} < min {min_sz} — skip"
+            )
+            return False
+        try:
+            body = {
+                "epic":          epic,
+                "direction":     close_direction,
+                "size":          str(round(partial_size, 2)),
+                "type":          "MARKET",
+                "guaranteedStop": False,
+                "trailingStop":  False,
+            }
+            r = self._session.post(
+                f"{self._base_url}/orders",
+                headers=self._headers(),
+                json=body,
+                timeout=15,
+            )
+            r.raise_for_status()
+            logger.info(
+                f"✅ Capital.com partial close {epic} {close_direction} {partial_size:.4f} lots"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"❌ Capital.com close_partial {epic}: {e}")
+            return False
+
+
     def modify_position_stop(self, deal_id: str, new_stop: float) -> bool:
         """
         Déplace le Stop-Loss d'une position existante (pour le Break-Even).
@@ -856,21 +904,93 @@ class CapitalClient:
         entry: float,
         sl: float,
         epic: str,
+        free_margin: float = 0.0,
     ) -> float:
         """
         Calcule la taille de position en unités Capital.com.
-        Risque = risk_pct × balance / distance_SL
+
+        Pipeline de sécurité (3 étapes) :
+          1. Raw size = risk_pct × balance / sl_distance
+          2. Leverage cap: nominal ≤ MAX_EFFECTIVE_LEVERAGE × balance
+          3. Margin check: marge requise ≤ free_margin (solde libre)
+
+        Parameters
+        ----------
+        balance     : Solde total du compte
+        risk_pct    : Fraction du capital à risquer (ex: 0.005 = 0.5%)
+        entry       : Prix d'entrée
+        sl          : Prix du Stop Loss
+        epic        : Nom de l'instrument (ex: "BTCUSD")
+        free_margin : Solde libre disponible (0 = skip margin check)
         """
+        from config import (
+            MAX_EFFECTIVE_LEVERAGE,
+            ASSET_MARGIN_REQUIREMENTS,
+            ASSET_CLASS_FALLBACK,
+        )
+
         if balance <= 0:
-            logger.warning(f"⚠️ position_size: balance={balance} invalide — taille minimale utilisée")
-            min_sz = self.MIN_SIZE.get(epic.upper(), 0.01)
-            return min_sz
+            logger.warning(f"⚠️ position_size: balance={balance} invalide — taille minimale")
+            return self.MIN_SIZE.get(epic.upper(), 0.01)
+
         sl_dist = abs(entry - sl)
         if sl_dist == 0:
             return 0.0
+
+        min_sz = self.MIN_SIZE.get(epic.upper(), 0.01)
+
+        # ─── Étape 1: Raw sizing (risque classique) ───────────────────────
         risk_amt = balance * risk_pct
-        size     = risk_amt / sl_dist
-        min_sz   = self.MIN_SIZE.get(epic.upper(), 0.01)
-        size     = max(min_sz, round(size, 2))
-        logger.debug(f"  Capital.com size {epic}: {size} (risque={risk_amt:.2f} / SL_dist={sl_dist:.5f} / min={min_sz})")
-        return size
+        raw_size = risk_amt / sl_dist
+
+        # ─── Étape 2: Leverage Cap ────────────────────────────────────────
+        # Nominal = size × entry. Si nominal > MAX_LEVERAGE × capital → plafonner
+        nominal = raw_size * entry
+        max_nominal = MAX_EFFECTIVE_LEVERAGE * balance
+        capped_size = raw_size
+
+        if nominal > max_nominal and entry > 0:
+            capped_size = max_nominal / entry
+            logger.warning(
+                f"⚠️ LEVERAGE CAP {epic}: raw={raw_size:.4f} (nominal={nominal:,.0f}€) "
+                f"> {MAX_EFFECTIVE_LEVERAGE}× capital → capped={capped_size:.4f} "
+                f"(nominal={capped_size * entry:,.0f}€)"
+            )
+
+        # ─── Étape 3: Broker Margin Check ─────────────────────────────────
+        # Détermine la classe d'actif pour calculer la marge requise
+        asset_class = "forex"  # default
+        try:
+            profile = ASSET_PROFILES.get(epic, {})
+            asset_class = profile.get("cat", ASSET_CLASS_FALLBACK.get(epic, "forex"))
+        except Exception:
+            asset_class = ASSET_CLASS_FALLBACK.get(epic, "forex")
+
+        margin_rate = ASSET_MARGIN_REQUIREMENTS.get(asset_class, 0.0333)
+        margin_required = capped_size * entry * margin_rate
+
+        # Si free_margin fourni et insuffisant → réduire
+        effective_free = free_margin if free_margin > 0 else balance * 0.80  # 80% fallback
+        if margin_required > effective_free and entry > 0:
+            max_size_by_margin = effective_free / (entry * margin_rate)
+            old_size = capped_size
+            capped_size = min(capped_size, max_size_by_margin)
+            logger.warning(
+                f"⚠️ MARGIN CAP {epic}: margin_required={margin_required:,.0f}€ "
+                f"> free={effective_free:,.0f}€ ({asset_class} {margin_rate:.1%}) "
+                f"→ size {old_size:.4f} → {capped_size:.4f}"
+            )
+
+        # ─── Final clamp ──────────────────────────────────────────────────
+        final_size = max(min_sz, round(capped_size, 2))
+
+        # Log complet pour audit
+        final_nominal = final_size * entry
+        final_leverage = final_nominal / balance if balance > 0 else 0
+        final_margin = final_nominal * margin_rate
+        logger.debug(
+            f"  📐 {epic}: size={final_size} | nominal={final_nominal:,.0f}€ "
+            f"| leverage={final_leverage:.1f}× | margin={final_margin:,.0f}€ "
+            f"({asset_class} {margin_rate:.1%}) | risk={risk_amt:.2f}€ / SL={sl_dist:.5f}"
+        )
+        return final_size

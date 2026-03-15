@@ -44,8 +44,9 @@ class SmartRouter:
     Chaque ordre est haché en N slices placées dans le temps.
     """
 
-    def __init__(self, capital_client=None, db=None, telegram_router=None):
-        self._capital = capital_client
+    def __init__(self, capital_client=None, db=None, telegram_router=None, broker=None):
+        self._broker  = broker or capital_client   # broker actif (MT5 ou Capital)
+        self._capital = capital_client             # gardé pour compatibilité prix
         self._db      = db
         self._tg      = telegram_router
 
@@ -121,10 +122,10 @@ class SmartRouter:
         Ordre unique classique (pass-through, TWAP à 1 slice).
         Remplace direct les appels à place_market_order.
         """
-        if not self._capital:
+        if not self._broker:
             return None
         try:
-            ref = self._capital.place_market_order(
+            ref = self._broker.place_market_order(
                 epic=epic, direction=direction,
                 size=size, sl_price=sl_price, tp_price=tp_price
             )
@@ -184,9 +185,9 @@ class SmartRouter:
             tp  = meta["tp_price"] if i == 0 else None   # TP seulement sur la 1ère
             ref = None
 
-            if self._capital:
+            if self._broker:
                 try:
-                    ref = self._capital.place_market_order(
+                    ref = self._broker.place_market_order(
                         epic=epic, direction=direction,
                         size=slice_size, sl_price=sl, tp_price=tp
                     )
@@ -228,8 +229,8 @@ class SmartRouter:
     def _get_mid(self, epic: str) -> Optional[float]:
         """Prix mid actuel."""
         try:
-            if self._capital:
-                px = self._capital.get_current_price(epic)
+            if self._broker:
+                px = self._broker.get_current_price(epic)
                 if px:
                     return px.get("mid", None)
         except Exception:
@@ -261,6 +262,20 @@ class SmartRouter:
                         price       DOUBLE PRECISION,
                         ref         VARCHAR(50),
                         sliced_at   TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+            else:
+                self._db._execute("""
+                    CREATE TABLE IF NOT EXISTS order_slices (
+                        id          INTEGER PRIMARY KEY,
+                        order_id    TEXT,
+                        instrument  TEXT,
+                        direction   TEXT,
+                        slice_n     INTEGER,
+                        size        REAL,
+                        price       REAL,
+                        ref         TEXT,
+                        sliced_at   TEXT
                     )
                 """)
         except Exception as e:

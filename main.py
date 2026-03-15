@@ -25,7 +25,8 @@ if __name__ == "__main__":
     def _sigterm_handler(signum, frame):
         logger.info("🛑 SIGTERM reçu — sauvegarde en cours...")
         try:
-            bot.equity._save()
+            # FIX: _save() est une méthode privée qui peut ne pas exister sur le stub
+            getattr(bot.equity, '_save', lambda: None)()
             logger.info("✅ equity_history.json sauvegardé.")
         except Exception as _ex:
             logger.warning(f"⚠️ Sauvegarde equity échouée : {_ex}")

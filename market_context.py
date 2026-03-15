@@ -44,26 +44,50 @@ class MarketContext:
 
     # ─── Fear & Greed ────────────────────────────────────────────────────────
 
+    _fg_fail_count: int = 0   # compteur erreurs (class-level default)
+
     def refresh_fear_greed(self):
-        """Fetch Fear & Greed depuis alternative.me (gratuit, pas de clé)."""
+        """Fetch Fear & Greed depuis alternative.me via proxy WARP si disponible."""
         now = datetime.now(timezone.utc)
-        if self._last_fg_fetch and (now - self._last_fg_fetch).total_seconds() < 3600:
+        # Throttle : 1h après succès, 10min après échec (évite spam à chaque tick)
+        min_interval = 600 if MarketContext._fg_fail_count > 0 else 3600
+        if self._last_fg_fetch and (now - self._last_fg_fetch).total_seconds() < min_interval:
             return
 
+        proxy = os.getenv("HTTPS_PROXY", "") or os.getenv("HTTP_PROXY", "")
         try:
-            req = Request(
-                "https://api.alternative.me/fng/?limit=1",
-                headers={"User-Agent": "Nemesis/1.0"}
-            )
-            with urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())["data"][0]
+            if proxy:
+                import requests as _req
+                r = _req.get(
+                    "https://api.alternative.me/fng/?limit=1",
+                    proxies={"https": proxy, "http": proxy},
+                    timeout=10,
+                    headers={"User-Agent": "Nemesis/1.0"},
+                )
+                data = r.json()["data"][0]
+            else:
+                req = Request(
+                    "https://api.alternative.me/fng/?limit=1",
+                    headers={"User-Agent": "Nemesis/1.0"}
+                )
+                with urlopen(req, timeout=10) as r:
+                    data = json.loads(r.read())["data"][0]
+
             self._fg_value = int(data["value"])
             self._fg_label = data["value_classification"]
             self._last_fg_fetch = now
+            MarketContext._fg_fail_count = 0   # reset compteur
             logger.info(f"🧠 Fear & Greed : {self._fg_value}/100 ({self._fg_label})")
             self._update_regime()
         except Exception as e:
-            logger.warning(f"⚠️  Fear & Greed inaccessible : {e}")
+            MarketContext._fg_fail_count += 1
+            self._last_fg_fetch = now  # throttle même en cas d'erreur
+            # Log seulement au 1er échec puis toutes les 20 tentatives (≈ 200min)
+            if MarketContext._fg_fail_count == 1 or MarketContext._fg_fail_count % 20 == 0:
+                logger.debug(
+                    f"Fear & Greed inaccessible ({MarketContext._fg_fail_count}x, non critique): {e}"
+                )
+
 
     def get_context_line(self) -> str:
         """Ligne de contexte à inclure dans les alertes d'entrée."""

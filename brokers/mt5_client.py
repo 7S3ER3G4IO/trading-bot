@@ -97,6 +97,8 @@ class MT5Client:
         self._reconnect_delays    = [3, 10, 30]   # secondes entre tentatives
         self._last_reconnect_ts   = 0.0            # time.monotonic()
         self._reconnect_lock      = threading.Lock()
+        self._connected_at        = 0.0            # timestamp connexion initiale
+        self._GRACE_PERIOD_S      = 30             # pas de reconnect durant 30s après connect
 
         if not METAAPI_TOKEN or not METAAPI_ACCOUNT_ID:
             logger.debug("ℹ️  METAAPI_TOKEN / METAAPI_ACCOUNT_ID manquants — MT5 broker désactivé")
@@ -226,6 +228,7 @@ class MT5Client:
                     f"\U0001f3e6 MT5 IC Markets connect\u00e9 \u2705 (domain={domain}, "
                     f"account={METAAPI_ACCOUNT_ID[:8]}...)"
                 )
+                self._connected_at = time.monotonic()  # Active la grace period dans get_balance()
                 return True
 
             except Exception as err:
@@ -253,7 +256,13 @@ class MT5Client:
             return False
         try:
             ts = getattr(self._connection, "terminal_state", None)
-            return ts is not None and ts.connected
+            if ts is None:
+                return False
+            # Accepte soit ts.connected=True soit la présence d'account_information
+            if getattr(ts, "connected", False):
+                return True
+            info = getattr(ts, "account_information", None)
+            return info is not None
         except Exception:
             return False
 
@@ -337,23 +346,39 @@ class MT5Client:
     # ─── Solde ────────────────────────────────────────────────────────────────
 
     def get_balance(self) -> float:
-        """Retourne l'equity du compte MT5. Tente auto-reconnexion si connexion perdue."""
+        """Retourne l'equity du compte MT5.
+        Attend jusqu'à 5s que terminal_state se peuple avant de déclarer la connexion perdue.
+        Cela évite le cycle infini de reconnexion après le démarrage du bot.
+        """
         if not self.available:
             return 0.0
-        # Tente reconnexion si terminal_state vide (connexion silencieusement perdue)
         try:
-            ts = getattr(self._connection, "terminal_state", None)
-            info = ts.account_information if ts else None
-            if info:
-                return float(info.get("equity", info.get("balance", 0)))
-            # terminal_state accessible mais sans données → essai reconnexion
-            if not self._is_connected():
-                logger.warning("⚠️ MT5 get_balance: terminal_state vide — tentative reconnexion...")
-                self._maybe_reconnect()
+            # Attente patient jusqu'à 5s (terminal_state prend 1-2s à se peupler)
+            for _attempt in range(5):
+                ts   = getattr(self._connection, "terminal_state", None)
+                info = getattr(ts, "account_information", None) if ts else None
+                if info:
+                    bal = float(info.get("equity", info.get("balance", 0)))
+                    if bal > 0:
+                        self._connected_at = time.monotonic()  # connexion confirmée
+                        return bal
+                if _attempt < 4:
+                    time.sleep(1)
+
+            # terminal_state toujours vide après 5s
+            # Pas de reconnexion si on vient de se connecter (grace period 30s)
+            since_connect = time.monotonic() - self._connected_at
+            if since_connect < self._GRACE_PERIOD_S:
+                logger.debug(
+                    f"MT5 terminal_state non peuplé (grace period, {since_connect:.0f}s)"
+                )
+                return 0.0
+
+            logger.warning("⚠️ MT5 get_balance: terminal_state vide — tentative reconnexion...")
+            self._maybe_reconnect()
             return 0.0
         except Exception as e:
             logger.error(f"❌ MT5 get_balance: {e}")
-            self._maybe_reconnect()
             return 0.0
 
     # ─── Prix temps réel ──────────────────────────────────────────────────────

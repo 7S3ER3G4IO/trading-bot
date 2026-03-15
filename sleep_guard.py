@@ -15,7 +15,7 @@ Ce module gère le "réveil" du bot:
 2. RECONCILIATION ENGINE
    Au réveil:
    a) Vérifier les ordres ouverts via l'API REST (pas le cache local)
-   b) Comparer avec l'état Supabase (capital_trades)
+   b) Comparer avec l'état Supabase (positions)
    c) Détecter les ordres fermés pendant le sommeil (TP/SL touché)
    d) Mettre à jour le state local avant de reprendre
    e) Notifier via Telegram avec le résumé des changements
@@ -58,11 +58,11 @@ class SleepGuard:
     """
 
     def __init__(self, capital_client=None, db=None, telegram_router=None,
-                 capital_trades_ref: dict = None):
+                 positions_ref: dict = None):
         self._capital  = capital_client
         self._db       = db
         self._tg       = telegram_router
-        self._trades   = capital_trades_ref   # référence dict trades ouverts
+        self._trades   = positions_ref   # référence dict trades ouverts
 
         self._last_heartbeat    = time.monotonic()
         self._last_backup       = time.monotonic()
@@ -235,7 +235,7 @@ class SleepGuard:
         try:
             ph = "%s"
             self._db._execute(
-                f"UPDATE capital_trades SET status='CLOSED_SLEEP', "
+                f"UPDATE positions SET status='CLOSED_SLEEP', "
                 f"closed_at=NOW() WHERE instrument={ph} AND status='OPEN'",
                 (instrument,)
             )

@@ -1,0 +1,147 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.4.3"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "NEMESIS Trading Bot — Real-time Performance Dashboard",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "💰 Balance MT5",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "red", "value": 0}, {"color": "green", "value": 95000}]},
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT NOW() AS time, balance FROM nemesis_equity ORDER BY recorded_at DESC LIMIT 1", "refId": "A", "format": "table"}]
+    },
+    {
+      "id": 2,
+      "type": "gauge",
+      "title": "📉 Drawdown Journalier %",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 3}, {"color": "red", "value": 5}]},
+          "max": 10, "min": 0, "unit": "percent"
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT NOW() AS time, COALESCE(ROUND((1 - balance / NULLIF(LAG(balance, 288) OVER (ORDER BY recorded_at), 0)) * 100, 2), 0) AS drawdown_pct FROM nemesis_equity ORDER BY recorded_at DESC LIMIT 1", "refId": "A", "format": "table"}]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "🏆 Win Rate 7j %",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 45}, {"color": "green", "value": 55}]},
+          "unit": "percent"
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT NOW() AS time, ROUND(COUNT(*) FILTER (WHERE pnl > 0)::numeric / NULLIF(COUNT(*), 0) * 100, 1) AS win_rate FROM positions WHERE close_time > NOW() - INTERVAL '7 days' AND status = 'CLOSED'", "refId": "A", "format": "table"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "📊 Positions Ouvertes",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "blue", "value": 0}, {"color": "yellow", "value": 4}, {"color": "red", "value": 5}]},
+          "max": 5, "min": 0
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT NOW() AS time, COUNT(*) AS open_positions FROM positions WHERE status = 'OPEN'", "refId": "A", "format": "table"}]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "📈 Equity Curve",
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 4},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 10},
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list"}},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT recorded_at AS time, balance FROM nemesis_equity WHERE $__timeFilter(recorded_at) ORDER BY recorded_at", "refId": "A", "format": "time_series"}]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "📋 Derniers Trades",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "fieldConfig": {
+        "defaults": {"custom": {"filterable": true}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "pnl"}, "properties": [{"id": "custom.displayMode", "value": "color-text"}, {"id": "thresholds", "value": {"steps": [{"color": "red", "value": null}, {"color": "green", "value": 0}]}}]}
+        ]
+      },
+      "options": {"sortBy": [{"displayName": "close_time", "desc": true}]},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT instrument, direction, ROUND(entry::numeric, 5) AS entry, ROUND(sl::numeric, 5) AS sl, ROUND(tp1::numeric, 5) AS tp1, ROUND(pnl::numeric, 2) AS pnl, result, opened_at, close_time FROM positions WHERE $__timeFilter(opened_at) ORDER BY opened_at DESC LIMIT 50", "refId": "A", "format": "table"}]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "💹 PnL par Trade (7 jours)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"lineWidth": 0, "fillOpacity": 80, "drawStyle": "bars"},
+          "unit": "currencyUSD",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "green", "value": 0}]}
+        }
+      },
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT close_time AS time, ROUND(pnl::numeric, 2) AS pnl FROM positions WHERE status = 'CLOSED' AND $__timeFilter(close_time) ORDER BY close_time", "refId": "A", "format": "time_series"}]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "📐 PnL Total 30j",
+      "gridPos": {"h": 4, "w": 6, "x": 16, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "green", "value": 0}]},
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "targets": [{"datasource": {"type": "postgres"}, "rawSql": "SELECT NOW() AS time, COALESCE(ROUND(SUM(pnl)::numeric, 2), 0) AS total_pnl FROM positions WHERE status = 'CLOSED' AND close_time > NOW() - INTERVAL '30 days'", "refId": "A", "format": "table"}]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["nemesis", "trading", "bot"],
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "UTC",
+  "title": "NEMESIS — Bot Performance",
+  "uid": "nemesis-bot-v2",
+  "version": 1
+}

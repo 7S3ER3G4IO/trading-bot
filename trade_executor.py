@@ -114,16 +114,50 @@ class TradeExecutor:
 
             results = []
             for i, tp in enumerate(job.tp_levels):
-                if i == 0:
-                    # First position: limit order for better fill
-                    deal_id = self._client.place_limit_order(
-                        job.instrument, job.direction, job.size, job.sl, tp, timeout_s=15
-                    )
-                else:
-                    # Subsequent positions: market for speed
-                    deal_id = self._client.place_market_order(
-                        job.instrument, job.direction, job.size, job.sl, tp
-                    )
+                deal_id = None
+
+                # M41: Fast path — try pre-built flush (M43) or fast_market
+                if i > 0 and hasattr(self, '_fast_exec') and self._fast_exec:
+                    try:
+                        # M43: check for pre-built order first
+                        if hasattr(self, '_pre_builder') and self._pre_builder:
+                            pb = self._pre_builder.consume(job.instrument)
+                            if pb:
+                                deal_ref = self._fast_exec.flush_pre_built(
+                                    pb.body_bytes, pb.headers
+                                )
+                                if deal_ref:
+                                    hdrs = self._client._headers()
+                                    deal_id = self._fast_exec.fast_confirm_deal(
+                                        deal_ref, hdrs
+                                    )
+
+                        # M41: Fast market order (direct TCP)
+                        if deal_id is None:
+                            hdrs = self._client._headers()
+                            deal_ref = self._fast_exec.fast_market_order(
+                                job.instrument, job.direction, job.size,
+                                job.sl, tp, hdrs,
+                            )
+                            if deal_ref:
+                                deal_id = self._fast_exec.fast_confirm_deal(
+                                    deal_ref, hdrs
+                                )
+                    except Exception as _fast_e:
+                        logger.debug(f"M41 fast path failed: {_fast_e}")
+
+                # Standard path (first position = limit, fallback for fast fails)
+                if deal_id is None:
+                    if i == 0:
+                        deal_id = self._client.place_limit_order(
+                            job.instrument, job.direction, job.size, job.sl, tp,
+                            timeout_s=15,
+                        )
+                    else:
+                        deal_id = self._client.place_market_order(
+                            job.instrument, job.direction, job.size, job.sl, tp,
+                        )
+
                 results.append(deal_id)
                 if i < len(job.tp_levels) - 1:
                     time.sleep(0.3)

@@ -1,0 +1,17 @@
+# ─── RESEARCH — requirements-research.txt ───────────────────────────────────
+# Dépendances pour les modules de R&D (research_labs/).
+# NE PAS inclure dans le Dockerfile de production.
+#
+# Usage : pip install -r requirements-research.txt
+
+# Flash Loan / DeFi (research_labs/archived_modules/flash_loan.py)
+web3>=6.0
+
+# Flashbots MEV (research_labs/archived_modules/dark_forest_mev.py)
+eth_account>=0.10
+
+# Virtual FPGA JIT (research_labs/archived_modules/virtual_fpga.py)
+numba>=0.59
+
+# Streamlit dashboard (research labs only)
+streamlit>=1.30.0

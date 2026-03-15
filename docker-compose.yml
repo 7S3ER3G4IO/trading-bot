@@ -19,42 +19,16 @@ services:
     environment:
       POSTGRES_DB:       nemesis_db
       POSTGRES_USER:     postgres
-      POSTGRES_PASSWORD: ${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}
+      POSTGRES_PASSWORD: ${POSTGRES_LOCAL_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
+    # ports:   # FIX CRITIQUE: port 5432 ne doit pas être exposé sur l'host
+    #   - "5432:5432"  # supprimé — inter-container via nemesis_net suffit
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - nemesis_net
-
-  # ────────────────────────────────────────────────────────────────
-  # 2. Redis — Cache haute fréquence (prix, signaux, sessions)
-  # ────────────────────────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    container_name: nemesis_redis
-    restart: unless-stopped
-    command: >
-      redis-server
-        --maxmemory 256mb
-        --maxmemory-policy allkeys-lru
-        --save 60 1
-        --appendonly yes
-        --appendfilename nemesis.aof
-    volumes:
-      - redis_data:/data
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
       retries: 5
     networks:
       - nemesis_net
@@ -71,25 +45,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     env_file:
       - .env
     environment:
       # Override DATABASE_URL pour pointer vers le postgres local
-      DATABASE_URL:        postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
-
-      REDIS_URL:           redis://redis:6379/0
+      DATABASE_URL:        postgresql://postgres:${POSTGRES_LOCAL_PASSWORD}@postgres:5432/nemesis_db?sslmode=disable
       # Mode local — déploiement 100% Docker
       DEPLOYMENT_ENV:      local
       # Moteur 22: le bot sait qu'il tourne en local (sleep guard actif)
       LOCAL_DEPLOYMENT:    "true"
+      # Project Argus: HuggingFace model cache for FinBERT
+      HF_HOME:             /tmp/hf_cache
+      TRANSFORMERS_CACHE:  /tmp/hf_cache
       # Les autres variables viennent du .env (clés API, Telegram...)
     volumes:
       # Persist le modèle RL et les caches entre redémarrages
       - bot_models:/tmp
       - bot_logs:/app/logs
-
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
     networks:
       - nemesis_net
     logging:
@@ -98,18 +77,148 @@ services:
         max-size: "50m"
         max-file: "5"
 
+  # ────────────────────────────────────────────────────────────────
+  # Monitoring — surveille containers, CPU, RAM, MT5, Kill Switch
+  # ────────────────────────────────────────────────────────────────
+  monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: monitor
+    command: python3 monitor.py
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD}@postgres:5432/nemesis_db?sslmode=disable
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Security: run as docker group instead of root
+    user: "0:${DOCKER_GID:-999}"
+    restart: unless-stopped
+    healthcheck:
+      disable: true   # FIX: le Dockerfile healthcheck cherche /tmp/.nemesis_alive (nemesis_bot only)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    networks:
+      - nemesis_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ────────────────────────────────────────────────────────────────
+  # Briefing marché — Lun-Ven 07:30 UTC dans le canal PRO
+  # ────────────────────────────────────────────────────────────────
+  market_brief:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: market_brief
+    command: python3 market_brief.py
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
+    restart: unless-stopped
+    healthcheck:
+      disable: true   # FIX: script périodique — pas de healthcheck /tmp/.nemesis_alive
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    networks:
+      - nemesis_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ────────────────────────────────────────────────────────────────
+  # Générateur PNG social media — Vendredi 18h UTC
+  # ────────────────────────────────────────────────────────────────
+  social_visual:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: social_visual
+    command: python3 social_visual.py
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
+    restart: unless-stopped
+    healthcheck:
+      disable: true   # FIX: script périodique — pas de healthcheck /tmp/.nemesis_alive
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    networks:
+      - nemesis_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+
+  # ────────────────────────────────────────────────────────────────
+  # Grafana — Dashboard temps réel (connecté à nemesis_postgres)
+  # Accès : http://46.225.186.152:3000  login: admin / QuantBot2025
+  # ────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: nemesis_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - nemesis_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 # ────────────────────────────────────────────────────────────────
 # Volumes persistants (survivent à docker compose down)
 # ────────────────────────────────────────────────────────────────
 volumes:
   postgres_data:
     name: nemesis_postgres_data
-  redis_data:
-    name: nemesis_redis_data
   bot_models:
     name: nemesis_bot_models
   bot_logs:
     name: nemesis_bot_logs
+  grafana_data:
+    name: nemesis_grafana_data
 
 
 networks:

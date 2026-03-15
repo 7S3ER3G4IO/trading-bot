@@ -15,7 +15,6 @@ Sessions actives :
   NY open      : 13h30 → 16h00 UTC
 """
 
-import os
 import pandas as pd
 import ta
 from loguru import logger
@@ -72,9 +71,11 @@ def _bar_in_presession(h: int, m: int) -> int:
 SESSION_WINDOWS = {
     # Crypto : 24/7 — marchés ouverts en permanence
     "crypto":      [(0, 24 * 60)],
-    # Forex BK/TF : London élargi + NY élargi (besoin de volume pour breakout)
-    "forex":       [(7 * 60, 10 * 60 + 30),
-                    (12 * 60, 16 * 60 + 30)],
+    # Forex EUR/GBP/CHF : London + NY élargi (07h-21h UTC)
+    "forex":       [(7 * 60, 21 * 60)],
+    # Forex Asiatique/Pacifique (JPY, AUD, NZD) : Tokyo/Sydney + London + NY
+    # Tokyo/Sydney: 00h-08h UTC | London: 07h-16h | NY: 13h-21h
+    "forex_asia":  [(0, 21 * 60)],  # 00h-21h UTC (Tokyo→London→NY sans trou)
     # Forex MR : 24/7 — Mean Reversion fonctionne H24 (RSI/BB ne dépendent pas de session)
     "forex_mr":    [(0, 24 * 60)],
     # Indices : London marchés + NY + after-hours
@@ -85,6 +86,9 @@ SESSION_WINDOWS = {
     # Commodités : élargi 06h-22h UTC (pétrole, or actifs sur large plage)
     "commodities": [(6 * 60, 22 * 60)],
 }
+
+# Devises asiatiques/pacifiques — détection automatique dans l'instrument
+ASIAN_CURRENCIES = {"JPY", "AUD", "NZD"}
 
 
 def _in_session_window(h: int, m: int, category: str) -> bool:
@@ -100,7 +104,7 @@ def _in_session_window(h: int, m: int, category: str) -> bool:
 # ─── S-1: Weighted score configuration ────────────────────────────────────────
 # Threshold for trade entry (0.0-1.0 continuous score).
 # 0.40 ≈ ancien score ≥ 1 (une confirmation forte suffit).
-WEIGHTED_SCORE_THRESHOLD = 0.40
+WEIGHTED_SCORE_THRESHOLD = 0.60   # SNIPER MODE — only high-confluence signals
 
 
 class Strategy:
@@ -139,6 +143,18 @@ class Strategy:
         # Weekly bias (approximation via long EMAs)
         df["ema100"] = ta.trend.EMAIndicator(close, window=100).ema_indicator()
         df["ema250"] = ta.trend.EMAIndicator(close, window=250).ema_indicator()
+
+        # ── M48: Keltner Channel + Z-score (Mean-Reversion) ──
+        kc = ta.volatility.KeltnerChannel(high, low, close, window=20, window_atr=14)
+        df["kc_up"]  = kc.keltner_channel_hband()
+        df["kc_lo"]  = kc.keltner_channel_lband()
+        df["kc_mid"] = kc.keltner_channel_mband()
+        # Z-score: how many std devs from the 20-period mean
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        df["zscore"] = (close - sma20) / std20.replace(0, float('nan'))
+        # RSI divergence: price makes lower low but RSI makes higher low
+        df["rsi_sma"] = df["rsi"].rolling(5).mean()
 
         # Don't dropna() on ALL columns — ema100/ema250 need 100-250 bars
         # and may not all be available with limited fetch. Only require cores.
@@ -266,11 +282,34 @@ class Strategy:
         return _bar_session_idx(now.hour, now.minute) >= 0
 
     def is_session_ok_for(self, instrument: str, category: str = "forex") -> bool:
-        """Retourne True si l'heure UTC est dans la fenêtre de session de cet actif."""
+        """
+        Asset-aware session filter.
+
+        - Crypto: 24/7
+        - JPY/AUD/NZD pairs: Tokyo/Sydney (00-08h) + London + NY (00-21h)
+        - EUR/GBP/CHF forex: London + NY (07-21h)
+        - Forex MR strategy: 24/7
+        - Indices: market hours only
+        - Stocks: NY only
+        - Commodities: 06-22h
+        """
         now = datetime.now(timezone.utc)
+        # Weekend block (sauf crypto)
+        if category == "crypto":
+            return True  # 24/7 y compris weekend
         if now.weekday() not in ALLOWED_WEEKDAYS:
             return False
-        return _in_session_window(now.hour, now.minute, category)
+
+        # Detect Asian/Pacific currencies in instrument name
+        effective_cat = category
+        if category in ("forex", "forex_mr"):
+            instr_upper = instrument.upper()
+            for ccy in ASIAN_CURRENCIES:
+                if ccy in instr_upper:
+                    effective_cat = "forex_asia"
+                    break
+
+        return _in_session_window(now.hour, now.minute, effective_cat)
 
     def compute_session_range(self, df: pd.DataFrame, range_lookback: int = 6) -> dict:
         """
@@ -353,6 +392,16 @@ class Strategy:
 
         if len(df) < 30:
             return SIGNAL_HOLD, 0, []
+
+        # ─── PROP FIRM MODE : BK Only ──────────────────────────────────────────
+        # Si BK_ONLY_MODE=True, on force le routing BK pour TOUS les instruments
+        # → TF et MR désactivés (Prop Firm rule : stratégie unique validée)
+        try:
+            from config import BK_ONLY_MODE
+            if BK_ONLY_MODE:
+                strat_type = "BK"  # Force Breakout regardless of asset_profile
+        except ImportError:
+            pass
 
         # Routing par stratégie
         strat_type = asset_profile.get("strat", "BK") if asset_profile else "BK"
@@ -670,87 +719,136 @@ class Strategy:
     # MEAN REVERSION (MR) — RSI survendu/surachetÃ© + Bollinger Bands
     # ═══════════════════════════════════════════════════════════════════════
     def _signal_mr(self, df, symbol, profile):
+        """
+        M48: STATISTICAL ARBITRAGE & MEAN-REVERSION
+        — Z-score extremes (> 2.0), Bollinger + Keltner squeeze,
+        — RSI divergence, EMA200 proximity
+        — 100% VOLUME-AGNOSTIC (works on forex, commodities, indices)
+        """
         curr = df.iloc[-1]
         c = float(curr["close"])
+        o = float(curr["open"])
+        h = float(curr["high"])
+        l = float(curr["low"])
         rsi = float(curr.get("rsi", 50))
-        bb_lo = float(curr.get("bb_lo", c))
-        bb_up = float(curr.get("bb_up", c))
         atr = float(curr.get("atr", 0))
         if atr <= 0:
             return SIGNAL_HOLD, 0.0, []
 
-        rsi_lo = profile.get("rsi_lo", 30)
-        rsi_hi = profile.get("rsi_hi", 70)
+        bb_lo = float(curr.get("bb_lo", c))
+        bb_up = float(curr.get("bb_up", c))
+        bb_mid = float(curr.get("bb_mid", c))
+        kc_lo = float(curr.get("kc_lo", c))
+        kc_up = float(curr.get("kc_up", c))
+        zscore = float(curr.get("zscore", 0))
+        ema200 = float(curr.get("ema200", c))
 
-        if rsi <= rsi_lo and c <= bb_lo * 1.015:
+        rsi_lo = profile.get("rsi_lo", 25) if profile else 25
+        rsi_hi = profile.get("rsi_hi", 75) if profile else 75
+
+        # ── Entry: require AT LEAST 2 of 3 conditions ──
+        # Condition 1: Z-score extreme (≥ 2.5)
+        # Condition 2: BB + Keltner double breach
+        # Condition 3: RSI extreme
+        buy_conds = [
+            zscore <= -2.5,
+            c <= bb_lo and c <= kc_lo,
+            rsi <= rsi_lo,
+        ]
+        sell_conds = [
+            zscore >= 2.5,
+            c >= bb_up and c >= kc_up,
+            rsi >= rsi_hi,
+        ]
+
+        sig = SIGNAL_HOLD
+        if sum(buy_conds) >= 2:
             sig = SIGNAL_BUY
-        elif rsi >= rsi_hi and c >= bb_up * 0.985:
+        elif sum(sell_conds) >= 2:
             sig = SIGNAL_SELL
         else:
-            return SIGNAL_HOLD, 0.0, [f"MR:RSI={rsi:.0f}(need≤{rsi_lo}/≥{rsi_hi})"]
+            return SIGNAL_HOLD, 0.0, [f"MR:Z={zscore:.1f} RSI={rsi:.0f}"]
 
-        # S-1: Weighted MR scoring
+        # ── Weighted scoring (volume-agnostic) ──
+        import math
         weights = []
         confirmations = []
 
-        # W1 — ADX low = good for MR (max 0.20)
-        adx_val = float(curr.get("adx", 0))
-        adx_w = min(0.20, 0.20 * max(0, 30 - adx_val) / 20)
-        if adx_w > 0.01:
-            weights.append(adx_w)
-            confirmations.append(f"ADX_low {adx_val:.0f}({adx_w:.2f})")
+        # W1 — Z-score extremity (max 0.25) — core signal
+        z_abs = abs(zscore)
+        z_w = min(0.25, 0.25 * max(0, z_abs - 2.0) / 1.5)
+        if z_w > 0.01:
+            weights.append(z_w)
+            confirmations.append(f"Z={zscore:.1f}({z_w:.2f})")
 
-        # W2 — Body ratio (max 0.15)
-        candle_body = abs(c - float(curr["open"]))
-        candle_range = float(curr["high"]) - float(curr["low"])
-        body_ratio = candle_body / candle_range if candle_range > 0 else 0
-        body_w = min(0.15, 0.15 * max(0, body_ratio - 0.2) / 0.6)
-        if body_w > 0.01:
-            weights.append(body_w)
-            confirmations.append(f"Body {body_ratio:.0%}({body_w:.2f})")
-
-        # W3 — Volume (max 0.15)
-        vol = float(curr.get("volume", 0))
-        vol_ma = float(curr.get("vol_ma", vol + 1))
-        vol_ratio = vol / vol_ma if vol_ma > 0 else 0
-        vol_w = min(0.15, 0.15 * max(0, vol_ratio - 0.5) / 1.0)
-        if vol_w > 0.01:
-            weights.append(vol_w)
-            confirmations.append(f"Vol {vol_ratio:.1f}×({vol_w:.2f})")
-
-        # W4 — EMA50 proximity (max 0.15)
-        ema50 = float(curr.get("ema50", c))
-        ema_dist = abs(c - ema50) / c if c > 0 else 1
-        ema_w = min(0.15, 0.15 * max(0, 0.05 - ema_dist) / 0.05)
-        if ema_w > 0.01:
-            weights.append(ema_w)
-            confirmations.append(f"EMA50({ema_w:.2f})")
-
-        # W5 — RSI extremity bonus (max 0.15)
+        # W2 — RSI extremity (max 0.20)
         if sig == SIGNAL_BUY:
-            rsi_extreme = max(0, rsi_lo - rsi) / 10
+            rsi_ext = max(0, rsi_lo + 5 - rsi) / 15
         else:
-            rsi_extreme = max(0, rsi - rsi_hi) / 10
-        rsi_w = min(0.15, 0.15 * rsi_extreme)
+            rsi_ext = max(0, rsi - (rsi_hi - 5)) / 15
+        rsi_w = min(0.20, 0.20 * rsi_ext)
         if rsi_w > 0.01:
             weights.append(rsi_w)
-            confirmations.append(f"RSI_ext({rsi_w:.2f})")
+            confirmations.append(f"RSI={rsi:.0f}({rsi_w:.2f})")
+
+        # W3 — BB+Keltner double breach (0.15 bonus)
+        if (sig == SIGNAL_BUY and c <= bb_lo and c <= kc_lo) or \
+           (sig == SIGNAL_SELL and c >= bb_up and c >= kc_up):
+            weights.append(0.15)
+            confirmations.append("BB+KC✓(0.15)")
+        elif (sig == SIGNAL_BUY and c <= bb_lo) or (sig == SIGNAL_SELL and c >= bb_up):
+            weights.append(0.08)
+            confirmations.append("BB✓(0.08)")
+
+        # W4 — ADX low = good for MR (max 0.15)
+        adx_val = float(curr.get("adx", 50))
+        adx_w = min(0.15, 0.15 * max(0, 35 - adx_val) / 25)
+        if adx_w > 0.01:
+            weights.append(adx_w)
+            confirmations.append(f"ADX↓={adx_val:.0f}({adx_w:.2f})")
+
+        # W5 — EMA200 proximity: price near EMA200 = strong reversion target (max 0.12)
+        if ema200 > 0:
+            ema_dist_pct = abs(c - ema200) / c
+            if ema_dist_pct < 0.03:  # within 3% of EMA200
+                ema_w = min(0.12, 0.12 * (1 - ema_dist_pct / 0.03))
+                if ema_w > 0.01:
+                    weights.append(ema_w)
+                    confirmations.append(f"EMA200({ema_w:.2f})")
+
+        # W6 — Engulfing candle pattern (0.10)
+        if len(df) >= 2:
+            prev = df.iloc[-2]
+            prev_o, prev_c = float(prev["open"]), float(prev["close"])
+            if sig == SIGNAL_BUY and c > o and o <= prev_c and c >= prev_o:  # bullish engulfing
+                weights.append(0.10)
+                confirmations.append("Engulf↑(0.10)")
+            elif sig == SIGNAL_SELL and c < o and o >= prev_c and c <= prev_o:  # bearish engulfing
+                weights.append(0.10)
+                confirmations.append("Engulf↓(0.10)")
 
         score = round(sum(weights), 3)
         if score < WEIGHTED_SCORE_THRESHOLD:
             return SIGNAL_HOLD, score, confirmations
 
-        info = f"[MR] RSI={rsi:.0f} | BB={'lo' if sig == SIGNAL_BUY else 'hi'}"
+        info = f"[MR] Z={zscore:.1f} RSI={rsi:.0f} BB={'lo' if sig == SIGNAL_BUY else 'hi'}"
         icon = "🟢" if sig == SIGNAL_BUY else "🔴"
         logger.info(f"{icon} MEAN REV {sig} {symbol} | {info} | Score {score:.2f} | {confirmations}")
         return sig, score, [info] + confirmations
 
     # ═══════════════════════════════════════════════════════════════════════
-    # TREND FOLLOWING (TF) — EMA crossover + MACD + ADX
+    # M49: VOLUME-AGNOSTIC TREND FOLLOWING (TF)
+    # — EMA crossover + MACD + ADX + ATR expansion + engulfing patterns
+    # — NO volume dependency (works on forex, commodities with volume=0)
     # ═══════════════════════════════════════════════════════════════════════
     def _signal_tf(self, df, symbol, profile):
+        """
+        M49: VOLUME-AGNOSTIC & TIME-BASED KERNEL
+        Pure price action: EMA crossover, MACD, ADX, ATR expansion, engulfing.
+        """
         curr = df.iloc[-1]
         c = float(curr["close"])
+        o = float(curr["open"])
         ema_fast = float(curr.get("ema20", 0))
         ema_slow = float(curr.get("ema50", 0))
         macd = float(curr.get("macd", 0))
@@ -760,16 +858,16 @@ class Strategy:
         if ema_fast <= 0 or ema_slow <= 0:
             return SIGNAL_HOLD, 0.0, []
 
-        if ema_fast > ema_slow and macd > macd_s and adx_val > 12:
+        # Require ADX > 20 (strong trend) + EMA separation > 0.1%
+        ema_sep = abs(ema_fast - ema_slow) / ema_slow * 100 if ema_slow > 0 else 0
+        if ema_fast > ema_slow and macd > macd_s and adx_val > 20 and ema_sep > 0.1:
             sig = SIGNAL_BUY
-        elif ema_fast < ema_slow and macd < macd_s and adx_val > 12:
+        elif ema_fast < ema_slow and macd < macd_s and adx_val > 20 and ema_sep > 0.1:
             sig = SIGNAL_SELL
         else:
-            ema_dir = '>' if ema_fast > ema_slow else '<'
-            macd_dir = '>' if macd > macd_s else '<'
-            return SIGNAL_HOLD, 0.0, [f"TF:EMA{ema_dir} MACD{macd_dir}S ADX={adx_val:.0f}"]
+            return SIGNAL_HOLD, 0.0, []
 
-        # Weekly filter
+        # Weekly filter for daily TF
         _tf = profile.get("tf", "1h") if profile else "1h"
         if _tf == "1d":
             ema100 = float(curr.get("ema100", 0))
@@ -780,7 +878,7 @@ class Strategy:
                 if sig == SIGNAL_SELL and ema100 > ema250:
                     return SIGNAL_HOLD, 0.0, []
 
-        # S-1: Weighted TF scoring
+        # ── Weighted scoring (100% volume-agnostic) ──
         import math
         weights = []
         confirmations = []
@@ -793,38 +891,59 @@ class Strategy:
 
         # W2 — RSI in trend zone (0.12)
         rsi = float(curr.get("rsi", 50))
-        rsi_ok = (sig == SIGNAL_BUY and 40 < rsi < 70) or \
-                 (sig == SIGNAL_SELL and 30 < rsi < 60)
+        rsi_ok = (sig == SIGNAL_BUY and 40 < rsi < 75) or \
+                 (sig == SIGNAL_SELL and 25 < rsi < 60)
         if rsi_ok:
             weights.append(0.12)
-            confirmations.append(f"RSI✓ {rsi:.0f}(0.12)")
+            confirmations.append(f"RSI✓={rsi:.0f}(0.12)")
 
-        # W3 — Volume (max 0.15)
-        vol = float(curr.get("volume", 0))
-        vol_ma = float(curr.get("vol_ma", vol + 1))
-        vol_ratio = vol / vol_ma if vol_ma > 0 else 0
-        vol_w = min(0.15, 0.15 * max(0, vol_ratio - 0.6) / 1.0)
-        if vol_w > 0.01:
-            weights.append(vol_w)
-            confirmations.append(f"Vol {vol_ratio:.1f}×({vol_w:.2f})")
+        # W3 — ATR expansion: current ATR > avg ATR (replaces volume) (max 0.15)
+        atr_val = float(curr.get("atr", 0))
+        if len(df) >= 20:
+            atr_ma = float(df["atr"].iloc[-20:].mean())
+            if atr_ma > 0:
+                atr_ratio = atr_val / atr_ma
+                atr_w = min(0.15, 0.15 * max(0, atr_ratio - 0.8) / 1.2)
+                if atr_w > 0.01:
+                    weights.append(atr_w)
+                    confirmations.append(f"ATR↑ {atr_ratio:.1f}×({atr_w:.2f})")
 
         # W4 — 3-bar momentum (max 0.15)
-        mom3 = c / float(df.iloc[-4]["close"]) - 1 if len(df) > 4 else 0
-        mom_ok = (mom3 > 0.003 and sig == SIGNAL_BUY) or \
-                 (mom3 < -0.003 and sig == SIGNAL_SELL)
-        if mom_ok:
-            mom_w = min(0.15, abs(mom3) * 10)
-            weights.append(mom_w)
-            confirmations.append(f"Mom3 {mom3:+.2%}({mom_w:.2f})")
+        if len(df) > 4:
+            mom3 = c / float(df.iloc[-4]["close"]) - 1
+            mom_ok = (mom3 > 0.002 and sig == SIGNAL_BUY) or \
+                     (mom3 < -0.002 and sig == SIGNAL_SELL)
+            if mom_ok:
+                mom_w = min(0.15, abs(mom3) * 12)
+                weights.append(mom_w)
+                confirmations.append(f"Mom3 {mom3:+.2%}({mom_w:.2f})")
 
         # W5 — MACD divergence strength (max 0.10)
         macd_diff = abs(macd - macd_s)
-        atr = float(curr.get("atr", 1))
-        macd_norm = macd_diff / atr if atr > 0 else 0
-        macd_w = min(0.10, macd_norm * 0.5)
-        if macd_w > 0.01:
-            weights.append(macd_w)
-            confirmations.append(f"MACD_str({macd_w:.2f})")
+        if atr_val > 0:
+            macd_norm = macd_diff / atr_val
+            macd_w = min(0.10, macd_norm * 0.5)
+            if macd_w > 0.01:
+                weights.append(macd_w)
+                confirmations.append(f"MACD({macd_w:.2f})")
+
+        # W6 — Engulfing candle (0.10) — pure price action
+        if len(df) >= 2:
+            prev = df.iloc[-2]
+            prev_o, prev_c = float(prev["open"]), float(prev["close"])
+            if sig == SIGNAL_BUY and c > o and o <= prev_c and c >= prev_o:
+                weights.append(0.10)
+                confirmations.append("Engulf↑(0.10)")
+            elif sig == SIGNAL_SELL and c < o and o >= prev_c and c <= prev_o:
+                weights.append(0.10)
+                confirmations.append("Engulf↓(0.10)")
+
+        # W7 — EMA alignment (0.08): price on right side of EMA200
+        ema200 = float(curr.get("ema200", 0))
+        if ema200 > 0:
+            if (sig == SIGNAL_BUY and c > ema200) or (sig == SIGNAL_SELL and c < ema200):
+                weights.append(0.08)
+                confirmations.append("EMA200✓(0.08)")
 
         score = round(sum(weights), 3)
         if score < WEIGHTED_SCORE_THRESHOLD:
@@ -832,7 +951,7 @@ class Strategy:
 
         arrow = '↑' if macd > macd_s else '↓'
         cmp = '>' if sig == SIGNAL_BUY else '<'
-        info = f"[TF] EMA20{cmp}EMA50 | MACD {arrow} | ADX={adx_val:.0f}"
+        info = f"[TF] EMA20{cmp}50 MACD{arrow} ADX={adx_val:.0f}"
         icon = "🟢" if sig == SIGNAL_BUY else "🔴"
         logger.info(f"{icon} TREND {sig} {symbol} | {info} | Score {score:.2f} | {confirmations}")
         return sig, score, [info] + confirmations

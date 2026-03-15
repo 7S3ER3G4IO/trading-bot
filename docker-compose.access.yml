@@ -1,0 +1,78 @@
+# docker-compose.access.yml — QuantAccessBot + Discord Admin Bot
+services:
+
+  quant_access_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.access
+    container_name: quant_access_bot
+    restart: unless-stopped
+    env_file: .env
+    command: ["python3", "-u", "quant_access_bot.py"]
+    networks:
+      - nemesis_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  discord_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.access
+    container_name: discord_bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://postgres:Hinalol08-Citadel!@nemesis_postgres:5432/nemesis_db?sslmode=disable
+      - DISCORD_CATEGORY_PENDING=1482386031063076864
+      - DISCORD_CATEGORY_VALIDATED=1482386158309609633
+    command: ["python3", "-u", "discord_admin_bot.py"]
+    networks:
+      - nemesis_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api_stats:
+    build:
+      context: .
+      dockerfile: Dockerfile.access
+    container_name: api_stats
+    restart: unless-stopped
+    env_file: .env
+    command: ["python3", "-u", "api_stats.py"]
+    ports:
+      - "8080:8080"
+    networks:
+      - nemesis_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api_email:
+    build:
+      context: .
+      dockerfile: Dockerfile.access
+    container_name: api_email
+    restart: unless-stopped
+    env_file: .env
+    command: ["python3", "-u", "api_email.py"]
+    ports:
+      - "8081:8081"
+    networks:
+      - nemesis_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  nemesis_network:
+    external: true
