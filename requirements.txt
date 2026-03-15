@@ -60,3 +60,4 @@ docker>=7.0
 yfinance>=0.2
 newsapi-python>=0.2
 uvloop>=0.21.0
+prometheus_client>=0.20.0   # Serveur HTTP métriques Prometheus (port 9090)

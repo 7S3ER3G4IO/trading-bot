@@ -32,6 +32,11 @@ TRAILING_LEVELS = [
     (3.0, 2.5),     # PnL > 3.0R → SL → entry + 2.5R (75%+ locked)
 ]
 
+# ATR Trailing strict : après 1.5R de gain, trail à 0.7×ATR sous le prix courant
+# Plus serré que les paliers R pour conserver le maximum sur les runners
+ATR_TRAIL_MULTIPLIER = 0.7    # SL = price - ATR × 0.7 (serré)
+ATR_TRAIL_ACTIVATE_R = 1.5    # Active le mode ATR strict après 1.5R de gain
+
 
 @dataclass
 class TrailingState:
@@ -44,6 +49,8 @@ class TrailingState:
     risk_r: float           # 1R = abs(entry - original_sl)
     current_level: int      # Index dans TRAILING_LEVELS atteint
     last_update: float      # timestamp
+    atr: float = 0.0        # ATR au moment de l'entrée (pour mode ATR strict)
+    atr_trail_active: bool = False  # True quand ATR trailing strict est activé
 
 
 class ConvexityEngine:
@@ -191,8 +198,12 @@ class ConvexityEngine:
     # ═══════════════════════════════════════════════════════════════════════
 
     def register_trade(self, instrument: str, entry: float, sl: float,
-                       direction: str):
-        """Enregistre un nouveau trade pour le trailing stop."""
+                       direction: str, atr: float = 0.0):
+        """Enregistre un nouveau trade pour le trailing stop.
+        
+        Args:
+            atr: ATR courant au moment de l'entrée (utilisé pour ATR trailing strict)
+        """
         risk_r = abs(entry - sl)
         if risk_r <= 0:
             return
@@ -206,8 +217,9 @@ class ConvexityEngine:
             risk_r=risk_r,
             current_level=-1,
             last_update=time.time(),
+            atr=atr if atr > 0 else risk_r / 1.5,  # Estime ATR si non fourni
         )
-        logger.debug(f"🎯 M38 trailing registered: {instrument} 1R={risk_r:.5f}")
+        logger.debug(f"🎯 M38 trailing registered: {instrument} 1R={risk_r:.5f} ATR={atr:.5f}")
 
     def update_trailing(self, instrument: str, current_price: float) -> Optional[float]:
         """
@@ -257,7 +269,45 @@ class ConvexityEngine:
                 f"🔒 M38 Trailing {instrument}: PnL={pnl_r:.1f}R ≥ {threshold_r}R → "
                 f"SL {old_sl:.5f} → {new_sl:.5f} (lock {lock_r}R)"
             )
+
+            # ── ATR TRAILING STRICT : active après ATR_TRAIL_ACTIVATE_R ───────────────
+            if pnl_r >= ATR_TRAIL_ACTIVATE_R and not state.atr_trail_active and state.atr > 0:
+                state.atr_trail_active = True
+                logger.info(
+                    f"📝 M38 ATR Trailing STRICT activé {instrument}: "
+                    f"PnL={pnl_r:.1f}R ≥ {ATR_TRAIL_ACTIVATE_R}R | ATR={state.atr:.5f} | "
+                    f"mult={ATR_TRAIL_MULTIPLIER}"
+                )
+
             return new_sl
+
+        # ── ATR TRAILING STRICT (continu, après activation) ────────────────────
+        # Une fois activé, trail le SL à ATR_TRAIL_MULTIPLIER × ATR sous/dessus le prix
+        if state.atr_trail_active and state.atr > 0:
+            if state.direction == "BUY":
+                atr_sl = current_price - state.atr * ATR_TRAIL_MULTIPLIER
+                if atr_sl > state.current_sl:   # SL ne peut que monter
+                    old = state.current_sl
+                    state.current_sl = atr_sl
+                    state.last_update = time.time()
+                    self._stats["trailing_updates"] += 1
+                    logger.info(
+                        f"📝 M38 ATR Trail {instrument}: SL {old:.5f} → {atr_sl:.5f} "
+                        f"(prix={current_price:.5f} - {ATR_TRAIL_MULTIPLIER}×ATR={state.atr:.5f})"
+                    )
+                    return atr_sl
+            else:
+                atr_sl = current_price + state.atr * ATR_TRAIL_MULTIPLIER
+                if atr_sl < state.current_sl:   # SL ne peut que baisser
+                    old = state.current_sl
+                    state.current_sl = atr_sl
+                    state.last_update = time.time()
+                    self._stats["trailing_updates"] += 1
+                    logger.info(
+                        f"📝 M38 ATR Trail {instrument}: SL {old:.5f} → {atr_sl:.5f} "
+                        f"(prix={current_price:.5f} + {ATR_TRAIL_MULTIPLIER}×ATR={state.atr:.5f})"
+                    )
+                    return atr_sl
 
         return None
 

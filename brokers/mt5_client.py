@@ -543,10 +543,81 @@ class MT5Client:
 
     def place_limit_order(
         self, epic: str, direction: str, size: float,
-        sl_price: float, tp_price: float, timeout_s: int = 15,
+        sl_price: float, tp_price: float,
+        limit_price: float = 0.0, timeout_s: int = 15,
     ) -> Optional[str]:
-        """Place un ordre marché (MT5 n'a pas de limit-order natif via MetaApi RPC)."""
-        return self.place_market_order(epic, direction, size, sl_price, tp_price)
+        """
+        Place un ordre limite sur MT5 via MetaApi.
+        
+        Si limit_price == 0, tombe en fallback sur ordre marché.
+        Un ordre limite permet d'être exécuté à un meilleur prix en
+        attendant que le marché revienne au niveau voulu.
+        """
+        if not self.available:
+            return None
+
+        # Fallback marché si pas de prix limite fourni
+        if limit_price <= 0:
+            return self.place_market_order(epic, direction, size, sl_price, tp_price)
+
+        symbol = SYMBOL_MAP.get(epic, epic)
+        try:
+            from brokers.capital_client import PRICE_DECIMALS as _PD
+            _dec = _PD.get(epic, 5)
+        except ImportError:
+            _dec = 5
+
+        try:
+            lp = round(limit_price, _dec)
+            sl = round(sl_price, _dec)
+            tp = round(tp_price, _dec)
+
+            if direction.upper() == "BUY":
+                result = self._run_async(
+                    self._connection.create_limit_buy_order(
+                        symbol=symbol,
+                        volume=round(size, 2),
+                        open_price=lp,
+                        stop_loss=sl,
+                        take_profit=tp,
+                        options={"comment": f"Nemesis LMT {epic}"},
+                    ),
+                    timeout=timeout_s,
+                )
+            else:
+                result = self._run_async(
+                    self._connection.create_limit_sell_order(
+                        symbol=symbol,
+                        volume=round(size, 2),
+                        open_price=lp,
+                        stop_loss=sl,
+                        take_profit=tp,
+                        options={"comment": f"Nemesis LMT {epic}"},
+                    ),
+                    timeout=timeout_s,
+                )
+
+            if not result:
+                logger.warning(f"⚠️ MT5 limit_order {epic}: résultat vide — fallback marché")
+                return self.place_market_order(epic, direction, size, sl_price, tp_price)
+
+            string_code = result.get("stringCode", "")
+            if string_code in ("TRADE_RETCODE_DONE", "TRADE_RETCODE_PLACED"):
+                order_id = result.get("orderId", result.get("positionId", ""))
+                logger.info(
+                    f"📋 MT5 LIMIT {direction} {epic} ({symbol}) @ {lp} | "
+                    f"size={size} | orderId={order_id}"
+                )
+                return str(order_id)
+
+            logger.warning(
+                f"⚠️ MT5 limit_order {epic}: {string_code} — fallback marché"
+            )
+            return self.place_market_order(epic, direction, size, sl_price, tp_price)
+
+        except Exception as e:
+            logger.warning(f"⚠️ MT5 limit_order {epic}: {e} — fallback marché")
+            return self.place_market_order(epic, direction, size, sl_price, tp_price)
 
     def _headers(self) -> dict:
         """Stub pour compatibilité TradeExecutor fast-path."""

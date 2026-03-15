@@ -594,6 +594,21 @@ class BotTickMixin:
                 self.telegram.router.send_performance(self.reporter.build_weekly_report())
             self.reporter.mark_weekly_sent()
 
+        # ── AutoBacktest dimanche 23h UTC ─────────────────────────────────────
+        try:
+            _bt = getattr(self, 'auto_backtest', None)
+            if _bt and _bt.should_run():
+                logger.info("\U0001f4ca AutoBacktest dimanche démarré...")
+                _bt_result = _bt.run_backtest(
+                    instruments=CAPITAL_INSTRUMENTS,
+                    ohlcv_cache=self.ohlcv_cache,
+                    strategy=self.strategy,
+                )
+                if self.telegram and self.telegram.router:
+                    self.telegram.router.send_performance(_bt.build_report(_bt_result))
+        except Exception as _bt_e:
+            logger.debug(f"AutoBacktest: {_bt_e}")
+
         # ── Rapport mensuel (1er du mois 10h UTC) ─────────────────────────
         try:
             if hasattr(self, 'monthly_reporter') and self.monthly_reporter.should_send():

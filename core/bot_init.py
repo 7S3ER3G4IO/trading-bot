@@ -547,6 +547,24 @@ class BotInitMixin:
         )
         self.prometheus.start_nightly()
 
+        # ─── Prometheus HTTP Metrics (port 9090) ───────────────────────────
+        try:
+            from prometheus_metrics import install_prometheus
+            self.prom_metrics = install_prometheus(self)
+            logger.info("📡 Prometheus metrics server démarré (port 9090)")
+        except Exception as _pm_e:
+            logger.debug(f"PrometheusMetrics: {_pm_e}")
+            self.prom_metrics = None
+
+        # ─── Auto Backtest dimanche ────────────────────────────────────────
+        try:
+            from auto_backtest import AutoBacktester
+            self.auto_backtest = AutoBacktester()
+            logger.info("📊 AutoBacktester initialisé (dimanche 23h UTC)")
+        except Exception as _ab_e:
+            logger.debug(f"AutoBacktester: {_ab_e}")
+            self.auto_backtest = None
+
         # ─── Nouveaux modules Round 2 ──────────────────────────────────────
         # Trailing Stop Réel MT5 (après TP1)
         try:
