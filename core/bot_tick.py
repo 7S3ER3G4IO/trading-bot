@@ -266,6 +266,19 @@ class BotTickMixin:
             if hasattr(self, '_daily_inst_trades'):
                 self._daily_inst_trades = {s: 0 for s in self._daily_inst_trades}
                 logger.info("♻️  Max trades/instrument reset (nouveau jour)")
+            # Reset alertes DD (pour que les seuils se redéclenchent demain)
+            self._dd_alerts_sent = set()
+            # ── Challenge Tracker : affiche progression vers objectif Prop Firm ──
+            _bal_now = self.broker.get_balance() if self.broker.available else 0.0
+            if _bal_now > 0 and self.initial_balance > 0:
+                _challenge_pct = (_bal_now - self.initial_balance) / self.initial_balance * 100
+                _target_pct = 10.0  # Prop Firm Phase 1 : +10% profit target
+                _progress = min(_challenge_pct / _target_pct * 100, 100)
+                _remaining = _target_pct - _challenge_pct
+                logger.info(
+                    f"🏆 Challenge Tracker : {_challenge_pct:+.2f}% / {_target_pct:.0f}% "
+                    f"({_progress:.0f}% accompli | reste {_remaining:.2f}%)"
+                )
             logger.info("🔄 Reset quotidien — stats journalières effacées")
             self._last_session_push = ""    # reset push session pour le nouveau jour
 
@@ -465,12 +478,42 @@ class BotTickMixin:
             logger.debug(f"VIX synthetic update: {_vix_e}")
 
         # ── Vérification drawdown journalier (R-4: dynamic limit) ─────────
-        if not self._dd_paused and self.broker.available:
+        if self.broker.available:
             cur_bal = self.broker.get_balance()
             if cur_bal > 0 and self._daily_start_balance > 0:
                 dd_pct = (self._daily_start_balance - cur_bal) / self._daily_start_balance * 100
+
+                # ── DD progression alerts (Prop Firm risk awareness) ─────────
+                # Track which alert levels already notified (reset each day)
+                if not hasattr(self, '_dd_alerts_sent'):
+                    self._dd_alerts_sent = set()
+
+                _DD_LEVELS = [
+                    (4.5, "🔴 ALERTE CRITIQUE", "⛔ Arrêt imminent du trading si DD continue"),
+                    (4.0, "🟠 ALERTE HAUTE",    "⚠️ Plus que 1% avant suspension Prop Firm"),
+                    (3.0, "🟡 ALERTE MOYENNE",  "📉 Drawdown franchit le seuil de vigilance"),
+                    (2.0, "🟢 AVERTISSEMENT",   "📊 Drawdown journalier en hausse"),
+                ]
+                for lvl, title, msg in _DD_LEVELS:
+                    if dd_pct >= lvl and lvl not in self._dd_alerts_sent:
+                        self._dd_alerts_sent.add(lvl)
+                        _prof_pct = (cur_bal - self.initial_balance) / self.initial_balance * 100
+                        _alert_msg = (
+                            f"{title} — NEMESIS\n"
+                            f"DD Journalier : <code>{dd_pct:.2f}%</code> / {self.DAILY_DD_LIMIT:.0f}% max\n"
+                            f"{msg}\n"
+                            f"Balance : <code>{cur_bal:,.2f}$</code> | PnL total : <code>{_prof_pct:+.2f}%</code>"
+                        )
+                        logger.warning(f"⚠️ DD {dd_pct:.1f}% — Alerte seuil {lvl}%")
+                        try:
+                            if self.telegram:
+                                self.telegram.router.send_report(_alert_msg)
+                        except Exception:
+                            pass
+                        break  # Ne déclenche qu'un seul niveau à la fois
+
                 _dd_limit = self.risk.dynamic_dd_limit
-                if dd_pct >= _dd_limit:
+                if not self._dd_paused and dd_pct >= _dd_limit:
                     self._dd_paused = True
                     # C-4: Persist across Docker restarts
                     try:

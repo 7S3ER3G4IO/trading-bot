@@ -125,7 +125,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
+      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD}@postgres:5432/nemesis_db?sslmode=disable
     restart: unless-stopped
     healthcheck:
       disable: true   # FIX: script périodique — pas de healthcheck /tmp/.nemesis_alive
@@ -157,7 +157,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD:-Hinalol08-Citadel!}@postgres:5432/nemesis_db?sslmode=disable
+      DATABASE_URL: postgresql://postgres:${POSTGRES_LOCAL_PASSWORD}@postgres:5432/nemesis_db?sslmode=disable
     restart: unless-stopped
     healthcheck:
       disable: true   # FIX: script périodique — pas de healthcheck /tmp/.nemesis_alive
@@ -180,7 +180,7 @@ services:
 
   # ────────────────────────────────────────────────────────────────
   # Grafana — Dashboard temps réel (connecté à nemesis_postgres)
-  # Accès : http://46.225.186.152:3000  login: admin / QuantBot2025
+  # Accès Grafana : http://<VPS_IP>:3000 — credentials dans .env (GRAFANA_ADMIN_PASSWORD)
   # ────────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.3
