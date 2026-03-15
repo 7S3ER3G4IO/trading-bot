@@ -386,6 +386,7 @@ class BotMonitorMixin:
                         pnl_gross=round(pnl_est, 2),
                         entry=state["entry"],
                         exit_price=close_px,
+                        amount=state.get("size", 0.0),  # BUG FIX: passer le lot size pour commission IC Markets
                     )
                 except Exception:
                     pass

@@ -812,6 +812,30 @@ class BotTickMixin:
         except Exception:
             pass
 
+        # ── Win Rate Alert — alerte si WR < 40% avec ≥5 trades aujourd'hui ──
+        try:
+            _trades_today = self._capital_closed_today
+            _n = len(_trades_today)
+            _WR_MIN_TRADES = 5     # déclenche seulement avec assez de données
+            _WR_THRESHOLD  = 0.40  # 40% win rate minimum
+            if _n >= _WR_MIN_TRADES and not getattr(self, '_wr_alert_sent', False):
+                _wins = sum(1 for t in _trades_today if t.get("pnl", 0) > 0)
+                _wr   = _wins / _n
+                if _wr < _WR_THRESHOLD:
+                    self._wr_alert_sent = True  # anti-spam (1x par jour)
+                    _wr_msg = (
+                        f"⚠️ <b>Win Rate Alert — NEMESIS</b>\n"
+                        f"Session : <code>{_wins}/{_n} = {_wr:.0%}</code> "
+                        f"(seuil min {_WR_THRESHOLD:.0%})\n"
+                        f"📉 Stratégie sous-performante aujourd'hui — vérifier les conditions marché\n"
+                        f"PnL du jour : <code>{sum(t.get('pnl',0) for t in _trades_today):+.2f}€</code>"
+                    )
+                    logger.warning(f"⚠️ Win Rate Session bas : {_wr:.0%} ({_wins}/{_n}) < {_WR_THRESHOLD:.0%}")
+                    if self.telegram and self.telegram.router:
+                        self.telegram.router.send_report(_wr_msg)
+        except Exception:
+            pass
+
         # ── S-3: Micro-Timeframe Scan (5m/15m — additional signals) ──────
         if MICRO_TF_PROFILES and not self._dd_paused and not self._manual_pause:
             for micro_key, micro_profile in MICRO_TF_PROFILES.items():

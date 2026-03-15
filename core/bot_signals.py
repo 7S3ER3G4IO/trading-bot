@@ -55,6 +55,21 @@ class BotSignalsMixin:
         if "atr" not in df.columns:
             df = self.strategy.compute_indicators(df)
 
+        # ── VOLUME FILTER : évite les faux breakouts en faible liquidité ────────
+        # Si le volume du dernier bar < 50% de la moyenne sur 20 bars → skip
+        try:
+            if "volume" in df.columns and len(df) >= 20:
+                _vol_now = float(df["volume"].iloc[-1])
+                _vol_avg = float(df["volume"].rolling(20).mean().iloc[-1])
+                if _vol_avg > 0 and _vol_now < _vol_avg * 0.5:
+                    logger.info(
+                        f"⛔ S-6 Volume filter {instrument}: vol={_vol_now:.0f} < "
+                        f"50% avg({_vol_avg:.0f}) — faible liquidité, skip"
+                    )
+                    return
+        except Exception:
+            pass
+
         # ── UPGRADE : Retest Entry (Anti-Fakeout) ────────────────────────────
         pending = self._pending_retest.get(instrument)
         if pending:
