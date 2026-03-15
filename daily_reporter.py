@@ -13,7 +13,10 @@ WEEKLY_FILE          = "logs/weekly_trades.json"   # BUG FIX #B — accumulateur
 REPORT_HOUR_UTC      = 20   # 21h CET
 WEEKLY_REPORT_HOUR   = 21   # 22h CET
 WEEKLY_REPORT_DOW    = 6    # Dimanche (0=lundi)
-CFD_FEE_RATE         = 0.0    # Capital.com CFD : pas de commission séparée (spread intégré au prix)
+# IC Markets MT5 (Raw Spread / ECN) : $3.50/lot par côté = $7.00/lot allerretour
+# N'a PAS de commission de spread intégré comme Capital.com CFD
+# Configurable via env : MT5_COMMISSION_PER_LOT (USD par lot, 1 côté)
+MT5_COMMISSION_PER_LOT = float(os.getenv("MT5_COMMISSION_PER_LOT", "3.5"))
 
 
 @dataclass
@@ -53,8 +56,9 @@ class DailyReporter:
     ):
         now  = datetime.now(timezone(timedelta(hours=1)))
         pips = abs(exit_price - entry)
-        # Frais = 2 ordres (entrée + sortie) × 0.1% × montant total en USDT
-        fees = round(entry * amount * CFD_FEE_RATE * 2, 4)
+        # IC Markets MT5 : commission fixe par lot (allerretour)
+        # amount = taille en lots (ex: 0.1 pour 0.1 lot)
+        fees = round(amount * MT5_COMMISSION_PER_LOT * 2, 4)  # *2 = entrée + sortie
         pnl_net = round(pnl_gross - fees, 4)
 
         rec = TradeRecord(

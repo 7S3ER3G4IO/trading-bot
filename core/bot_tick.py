@@ -674,6 +674,24 @@ class BotTickMixin:
             logger.warning("⚠️  Balance = 0 ou inaccessible — skip ce tick")
             return
 
+        # ── High Water Mark (HWM) — nouveau sommet d'équité ──────────────────
+        _hwm = getattr(self, '_equity_hwm', self.initial_balance)
+        if balance > _hwm * 1.001:  # +0.1% pour éviter le bruit
+            self._equity_hwm = balance
+            _hwm_gain = balance - self.initial_balance
+            _hwm_pct  = (_hwm_gain / self.initial_balance) * 100 if self.initial_balance > 0 else 0
+            logger.info(f"🏆 Nouveau High Water Mark : {balance:,.2f}$ (+{_hwm_pct:.2f}%)")
+            try:
+                msg = (
+                    f"🏆 <b>Nouveau Sommet — NEMESIS</b>\n"
+                    f"High Water Mark : <code>{balance:,.2f}$</code>\n"
+                    f"Gain depuis début : <code>+{_hwm_gain:,.2f}$ ({_hwm_pct:+.2f}%)</code>"
+                )
+                if self.telegram:
+                    self.telegram.router.send_report(msg)
+            except Exception:
+                pass
+
         # F-4: per_instrument removed (was calculated but never used)
 
         # ── Heartbeat visible : confirme que la boucle tourne ──────────────────

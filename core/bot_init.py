@@ -63,6 +63,7 @@ class BotInitMixin:
         self.risk                 = RiskManager(max(bal, 100_000.0))
         self.initial_balance      = bal or 100_000.0
         self._daily_start_balance = self.initial_balance
+        self._equity_hwm          = self.initial_balance  # High Water Mark — alerte Telegram si nouveau sommet
         self._dd_paused           = False
         # Prop Firm rule: DD journalier depuis config (5%)
         from config import DAILY_DRAWDOWN_LIMIT
@@ -714,6 +715,55 @@ class BotInitMixin:
 
         except Exception as _ls_e:
             logger.error(f"❌ Live sync positions: {_ls_e}")
+
+        # ─── MT5 LIVE SYNC : restauration depuis terminal MT5 (crash recovery) ──────────
+        try:
+            if hasattr(self, 'mt5') and self.mt5.available:
+                mt5_positions = self.mt5.get_open_positions()
+                mt5_synced = 0
+                for mt5_pos in mt5_positions:
+                    symbol = mt5_pos.get("symbol", "").upper()
+                    # Normaliser le symbole (XAUUSD → GOLD, etc.)
+                    instrument = None
+                    for instr in CAPITAL_INSTRUMENTS:
+                        if instr in symbol or symbol in instr or instr.replace("USDm", "") in symbol:
+                            instrument = instr
+                            break
+                    if not instrument:
+                        continue
+                    # Ne pas écraser une position déjà restaurée depuis DB
+                    if self.positions.get(instrument) is not None:
+                        continue
+                    direction = "BUY" if mt5_pos.get("type", 0) == 0 else "SELL"
+                    entry = float(mt5_pos.get("openPrice", 0))
+                    sl = float(mt5_pos.get("stopLoss", 0)) or entry * (0.98 if direction == "BUY" else 1.02)
+                    tp = float(mt5_pos.get("takeProfit", 0)) or entry * (1.02 if direction == "BUY" else 0.98)
+                    self.positions[instrument] = {
+                        "refs":      [mt5_pos.get("id", ""), None, None],
+                        "entry":     entry,
+                        "sl":        sl,
+                        "tp1":       tp,
+                        "tp2":       tp,
+                        "tp3":       tp,
+                        "direction": direction,
+                        "tp1_hit":   False,
+                        "tp2_hit":   False,
+                        "score":     0,
+                        "confirmations": [],
+                        "regime":    "RANGING",
+                        "in_overlap": False,
+                        "adx_at_entry": 0,
+                        "ab_variant": "A",
+                        "open_time": datetime.now(timezone.utc),
+                        "_mt5_synced": True,  # marker crash recovery
+                    }
+                    mt5_synced += 1
+                    logger.info(f"🔄 MT5 crash recovery: {instrument} {direction} @ {entry:.5f} restauré")
+                if mt5_synced:
+                    logger.warning(f"⚠️ MT5 crash recovery : {mt5_synced} position(s) restaurée(s) depuis terminal MT5")
+        except Exception as _mt5_e:
+            logger.debug(f"MT5 live sync: {_mt5_e}")
+
 
         # C-4: Restore dd_paused state
         try:
