@@ -342,14 +342,17 @@ def export_csv(results: list[dict], trades: list[dict], output: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NEMESIS Backtester")
-    parser.add_argument("--symbol",   type=str, default="EURUSD",  help="Symbole (ex: EURUSD, GOLD)")
-    parser.add_argument("--days",     type=int, default=60,        help="Jours de données (défaut: 60)")
-    parser.add_argument("--csv",      type=str, default="",        help="Fichier CSV OHLCV optionnel")
-    parser.add_argument("--all",      action="store_true",         help="Tester tous les instruments du bot")
-    parser.add_argument("--risk",     type=float, default=RISK_PER_TRADE, help="Risque par trade (défaut: 0.0035)")
-    parser.add_argument("--balance",  type=float, default=INITIAL_BALANCE, help="Capital initial (défaut: 100000)")
-    parser.add_argument("--output",   type=str, default="",        help="Fichier CSV de sortie")
-    parser.add_argument("--quiet",    action="store_true",         help="Mode silencieux (moins de logs)")
+    parser.add_argument("--symbol",      type=str, default="EURUSD",    help="Symbole (ex: EURUSD, GOLD)")
+    parser.add_argument("--days",        type=int, default=60,          help="Jours de données (défaut: 60)")
+    parser.add_argument("--csv",         type=str, default="",          help="Fichier CSV OHLCV optionnel")
+    parser.add_argument("--all",         action="store_true",           help="Tester tous les instruments du bot")
+    parser.add_argument("--risk",        type=float, default=RISK_PER_TRADE, help="Risque par trade (défaut: 0.0035)")
+    parser.add_argument("--balance",     type=float, default=INITIAL_BALANCE, help="Capital initial (défaut: 100000)")
+    parser.add_argument("--output",      type=str, default="",          help="Fichier CSV de sortie")
+    parser.add_argument("--quiet",       action="store_true",           help="Mode silencieux (moins de logs)")
+    parser.add_argument("--walkforward", action="store_true",           help="Mode Walk-Forward (OOS validation)")
+    parser.add_argument("--train-bars",  type=int, default=400,         help="Barres de train pour Walk-Forward (défaut: 400)")
+    parser.add_argument("--test-bars",   type=int, default=100,         help="Barres de test OOS par fenêtre (défaut: 100)")
     args = parser.parse_args()
 
     strategy = load_strategy()
@@ -365,7 +368,7 @@ if __name__ == "__main__":
     all_trades  = []
 
     for sym in symbols:
-        print(f"\n🔍 Backtesting {sym} ({args.days}j)...")
+        print(f"\n🔍 {'Walk-Forward' if args.walkforward else 'Backtest'} {sym} ({args.days}j)...")
 
         # Chargement données
         if args.csv:
@@ -377,17 +380,30 @@ if __name__ == "__main__":
             print(f"  ⚠️  {sym} : données insuffisantes ({len(df) if df is not None else 0} barres)")
             continue
 
-        engine  = BacktestEngine(sym, initial_balance=args.balance,
-                                 risk_pct=args.risk, verbose=not args.quiet)
-        results = engine.run(df, strategy)
-        all_results.append(results)
-        all_trades.extend(engine.trades)
+        if args.walkforward:
+            # ── Mode Walk-Forward ──
+            windows = walk_forward_test(
+                df=df, strategy=strategy, symbol=sym,
+                train_bars=args.train_bars, test_bars=args.test_bars,
+                balance=args.balance, risk_pct=args.risk,
+            )
+            if windows:
+                print_walkforward_report(windows, sym)
+            else:
+                print(f"  ⚠️  {sym} : pas assez de barres pour Walk-Forward "
+                      f"(besoin >= {args.train_bars + args.test_bars})")
+        else:
+            # ── Mode Backtest standard ──
+            engine  = BacktestEngine(sym, initial_balance=args.balance,
+                                     risk_pct=args.risk, verbose=not args.quiet)
+            results = engine.run(df, strategy)
+            all_results.append(results)
+            all_trades.extend(engine.trades)
 
-    if not all_results:
-        print("❌ Aucun résultat — vérifier les données")
-        sys.exit(1)
-
-    print_report(all_results)
-
-    if args.output:
-        export_csv(all_results, all_trades, args.output)
+    if not args.walkforward:
+        if not all_results:
+            print("❌ Aucun résultat — vérifier les données")
+            sys.exit(1)
+        print_report(all_results)
+        if args.output:
+            export_csv(all_results, all_trades, args.output)

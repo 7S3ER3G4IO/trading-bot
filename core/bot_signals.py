@@ -11,11 +11,19 @@ class BotSignalsMixin:
         Analyse un instrument Capital.com avec la stratégie London/NY Open Breakout.
         Ouvre 1 position avec TP unique (mode 1-TP anti-throttling).
         """
-        state = self.capital_trades.get(instrument)
+        state = self.positions.get(instrument)
 
         # Trade déjà ouvert — on ne re-entre pas
         if state is not None:
             return
+
+        # ─── GOD MODE: HARD BAN — zero compute, instant reject ──────────────
+        try:
+            from god_mode import HARD_BAN
+            if instrument in HARD_BAN:
+                return  # Silently drop — these assets are mathematically untradeable
+        except ImportError:
+            pass
 
         # ─── Module 2: Dynamic Blacklist — vérification quarantaine ──────────
         if hasattr(self, 'quarantine') and self.quarantine.is_quarantined(instrument):
@@ -51,7 +59,7 @@ class BotSignalsMixin:
         pending = self._pending_retest.get(instrument)
         if pending:
             try:
-                px_now = self.capital.get_current_price(instrument)
+                px_now = self.broker.get_current_price(instrument)
                 if px_now:
                     mid       = px_now["mid"]
                     p_sig     = pending["sig"]
@@ -91,16 +99,8 @@ class BotSignalsMixin:
             sig, score, confirmations = self.strategy.get_signal(df, symbol=instrument, asset_profile=_profile)
             if sig == "HOLD":
                 logger.info(f"📊 {instrument} [{_strat}] → HOLD | score={score} | {confirmations[:2] if confirmations else '∅'}")
-                # ── Pre-signal check: detect setup forming ────────────────
-                try:
-                    pre = self.strategy.check_pre_signal(df, symbol=instrument, asset_profile=_profile)
-                    if pre:
-                        threading.Thread(
-                            target=lambda: tgc.notify_pre_signal_alert(pre),
-                            daemon=True,
-                        ).start()
-                except Exception as _ps_e:
-                    logger.debug(f"Pre-signal check: {_ps_e}")
+                # ── Pre-signal: log only (disabled from Telegram for clean feed)
+                pass
                 return
 
             # Retest uniquement pour BK (MR/TF entrent directement)
@@ -127,19 +127,44 @@ class BotSignalsMixin:
 
 
         # BUG FIX #5 : Vérification RiskManager + Kill-Switches (R-3/R-4)
-        balance_for_risk = self.capital.get_balance() or balance
+        balance_for_risk = self.broker.get_balance() or balance
         _cat = _profile.get("cat", "forex")
         if not self.risk.can_open_trade(balance_for_risk, instrument=instrument, category=_cat):
             logger.info(f"⛔ {instrument} bloqué par RiskManager (DD/Kill-Switch/catégorie)")
             return
 
+        # Bug #7 fix: Portfolio heat check (secteur, corrélation, risque cumulé)
+        _ph_ok, _ph_reason = self.risk.portfolio_heat_check(
+            instrument=instrument, direction=sig,
+            open_trades=self.positions, risk_pct=0.01,
+        )
+        if not _ph_ok:
+            logger.info(f"⛔ Portfolio Heat {instrument}: {_ph_reason}")
+            return
+
         # R-2: Currency exposure check
-        if not self.risk.check_currency_exposure(instrument, sig, self.capital_trades):
+        if not self.risk.check_currency_exposure(instrument, sig, self.positions):
             return
 
         # Protection Model : blacklist après 3 SL consécutifs
         if self.protection.is_blocked(instrument):
             return
+
+        # ─── CORRELATION FILTER : bloque si pair corrélée déjà ouverte ──────
+        if hasattr(self, 'corr_filter'):
+            try:
+                _can_open, _corr_reason = self.corr_filter.can_open(instrument, self.positions)
+                if not _can_open:
+                    logger.info(f"⛔ CorrelationFilter {instrument}: {_corr_reason}")
+                    return
+                _dir_ok, _dir_reason = self.corr_filter.same_direction_check(
+                    instrument, sig, self.positions, max_same_direction=3
+                )
+                if not _dir_ok:
+                    logger.info(f"⛔ CorrelationFilter directionnel {instrument}: {_dir_reason}")
+                    return
+            except Exception as _cf_e:
+                logger.debug(f"CorrelationFilter {instrument}: {_cf_e}")
 
         # S-2: MTF Confluence Scoring (replace binary blocking)
         mtf_bonus = self.mtf.score_confluence(instrument, sig)
@@ -156,7 +181,7 @@ class BotSignalsMixin:
         if hasattr(self, 'ml_scorer') and self.ml_scorer:
             _spread_ratio = 0.0
             try:
-                _px = self.capital.get_current_price(instrument)
+                _px = self.broker.get_current_price(instrument)
                 if _px:
                     _sprd = abs(_px["ask"] - _px["bid"])
                     _tp1_d = abs(float(df.iloc[-1]["close"]) - (float(df.iloc[-1]["close"]) + float(df.iloc[-1].get("atr", 0.001))))
@@ -172,9 +197,7 @@ class BotSignalsMixin:
 
         # ═══ SL / TP dynamiques par stratégie et actif ══════════════════════════════
         _sl_buf = _profile.get("sl_buffer", 0.10)
-        _tp1_r  = _profile.get("tp1", 1.5)
-        _tp2_r  = _profile.get("tp2", 3.0)
-        _tp3_r  = _profile.get("tp3", 5.0)
+        _tp_r   = _profile.get("tp1", 1.5)   # Single TP mode
         entry   = float(df.iloc[-1]["close"])
         direction = "BUY" if sig == "BUY" else "SELL"
         atr_val = self.strategy.get_atr(df)
@@ -186,14 +209,10 @@ class BotSignalsMixin:
                 return
             if sig == "BUY":
                 sl  = entry - sl_dist
-                tp1 = entry + sl_dist * _tp1_r
-                tp2 = entry + sl_dist * _tp2_r
-                tp3 = entry + sl_dist * _tp3_r
+                tp1 = entry + sl_dist * _tp_r
             else:
                 sl  = entry + sl_dist
-                tp1 = entry - sl_dist * _tp1_r
-                tp2 = entry - sl_dist * _tp2_r
-                tp3 = entry - sl_dist * _tp3_r
+                tp1 = entry - sl_dist * _tp_r
         else:
             # BK: SL = range low/high + buffer, TP = multiples du range
             sr  = self.strategy.compute_session_range(df)
@@ -203,24 +222,35 @@ class BotSignalsMixin:
             sl_dist = rng  # pour ADX adaptatif ci-dessous
             if sig == "BUY":
                 sl  = sr["low"]  - rng * _sl_buf
-                tp1 = entry + rng * _tp1_r
-                tp2 = entry + rng * _tp2_r
-                tp3 = entry + rng * _tp3_r
+                tp1 = entry + rng * _tp_r
             else:
                 sl  = sr["high"] + rng * _sl_buf
-                tp1 = entry - rng * _tp1_r
-                tp2 = entry - rng * _tp2_r
-                tp3 = entry - rng * _tp3_r
+                tp1 = entry - rng * _tp_r
 
-        # ── Guard R:R minimum : TP1 doit valoir au moins 1.2× SL ──
-        tp1_dist = abs(tp1 - entry)
-        sl_dist_real = abs(sl - entry)
-        if sl_dist_real > 0 and tp1_dist / sl_dist_real < 1.2:
-            logger.info(
-                f"⛔ {instrument} R:R trop faible : TP1={tp1_dist:.5f} / SL={sl_dist_real:.5f} "
-                f"= {tp1_dist/sl_dist_real:.2f}x (min 1.2x) — skip"
+        # ── V1 ULTIMATE: Multi-TP Levels (1.5R / 2.5R / Trail) ────────────
+        _sl_distance = abs(entry - sl)
+        if _sl_distance > 0:
+            if sig == "BUY":
+                _tp1_multi = entry + _sl_distance * 1.5   # TP1 = 1.5R
+                _tp2_multi = entry + _sl_distance * 2.5   # TP2 = 2.5R
+            else:
+                _tp1_multi = entry - _sl_distance * 1.5
+                _tp2_multi = entry - _sl_distance * 2.5
+            # Broker order uses TP1 as initial target
+            tp1 = _tp1_multi
+        else:
+            _tp1_multi = tp1
+            _tp2_multi = tp1
+
+        # ── M38 Convexity Gate : R:R minimum OBLIGATOIRE ──
+        rr_valid, actual_rr = self.convexity.validate_rr(entry, sl, tp1, instrument)
+        if not rr_valid:
+            logger.warning(
+                f"⛔ M38 Convexity: {instrument} R:R={actual_rr:.2f} < {MIN_RR_RATIO} — TRADE REJETÉ"
             )
             return
+        # Ajuster TP si nécessaire pour garantir R:R minimum
+        sl, tp1 = self.convexity.enforce_minimum_rr(entry, sl, tp1, direction, instrument)
 
         # R-1: Dynamic Kelly sizing (remplace risk_pct fixe à 0.5%)
         atr_20_avg = float(df["atr"].tail(20).mean()) if "atr" in df.columns and len(df) >= 20 else atr_val
@@ -235,17 +265,17 @@ class BotSignalsMixin:
         if regime_mult != 1.0:
             logger.info(f"🌍 Regime {self.context.regime} → sizing ×{regime_mult:.1f} → risk={dynamic_risk:.3f}")
 
-        total_size = self.capital.position_size(
+        total_size = self.broker.position_size(
             balance=balance, risk_pct=dynamic_risk, entry=entry, sl=sl, epic=instrument
         )
-        min_sz = CapitalClient.MIN_SIZE.get(instrument.upper(), 1.0)
+        min_sz = self.broker.MIN_SIZE.get(instrument.upper(), 0.01)  # 0.01 lot min (MT5 standard)
         size1 = max(min_sz, round(total_size / 3, 2))
 
-        # Cap max: chaque position ≤ 5% du balance en margin (levier 20:1)
-        max_margin_per_pos = balance * 0.05
+        # Cap max: chaque position ≤ 15% du balance en margin (Aggressive Growth)
+        max_margin_per_pos = balance * 0.15
         max_size = max_margin_per_pos * 20 / max(entry, 0.01)
         if size1 > max_size:
-            logger.info(f"📏 {instrument} size capped: {size1:.0f} → {max_size:.0f} (5% margin max)")
+            logger.info(f"📏 {instrument} size capped: {size1:.0f} → {max_size:.0f} (15% margin max)")
             size1 = round(max_size, 2)
 
         # Sprint 4 : Drift size reduction (50% si drift actif — safety net)
@@ -253,18 +283,8 @@ class BotSignalsMixin:
             size1 = max(min_sz, round(size1 * 0.5, 2))
             logger.debug(f"🔴 Drift reduction active — taille réduite à {size1}")
 
-        # ── R:R Adaptatif (ADX > 30 = tendance forte) ─────────────
+        # ── ADX tracking (for state) ─────────────
         adx_now = float(df.iloc[-1].get("adx", 0)) if "adx" in df.columns else 0
-        if adx_now > 30 and sl_dist > 0:
-            rr_tp2 = 2.5
-            rr_tp3 = 4.0
-            logger.info(f"📈 ADX={adx_now:.0f} > 30 — R:R étendu : TP2=×2.5R, TP3=×4.0R")
-            if sig == "BUY":
-                tp2 = entry + sl_dist * rr_tp2
-                tp3 = entry + sl_dist * rr_tp3
-            else:
-                tp2 = entry - sl_dist * rr_tp2
-                tp3 = entry - sl_dist * rr_tp3
 
         # ── HMM Regime Switching (block only, no size reduction) ──
         regime_result = {"name": "RANGING", "regime": 0, "confidence": 0.5}
@@ -291,9 +311,32 @@ class BotSignalsMixin:
         sl  = round(sl,  _dec)
         tp1 = round(tp1, _dec)
 
+        # ─── MARGIN CHECK PRE-TRADE ───────────────────────────────────────────
+        # SDK v29 fix: get_account_information() supprimé → terminal_state.account_information
+        try:
+            _acct_info = None
+            if hasattr(self.broker, '_connection') and self.broker._connection:
+                _ts = getattr(self.broker._connection, 'terminal_state', None)
+                if _ts:
+                    _acct_info = getattr(_ts, 'account_information', None)
+            if _acct_info:
+                _free_margin = float(_acct_info.get("freeMargin", _acct_info.get("equity", balance)))
+                _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
+                from config import ASSET_MARGIN_REQUIREMENTS
+                _margin_rate = ASSET_MARGIN_REQUIREMENTS.get(_cat, 0.0333)
+                _margin_needed = size1 * entry * _margin_rate
+                if _margin_needed > _free_margin * 0.80:
+                    logger.warning(
+                        f"⛔ MARGIN CHECK {instrument}: besoin={_margin_needed:.2f} "
+                        f"> 80% du libre={_free_margin * 0.80:.2f} — ordre annulé"
+                    )
+                    return
+        except Exception as _mc_e:
+            logger.debug(f"Margin check {instrument}: {_mc_e}")
+
         # ─── S-5: Dynamic Spread Filter (anti-frais) ─────────────────────
         try:
-            _px = self.capital.get_current_price(instrument)
+            _px = self.broker.get_current_price(instrument)
             if _px:
                 _spread = abs(_px["ask"] - _px["bid"])
                 _tp1_dist = abs(tp1 - entry)
@@ -432,14 +475,47 @@ class BotSignalsMixin:
                 logger.debug(f"TWAP MEV {instrument}: {_twap_e} — fallback direct")
 
         if ref is None:
-            ref = self.capital.place_market_order(
+            # ─── CHANTIER 1: Vérification marge pré-trade (OrderGuardian) ──────
+            if hasattr(self, 'guardian'):
+                try:
+                    if not self.guardian.check_margin(instrument, size1):
+                        logger.warning(f"⛔ {instrument} bloqué — marge insuffisante (guardian)")
+                        return
+                except Exception as _mg_e:
+                    logger.debug(f"Guardian check_margin {instrument}: {_mg_e}")
+
+            ref = self.broker.place_market_order(
                 epic=instrument, direction=direction,
                 size=size1, sl_price=sl, tp_price=tp1,
             )
+            # ─── ORDER CONFIRMATION LOOP ─────────────────────────────────────
+            # Après place_order(), vérifier que la position existe côté broker
+            if ref:
+                _confirmed = False
+                for _attempt in range(5):  # 5 essais × 1s = 5s max
+                    try:
+                        time.sleep(1)
+                        _open_pos = self.broker.get_open_positions()
+                        _open_ids = {
+                            p.get("position", {}).get("dealId", "")
+                            for p in _open_pos
+                        }
+                        if ref in _open_ids:
+                            _confirmed = True
+                            logger.debug(f"✅ Confirmation ordre {instrument} #{ref} ({_attempt+1}s)")
+                            break
+                    except Exception:
+                        pass
+                if not _confirmed:
+                    logger.warning(
+                        f"⚠️ ORDRE NON CONFIRMÉ {instrument} ref={ref} après 5s "
+                        f"— position peut-être non ouverte. Abandon."
+                    )
+                    ref = None  # Abort — ne pas enregistrer de trade fantôme
             # Frontrun detection post-placement
             if hasattr(self, 'mev') and ref:
                 try:
-                    _exec_px = self.capital.get_current_price(instrument)
+                    _exec_px = self.broker.get_current_price(instrument)
                     if _exec_px:
                         _mid = _exec_px.get("mid", entry)
                         _fr = self.mev.detect_frontrun(instrument, direction, _mid)
@@ -488,8 +564,8 @@ class BotSignalsMixin:
 
         # Correlation warning
         if hasattr(self, 'context'):
-            for open_inst in self.capital_trades:
-                if self.capital_trades[open_inst] is not None and open_inst != instrument:
+            for open_inst in self.positions:
+                if self.positions[open_inst] is not None and open_inst != instrument:
                     corr = self.context.get_correlation(instrument, open_inst)
                     if abs(corr) > 0.7:
                         logger.warning(
@@ -508,17 +584,23 @@ class BotSignalsMixin:
             except Exception as _slip_e:
                 logger.debug(f"Slippage {instrument}: {_slip_e}")
 
-        self.capital_trades[instrument] = {
+        self.positions[instrument] = {
             "refs":      [ref, None, None],
             "entry":     _recorded_entry,   # Prix dégradé en DEMO, réel en LIVE
             "sl":        sl,
             "tp1":       tp1,
-            "tp2":       tp1,   # 1-TP mode
-            "tp3":       tp1,
+            "tp2":       _tp2_multi,   # V1 Ultimate: TP2 = 2.5R
+            "tp3":       _tp2_multi,   # V1 Ultimate: TP3 = trailing (same level as tp2, trail activates after tp2)
+            "tp1_level": _tp1_multi,   # V1 Ultimate: exact TP1 price for monitor
+            "tp2_level": _tp2_multi,   # V1 Ultimate: exact TP2 price for monitor
             "direction": direction,
             "size":      size1,
+            "size_tp1":  round(size1 * 0.40, 2),  # 40% closed at TP1
+            "size_tp2":  round(size1 * 0.40, 2),  # 40% closed at TP2
+            "size_tp3":  round(size1 * 0.20, 2),  # 20% trailing
             "tp1_hit":   False,
             "tp2_hit":   False,
+            "be_active": False,   # V1 Ultimate: Break-Even flag
             "score":     score,
             "confirmations": confirmations,
             "regime":    regime_result.get("name", "RANGING"),
@@ -541,53 +623,38 @@ class BotSignalsMixin:
         tracker.record_entry(name=name, sig=sig, entry=entry, size=size1)
 
         self.risk.on_trade_opened(instrument=instrument)
+        # M38: Enregistrer le trade pour le trailing stop dynamique
+        self.convexity.register_trade(instrument, entry, sl, direction)
 
         try:
-            self.db.save_capital_trade_async(instrument, self.capital_trades[instrument])
+            self.db.save_position_async(instrument, self.positions[instrument])
         except Exception as exc:
-            logger.warning(f"⚠️ DB save_capital_trade open: {exc}")
+            logger.warning(f"⚠️ DB save_position open: {exc}")
 
-        logger.info(f"✅ Capital.com {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP1={tp1:.5f} TP2={tp2:.5f} TP3={tp3:.5f}")
+        _broker_name = "MT5 IC Markets" if hasattr(self.broker, '_ok') else "Capital.com"
+        logger.info(f"✅ {_broker_name} {sig} {instrument} @ {entry:.5f} | SL={sl:.5f} TP={tp1:.5f}")
 
-        # ─── Telegram en background ────────
-        # sr disponible seulement pour BK, fallback pour MR/TF
-        _range_pct  = sr["pct"]  if _strat == "BK" else 0.0
-        _range_high = sr["high"] if _strat == "BK" else entry
-        _range_low  = sr["low"]  if _strat == "BK" else entry
-        _snap = dict(instrument=instrument, name=name, sig=sig,
-                     entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
-                     size=size1, score=score, session=session,
-                     range_pct=_range_pct, range_high=_range_high, range_low=_range_low,
-                     confirmations=list(confirmations), df=df.copy())
-        threading.Thread(target=lambda: tgc.notify_capital_entry(**_snap), daemon=True).start()
+        # ─── Telegram QUANT Signals PRO — Station X ──────────────────────────
+        if self.telegram and self.telegram.router:
+            _tp1_sig = self.positions[instrument].get("tp1_level", tp1)
+            _tp2_sig = self.positions[instrument].get("tp2_level", _tp2_multi)
+            # Appel synchrone pour récupérer le message_id (reply chain TP)
+            def _post_signal():
+                msg_id = self.telegram.router.send_signal(
+                    instrument=instrument, direction=direction,
+                    entry=entry, sl=sl, tp1=_tp1_sig, tp2=_tp2_sig,
+                    score=score, confirmations=list(confirmations),
+                )
+                # Stocker pour les replies TP1/TP2/TP3
+                if msg_id and self.positions.get(instrument):
+                    self.positions[instrument]["tg_signal_msg_id"] = msg_id
+            threading.Thread(target=_post_signal, daemon=True).start()
 
-        # ── Signal Card visuel ──
-        try:
-            _regime_name = regime_result.get("name", "RANGING") if regime_result else "RANGING"
-            _fg_val = getattr(self.context, "_fg_value", None)
-            _card_df = df.copy()
-            _card_args = dict(
-                df=_card_df, instrument=instrument, direction=direction,
-                entry=entry, sl=sl, tp1=tp1, tp2=tp2, tp3=tp3,
-                score=score, confirmations=list(confirmations),
-                regime=_regime_name, fear_greed=_fg_val, session=session,
-            )
-            def _do_send_card():
-                img = generate_signal_card(**_card_args)
-                if img and self.telegram.router:
-                    caption = (
-                        f"📸 <b>{'🟢 BUY' if direction == 'BUY' else '🔴 SELL'} "
-                        f"{name}</b>  |  Score {score}/7\n"
-                        f"💰 Entry: {entry:.5f}  |  SL: {sl:.5f}\n"
-                        f"🎯 TP1: {tp1:.5f}  TP2: {tp2:.5f}  TP3: {tp3:.5f}"
-                    )
-                    self.telegram.router.send_photo_to("trades", img, caption=caption)
-            threading.Thread(target=_do_send_card, daemon=True).start()
-        except Exception as _kex:
-            logger.debug(f"Signal card: {_kex}")
+        # ── Signal Card visuel — DISABLED pour affichage épuré ──
+        # Graphiques supprimés du canal Trades (texte uniquement)
 
-        if self.capital_trades[instrument]:
-            self.capital_trades[instrument]["ab_variant"] = self.ab.get_variant(instrument)
+        if self.positions[instrument]:
+            self.positions[instrument]["ab_variant"] = self.ab.get_variant(instrument)
 
         try:
             dash_open(symbol=CAPITAL_NAMES.get(instrument, instrument),
@@ -605,7 +672,7 @@ class BotSignalsMixin:
         Uses the same signal generation pipeline but with micro-TF profiles.
         """
         # Skip if main TF already has an open trade on this instrument
-        if self.capital_trades.get(epic) is not None:
+        if self.positions.get(epic) is not None:
             return
 
         _strat = profile.get("strat", "MR")
@@ -632,20 +699,18 @@ class BotSignalsMixin:
         logger.info(f"⚡ MICRO-TF {micro_key} [{_strat}] {sig} score={score:.2f}{' 🔥OVL' if _micro_overlap else ''}")
 
         # Risk and position checks
-        balance_for_risk = self.capital.get_balance() or balance
+        balance_for_risk = self.broker.get_balance() or balance
         _cat = profile.get("cat", "forex")
         if not self.risk.can_open_trade(balance_for_risk, instrument=epic, category=_cat):
             return
-        if not self.risk.check_currency_exposure(epic, sig, self.capital_trades):
+        if not self.risk.check_currency_exposure(epic, sig, self.positions):
             return
         if self.protection.is_blocked(epic):
             return
 
         # SL / TP with micro-TF parameters
         _sl_buf = profile.get("sl_buffer", 0.8)
-        _tp1_r  = profile.get("tp1", 1.0)
-        _tp2_r  = profile.get("tp2", 1.5)
-        _tp3_r  = profile.get("tp3", 2.0)
+        _tp_r   = profile.get("tp1", 1.0)   # Single TP mode
         entry   = float(df.iloc[-1]["close"])
         atr_val = self.strategy.get_atr(df)
 
@@ -656,14 +721,10 @@ class BotSignalsMixin:
         sl_dist = atr_val * _sl_buf
         if sig == "BUY":
             sl  = entry - sl_dist
-            tp1 = entry + sl_dist * _tp1_r
-            tp2 = entry + sl_dist * _tp2_r
-            tp3 = entry + sl_dist * _tp3_r
+            tp1 = entry + sl_dist * _tp_r
         else:
             sl  = entry + sl_dist
-            tp1 = entry - sl_dist * _tp1_r
-            tp2 = entry - sl_dist * _tp2_r
-            tp3 = entry - sl_dist * _tp3_r
+            tp1 = entry - sl_dist * _tp_r
 
         # R:R guard
         tp1_dist = abs(tp1 - entry)
@@ -673,7 +734,7 @@ class BotSignalsMixin:
 
         # S-5: Spread filter
         try:
-            px = self.capital.get_current_price(epic)
+            px = self.broker.get_current_price(epic)
             if px:
                 _spread = abs(float(px.get("ask", 0)) - float(px.get("bid", 0)))
                 if _spread > 0 and tp1_dist > 0 and (_spread / tp1_dist) > 0.25:
@@ -688,11 +749,10 @@ class BotSignalsMixin:
             current_atr=atr_val,
             avg_atr=float(df["atr"].tail(20).mean()) if "atr" in df.columns else atr_val
         )
-        total_size = self.capital.position_size(
+        total_size = self.broker.position_size(
             balance=balance, risk_pct=dynamic_risk * 0.5, entry=entry, sl=sl, epic=epic
         )
-        from brokers.capital_client import CapitalClient
-        min_sz = CapitalClient.MIN_SIZE.get(epic.upper(), 1.0)
+        min_sz = self.broker.MIN_SIZE.get(epic.upper(), 1.0)
         size1 = max(min_sz, round(total_size / 3, 2))
 
         if size1 <= 0:
@@ -702,8 +762,6 @@ class BotSignalsMixin:
         dec = PRICE_DECIMALS.get(epic, 5)
         sl  = round(sl,  dec)
         tp1 = round(tp1, dec)
-        tp2 = round(tp2, dec)
-        tp3 = round(tp3, dec)
 
         direction = "BUY" if sig == "BUY" else "SELL"
         logger.info(
@@ -711,15 +769,16 @@ class BotSignalsMixin:
             f"Entry={entry:.5f} SL={sl:.5f} TP1={tp1:.5f} | Size={size1}"
         )
 
-        refs = self.capital.place_market_order(
+        refs = self.broker.place_market_order(
             epic=epic, direction=direction, size=size1,
             sl_price=sl, tp_price=tp1,
         )
         if refs:
-            self.capital_trades[epic] = {
+            self.positions[epic] = {
                 "direction": direction, "entry": entry, "sl": sl,
-                "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                "refs": refs, "size": size1,
+                "tp1": tp1, "tp2": tp1, "tp3": tp1,   # single TP
+                "refs": [refs, None, None],  # FIX: liste requise par bot_monitor (refs[0])
+                "size": size1,
                 "open_time": datetime.now(timezone.utc),
                 "micro_tf": profile.get("tf"),
             }
