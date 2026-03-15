@@ -569,10 +569,26 @@ class BotTickMixin:
             if self.telegram.router:
                 _ml = self.ml_scorer if hasattr(self, 'ml_scorer') else None
                 _ctx = self.context if hasattr(self, 'context') else None
-                self.telegram.router.send_performance(
-                    self.reporter.build_report(ml_scorer=_ml, context=_ctx)
-                )
+                _rpt = self.reporter.build_report(ml_scorer=_ml, context=_ctx)
+                # Append Prop Firm challenge progress to daily report
+                try:
+                    _bal = self.broker.get_balance() if self.broker.available else 0.0
+                    if _bal > 0 and self.initial_balance > 0:
+                        _c_pct = (_bal - self.initial_balance) / self.initial_balance * 100
+                        _prog  = min(max(_c_pct / 10.0 * 100, 0), 100)
+                        _bar   = "█" * int(_prog / 10) + "░" * (10 - int(_prog / 10))
+                        _hwm   = getattr(self, '_equity_hwm', _bal)
+                        _rpt += (
+                            f"\n\n🏆 <b>Challenge Prop Firm — Phase 1</b>\n"
+                            f"  {_bar} <b>{_prog:.0f}%</b> vers +10%\n"
+                            f"  Gain : <code>{_c_pct:+.2f}%</code> | Cible : <code>+10%</code>\n"
+                            f"  Reste : <code>{max(10.0 - _c_pct, 0):.2f}%</code> | HWM : <code>{_hwm:,.2f}$</code>"
+                        )
+                except Exception:
+                    pass
+                self.telegram.router.send_performance(_rpt)
             self.reporter.mark_report_sent()
+
         if self.reporter.should_send_weekly():
             if self.telegram.router:
                 self.telegram.router.send_performance(self.reporter.build_weekly_report())

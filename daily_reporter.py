@@ -158,6 +158,7 @@ class DailyReporter:
         if context:
             rpt += f"\n🌍 Régime : {context.regime}"
 
+
         return rpt
 
     def build_report_lines(self) -> list:

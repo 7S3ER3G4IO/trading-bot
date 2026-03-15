@@ -193,18 +193,31 @@ class BotCommandsMixin:
 
         equity_pct = self.equity.total_pnl_pct()
         max_dd     = self.equity.max_drawdown()
-        cb_status  = "🔴 Sous MA20" if self.equity.is_below_ma() else "🟢 OK"
+        cb_status  = "\U0001f534 Sous MA20" if self.equity.is_below_ma() else "\U0001f7e2 OK"
+
+        # ── Challenge Prop Firm ────────────────────────────────────────────────
+        _challenge_pct = pnl_pct  # pnl depuis initial_balance
+        _target = 10.0            # 10% = Phase 1 Prop Firm (FTMO, MyFundedFX, etc.)
+        _prog = min(max(_challenge_pct / _target * 100, 0), 100)
+        _bar_filled = int(_prog / 10)  # 10 blocs de 10%
+        _bar = "\u2588" * _bar_filled + "\u2591" * (10 - _bar_filled)
+        _challenge_line = (
+            f"\n\U0001f3c6 <b>Challenge Prop Firm</b>\n"
+            f"  {_bar} <b>{_prog:.0f}%</b> vers objectif +10%\n"
+            f"  PnL total : <code>{pnl_pct:+.2f}%</code> | Reste : <code>{max(_target - _challenge_pct, 0):.2f}%</code>"
+        )
 
         ctx = self.context.get_context_line() if hasattr(self.context, 'get_context_line') else ""
         return (
-            f"⚡ <b>NEMESIS — Statut</b>\n\n"
-            f"💰 Balance : <b>{bal_str}</b>\n"
-            f"  PnL total  : <b>{pnl_total:+.2f}€ ({pnl_pct:+.1f}%)</b>\n"
-            f"  Non-réalisé : <b>{total_unrealized:+.2f}€</b>\n\n"
-            f"📊 Positions ouvertes : <b>{cap_open}/{len(CAPITAL_INSTRUMENTS)}</b>\n"
+            f"\u26a1 <b>NEMESIS \u2014 Statut</b>\n\n"
+            f"\U0001f4b0 Balance : <b>{bal_str}</b>\n"
+            f"  PnL total  : <b>{pnl_total:+.2f}\u20ac ({pnl_pct:+.1f}%)</b>\n"
+            f"  Non-r\u00e9alis\u00e9 : <b>{total_unrealized:+.2f}\u20ac</b>\n\n"
+            f"\U0001f4ca Positions ouvertes : <b>{cap_open}/{len(CAPITAL_INSTRUMENTS)}</b>\n"
             f"{cap_lines}"
-            f"\n📈 Equity : PnL={equity_pct:+.1f}%  MaxDD={max_dd:.1f}%  CB={cb_status}\n"
-            f"🤖 État : {paused}\n"
+            f"\n\U0001f4c8 Equity : PnL={equity_pct:+.1f}%  MaxDD={max_dd:.1f}%  CB={cb_status}\n"
+            f"\U0001f916 \u00c9tat : {paused}\n"
+            f"{_challenge_line}\n"
             f"{ctx}"
         )
 
@@ -274,6 +287,9 @@ class BotCommandsMixin:
                 "dd_limit": getattr(self.risk, '_dynamic_dd_limit', 0.10),
                 "trades_today_count": getattr(self.risk, '_trades_today', 0),
             }
+        # Challenge Tracker stats
+        if hasattr(self, 'challenge_tracker'):
+            stats["challenge"] = self.challenge_tracker.get_stats()
         return stats
     # ── Hub pages removed — multi-channel uses URL buttons now ──────────────
 
@@ -307,6 +323,15 @@ class BotCommandsMixin:
         lines.append(f"  VIX synthetic: {r.get('vix_synthetic', 0):.2f}")
         lines.append(f"  DD limit: {r.get('dd_limit', 0.10):.0%}")
 
+        # Challenge Tracker
+        ch = stats.get("challenge", {})
+        if ch:
+            lines.append(f"\n\U0001f3c6 <b>Challenge Tracker</b>")
+            lines.append(f"  Phase: {ch.get('phase', 'N/A')}")
+            lines.append(f"  Progress: {ch.get('progress_pct', 0):.1f}%")
+            lines.append(f"  Daily DD: {ch.get('daily_dd_pct', 0):.1f}%")
+            lines.append(f"  Max DD: {ch.get('max_dd_pct', 0):.1f}%")
+
         # Market
         if hasattr(self, 'context'):
             ctx = self.context.stats
@@ -317,10 +342,22 @@ class BotCommandsMixin:
             lines.append(f"  Overlap: {'🔥 OUI' if ctx.get('overlap') else '—'}")
 
         # Positions
-        lines.append(f"\n📈 <b>Trading</b>")
+        lines.append(f"\n\U0001f4c8 <b>Trading</b>")
         lines.append(f"  Active: {stats.get('active_positions', 0)}")
         lines.append(f"  Today: {stats.get('trades_today', 0)} trades")
-        lines.append(f"  PnL: {stats.get('pnl_today', 0):+.2f}€")
+        lines.append(f"  PnL: {stats.get('pnl_today', 0):+.2f}\u20ac")
+
+        # Challenge Prop Firm
+        bal_now = self.broker.get_balance() if self.broker.available else 0.0
+        if bal_now > 0 and self.initial_balance > 0:
+            _c_pct = (bal_now - self.initial_balance) / self.initial_balance * 100
+            _prog  = min(max(_c_pct / 10.0 * 100, 0), 100)
+            _bar   = "\u2588" * int(_prog / 10) + "\u2591" * (10 - int(_prog / 10))
+            _hwm   = getattr(self, '_equity_hwm', bal_now)
+            lines.append(f"\n\U0001f3c6 <b>Challenge Prop Firm \u2014 Phase 1</b>")
+            lines.append(f"  {_bar} <b>{_prog:.0f}%</b> vers +10%")
+            lines.append(f"  Gain: <code>{_c_pct:+.2f}%</code> | Reste: <code>{max(10.0 - _c_pct, 0):.2f}%</code>")
+            lines.append(f"  HWM : <code>{_hwm:,.2f}$</code>")
 
         return "\n".join(lines)
 
@@ -363,6 +400,19 @@ class BotCommandsMixin:
         /health — Real-time system health check.
         """
         checks = []
+
+        # MT5 connection
+        mt5_ok = hasattr(self, 'mt5') and self.mt5.available and self.mt5._is_connected()
+        mt5_bal = 0.0
+        if mt5_ok:
+            try: mt5_bal = self.mt5.get_balance() or 0.0
+            except Exception: pass
+        checks.append(f"{'\u2705' if mt5_ok else '\u274c'} MT5 IC Markets {'(' + f'{mt5_bal:,.0f}$)' if mt5_ok else '(d\u00e9connect\u00e9)'}")
+
+        # WebSocket / Terminal state
+        ts = getattr(getattr(self.mt5, '_account', None), 'terminal_state', None) if hasattr(self, 'mt5') else None
+        ts_ok = ts is not None and getattr(ts, 'connected', False)
+        checks.append(f"{'\u2705' if ts_ok else '\u26a0\ufe0f'} Terminal State MT5")
 
         # Capital.com API
         api_ok = self.capital.available if hasattr(self, 'capital') else False
