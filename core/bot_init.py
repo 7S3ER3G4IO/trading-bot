@@ -189,6 +189,8 @@ class BotInitMixin:
             rate_limiter=self.rate_limiter,
             telegram_router=tg_router,
         )
+        self.health._broker = self.broker  # Injection MT5 pour _check_capital CapitalStub
+
         # Health check au démarrage (non bloquant)
         import threading as _thr
         _thr.Thread(target=self.health.run, daemon=True, name="startup_healthcheck").start()

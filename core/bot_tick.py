@@ -262,8 +262,13 @@ class BotTickMixin:
             # BUG FIX #2 : met à jour le solde de début de journée pour le DD journalier
             if self.broker.available:
                 self._daily_start_balance = self.broker.get_balance() or self._daily_start_balance
+            # Reset compteur trades journaliers par instrument (minuit UTC)
+            if hasattr(self, '_daily_inst_trades'):
+                self._daily_inst_trades = {s: 0 for s in self._daily_inst_trades}
+                logger.info("♻️  Max trades/instrument reset (nouveau jour)")
             logger.info("🔄 Reset quotidien — stats journalières effacées")
             self._last_session_push = ""    # reset push session pour le nouveau jour
+
 
             # ── Reset mensuel & Drawdown Mensuel ─────────────────────────────
             cur_month = now.month
