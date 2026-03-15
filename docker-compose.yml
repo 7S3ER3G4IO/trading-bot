@@ -186,9 +186,9 @@ services:
     image: grafana/grafana:10.4.3
     container_name: nemesis_grafana
     restart: unless-stopped
-    # Port 3000 non exposé directement — accès via nginx HTTPS
-    expose:
-      - "3000"
+    # Port 3000 lié à localhost uniquement — le nginx système du VPS gère le HTTPS
+    ports:
+      - "127.0.0.1:3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
@@ -209,38 +209,6 @@ services:
         max-file: "3"
 
   # ────────────────────────────────────────────────────────────────
-  # Nginx — Reverse Proxy HTTPS pour Grafana (port 443)
-  # ────────────────────────────────────────────────────────────────
-  nginx:
-    image: nginx:alpine
-    container_name: nemesis_nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
-      - nginx_ssl:/etc/nginx/ssl
-    networks:
-      - nemesis_net
-    depends_on:
-      - grafana
-    # Génère un certificat auto-signé au premier démarrage
-    command: >
-      sh -c "mkdir -p /etc/nginx/ssl &&
-             [ -f /etc/nginx/ssl/nemesis.crt ] ||
-             openssl req -x509 -nodes -newkey rsa:2048 -days 3650
-               -keyout /etc/nginx/ssl/nemesis.key
-               -out    /etc/nginx/ssl/nemesis.crt
-               -subj '/CN=nemesis-bot/O=NEMESIS/C=FR' &&
-             nginx -g 'daemon off;'"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-
-# ────────────────────────────────────────────────────────────────
 # Volumes persistants (survivent à docker compose down)
 # ────────────────────────────────────────────────────────────────
 volumes:
