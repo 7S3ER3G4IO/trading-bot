@@ -191,28 +191,45 @@ class DailyReporter:
         return False
 
     def build_weekly_report(self) -> str:
-        # BUG FIX #B : lit depuis _weekly_trades (accumulation 7j) et non _trades (journalier)
+        """Rapport hebdomadaire enrichi avec analytics DB (Sharpe, Sortino, max DD)."""
         trades = self._weekly_trades
+        base_header = f"📅 <b>BILAN DE LA SEMAINE</b>"
+
         if not trades:
-            return "📅 <b>Bilan hebdomadaire</b> — Aucun trade cette semaine."
+            base = f"{base_header} — Aucun trade cette semaine."
+        else:
+            wins       = sum(1 for t in trades if t.result != "SL")
+            total_net  = sum(t.pnl_net for t in trades)
+            total_fees = sum(t.fees for t in trades)
+            best       = max(trades, key=lambda t: t.pnl_net)
+            worst      = min(trades, key=lambda t: t.pnl_net)
+            score      = f"{wins}/{len(trades)}"
+            pct        = f"{wins / len(trades) * 100:.0f}%"
+            base = (
+                f"{base_header}\n\n"
+                f"🏆 Trades : <b>{score}</b> | Win rate : <b>{pct}</b>\n"
+                f"💰 PnL net : <code>{total_net:+.2f} €</code>\n"
+                f"💸 Frais cumulés : <code>-{total_fees:.2f} €</code>\n\n"
+                f"🌟 Meilleur trade : <code>{best.symbol}</code> <code>{best.pnl_net:+.2f} €</code>\n"
+                f"📉 Pire trade : <code>{worst.symbol}</code> <code>{worst.pnl_net:+.2f} €</code>"
+            )
 
-        cet = datetime.now(timezone(timedelta(hours=1)))
-        wins       = sum(1 for t in trades if t.result != "SL")
-        total_net  = sum(t.pnl_net for t in trades)
-        total_fees = sum(t.fees for t in trades)
-        best  = max(trades, key=lambda t: t.pnl_net)
-        worst = min(trades, key=lambda t: t.pnl_net)
-        score = f"{wins}/{len(trades)}"
-        pct   = f"{wins / len(trades) * 100:.0f}%"
+        # ── Enrichissement analytique depuis la DB (Sharpe, Sortino, etc.) ──
+        try:
+            from performance import PerformanceReport
+            perf = PerformanceReport(days=7)
+            if perf.total_trades > 0:
+                base += (
+                    f"\n\n📐 <b>Analytics DB (7j)</b>\n"
+                    f"Sharpe : <code>{perf.sharpe_ratio}</code>  |  Sortino : <code>{perf.sortino_ratio}</code>\n"
+                    f"R:R moyen : <code>{perf.risk_reward}</code>  |  Profit Factor : <code>{perf.profit_factor}</code>\n"
+                    f"Max DD : <code>-{perf.max_drawdown:.2f}$</code>  |  Série : {perf.consecutive_losses} pertes max\n"
+                    f"🏆 Meilleur instr : {perf.best_instrument}  |  🥺 Pire : {perf.worst_instrument}"
+                )
+        except Exception:
+            pass  # Analytics DB optionnelles — pas bloquant
 
-        return (
-            f"📅 <b>BILAN DE LA SEMAINE</b>\n\n"
-            f"🏆 Trades : <b>{score}</b> | Win rate : <b>{pct}</b>\n"
-            f"💰 PnL net : <code>{total_net:+.2f} €</code>\n"
-            f"💸 Frais cumulés : <code>-{total_fees:.2f} €</code>\n\n"
-            f"🌟 Meilleur trade : <code>{best.symbol}</code> <code>{best.pnl_net:+.2f} €</code>\n"
-            f"📉 Pire trade : <code>{worst.symbol}</code> <code>{worst.pnl_net:+.2f} €</code>"
-        )
+        return base
 
     def mark_weekly_sent(self):
         cet = datetime.now(timezone(timedelta(hours=1)))

@@ -13,27 +13,220 @@ from logger import setup_logger
 from config import LOOP_INTERVAL_SECONDS, DAILY_REPORT_HOUR_UTC, MAX_OPEN_TRADES, SESSION_HOURS
 from strategy import Strategy, SIGNAL_BUY, SIGNAL_SELL, SIGNAL_HOLD
 from risk_manager import RiskManager
-from telegram_notifier import TelegramNotifier
-from telegram_bot_handler import TelegramBotHandler
+# ─── Telegram — APEX ULTIMATE Signals Publisher ─────────────────────────────
 try:
-    from telegram import InlineKeyboardMarkup
+    import telegram_channel as _tgc
+    _TG_OK = bool(_tgc.BOT_TOKEN and _tgc.CHAT_ID)
+    if _TG_OK:
+        logger.info("📣 Telegram APEX ULTIMATE : publisher chargé ✅")
+    else:
+        logger.info("ℹ️  Telegram : token/chat_id manquants — notifications désactivées")
 except ImportError:
-    InlineKeyboardMarkup = None
+    _tgc = None
+    _TG_OK = False
+
+
+class _TelegramRouter:
+    """Router simple : dispatch vers telegram_channel.py."""
+
+    def send_trade(self, text: str, **kw) -> None:
+        """Envoie un message trade brut (compatibilité)."""
+        if _TG_OK and _tgc:
+            _tgc._send(text)
+
+    def send_risk(self, text: str, **kw) -> None:
+        """Envoie un message de risque/kill-switch."""
+        if _TG_OK and _tgc:
+            _tgc._send(f"🛡️ {text}")
+
+    def send_to(self, channel: str, text: str, **kw) -> None:
+        if _TG_OK and _tgc:
+            _tgc._send(text)
+
+    def send_signal(self, instrument, direction, entry, sl, tp1, tp2,
+                    score=0.0, confirmations=None, **kw) -> int | None:
+        """Retourne le message_id Telegram pour les replies TP1/TP2/TP3."""
+        if _TG_OK and _tgc:
+            return _tgc.notify_signal(instrument, direction, entry, sl,
+                                      tp1, tp2, score, confirmations)
+        return None
+
+    def send_tp1(self, instrument, entry, tp1, direction="BUY",
+                 sl=0.0, tp2=0.0, pips=None,
+                 reply_to_message_id=None, **kw) -> bool:
+        if _TG_OK and _tgc:
+            return _tgc.notify_tp1(
+                instrument, entry, tp1,
+                sl=sl, tp2=tp2, direction=direction, pips=pips,
+                reply_to_message_id=reply_to_message_id,
+            )
+        return False
+
+    def send_tp2(self, instrument, entry=0.0, tp2=0.0, direction="BUY",
+                 pips=None, reply_to_message_id=None, **kw) -> bool:
+        if _TG_OK and _tgc:
+            return _tgc.notify_tp2(
+                instrument, entry=entry, tp2=tp2, direction=direction,
+                pips=pips, reply_to_message_id=reply_to_message_id,
+            )
+        return False
+
+    def send_trade_closed(self, instrument, result, pnl_usd, pips,
+                          direction, hold_hours=0.0,
+                          entry=0.0, close_price=0.0,
+                          reply_to_message_id=None, **kw) -> bool:
+        if _TG_OK and _tgc:
+            return _tgc.notify_trade_closed(
+                instrument, result, pnl_usd, pips, direction, hold_hours,
+                entry=entry, close_price=close_price,
+                reply_to_message_id=reply_to_message_id,
+            )
+        return False
+
+    def send_kill_switch(self, reason, dd_pct, **kw) -> bool:
+        if _TG_OK and _tgc:
+            return _tgc.notify_kill_switch(reason, dd_pct)
+        return False
+
+    def send_daily_recap(self, balance, pnl_day, trades_today, wins,
+                         trade_lines=None, **kw) -> bool:
+        if _TG_OK and _tgc:
+            return _tgc.notify_daily_recap(balance, pnl_day, trades_today,
+                                           wins, trade_lines)
+        return False
+
+    def send_weekly_recap(self, stats: dict, **kw) -> bool:
+        if _TG_OK and _tgc:
+            return _tgc.notify_weekly_recap(stats)
+        return False
+
+    def send_performance(self, text: str, **kw) -> None:
+        """→ Rapport journalier/hebdo vers compte admin perso (pas le canal PRO)."""
+        if _TG_OK and _tgc:
+            _tgc._send(text, chat_id=_tgc.ADMIN_ID or _tgc.CHAT_ID)
+
+    def send_stats(self, text: str, silent: bool = False, **kw) -> None:
+        """→ Stats/leaderboard vers compte admin perso."""
+        if _TG_OK and _tgc:
+            _tgc._send(text, chat_id=_tgc.ADMIN_ID or _tgc.CHAT_ID)
+
+    def send_dashboard(self, text: str, silent: bool = False, **kw) -> None:
+        """→ Dashboard/session update vers compte admin perso."""
+        if _TG_OK and _tgc:
+            _tgc._send(text, chat_id=_tgc.ADMIN_ID or _tgc.CHAT_ID)
+
+
+class TelegramNotifier:
+    """Publisher Telegram APEX ULTIMATE Signals — branché sur telegram_channel.py."""
+
+    def __init__(self, *a, **kw):
+        self.router       = _TelegramRouter() if _TG_OK else None
+        self.hub          = None
+        self.gamification = None
+        if _TG_OK and _tgc:
+            logger.info("📣 TelegramNotifier : router APEX ULTIMATE actif")
+
+    def notify_start(self, balance: float, instruments: list, **kw):
+        # → Discord #monitoring uniquement (pas le canal Telegram PRO)
+        try:
+            import psycopg2 as _pg, os as _os
+            _db = _os.getenv("DATABASE_URL", "")
+            if _db:
+                _cn = _pg.connect(_db)
+                _cu = _cn.cursor()
+                _cu.execute(
+                    "INSERT INTO alerts(type,message) VALUES(%s,%s)",
+                    ("BOT_START",
+                     f"⚡ NEMESIS démarré — Balance: {balance:,.2f}$ | "
+                     f"{len(instruments)} instruments | BK 1H 0.35% risque Multi-TP")
+                )
+                _cn.commit(); _cu.close(); _cn.close()
+        except Exception:
+            pass
+
+    def notify_error(self, error: str, **kw): pass
+    def notify_crash(self, error: str, **kw): pass
+    def notify_morning_brief(self, *a, **kw): pass
+    def __bool__(self): return _TG_OK
+
+
+class TelegramBotHandler:
+    """No-op stub: Telegram removed."""
+    def __init__(self, *a, **kw): pass
+    def register_callbacks(self, **kw): pass
+    def start_polling(self): pass
+    def stop(self): pass
+
+InlineKeyboardMarkup = None
 from daily_reporter import DailyReporter
 from economic_calendar import EconomicCalendar
 from market_context import MarketContext
 from database import Database
 from brokers.capital_client import (
-    CapitalClient, CAPITAL_INSTRUMENTS,
+    CAPITAL_INSTRUMENTS,
     INSTRUMENT_NAMES as CAPITAL_NAMES,
     PIP_FACTOR as CAPITAL_PIP,
     ASSET_PROFILES,
     MICRO_TF_PROFILES,
     PRICE_DECIMALS,
 )
-import telegram_capital as tgc
-from telegram_capital import SessionTracker
-from capital_websocket import CapitalWebSocket
+# CapitalClient remplacé par le stub silencieux (MT5 est le broker actif)
+from brokers.capital_stub import CapitalStub as CapitalClient
+# telegram_capital removed — SessionTracker stub
+class SessionTracker:
+    """Stub: was in telegram_capital.py, tracks session start/end."""
+    def __init__(self):
+        self._count = 0
+        self._pnl = 0.0
+    def on_trade(self, pnl=0.0):
+        self._count += 1
+        self._pnl += pnl
+    def reset(self):
+        self._count = 0
+        self._pnl = 0.0
+    @property
+    def count(self): return self._count
+    @property
+    def pnl(self): return self._pnl
+
+class _TgcStub:
+    """No-op stub for telegram_capital module."""
+    def notify_capital_entry(self, *a, **kw): pass
+    def notify_capital_close(self, *a, **kw): pass
+    def __getattr__(self, name): return lambda *a, **kw: None
+
+import types as _types
+tgc = _TgcStub()
+# CapitalWebSocket désactivé — MT5 est le broker actif
+class CapitalWebSocket:
+    """Stub no-op — Capital.com WebSocket désactivé (MT5 actif)."""
+    def __init__(self, *a, **kw): self._running = False
+    def start(self): pass
+    def stop(self): pass
+    def ws_ping(self): pass
+    def unwatch(self, *a): pass
+    def register_breakout_callback(self, *a): pass
+    def register_signal_callback(self, *a): pass
+
+# ─── IC Markets MT5 via MetaApi ──────────────────────────────────────────────
+try:
+    from brokers.mt5_client import MT5Client
+    _MT5_OK = True
+except ImportError:
+    _MT5_OK = False
+    class MT5Client:  # stub silencieux — MT5 désactivé
+        def __init__(self, *a, **kw): self._ok = False
+        @property
+        def available(self): return False
+        def get_balance(self): return 0.0
+        def get_current_price(self, *a): return None
+        def fetch_ohlcv(self, *a, **kw): return None
+        def place_market_order(self, *a, **kw): return None
+        def close_position(self, *a): return False
+        def get_open_positions(self): return []
+        def search_markets(self, *a, **kw): return []
+        def shutdown(self): pass
+
 from ohlcv_cache import OHLCVCache
 from trade_executor import TradeExecutor
 from ml_scorer import MLScorer
@@ -106,6 +299,8 @@ except ImportError:
         def is_below_ma(self, *a): return False
         def format_report(self): return ""
         def generate_chart(self, *a): return b""
+        def reset_history(self, keep_last: int = 0): pass  # FIX CR-1: manquait dans le stub
+        def total_pnl_pct(self): return 0.0               # FIX CR-1: idem
 
 # ─── Sprint Final — Nouveaux modules ────────────────────────────────────────
 try:
@@ -254,14 +449,18 @@ try:
     from slippage_injector import SlippageInjector
     _SLIPPAGE_OK = True
 except ImportError:
-    _SLIPPAGE_OK = False
-    class SlippageInjector:  # stub transparent (pas de dégradation)
-        def __init__(self, *a, **kw): pass
-        def apply_market_slippage(self, entry, direction, ob_imbalance=0.5): return entry
-        def simulate_limit_fill(self, lp, cp, qty, direction="BUY"): return qty, lp
-        def compute_adjusted_pnl(self, pnl, *a, **kw): return pnl
-        def format_status(self): return "SlippageInjector: N/A"
-        def stats(self): return {}
+    try:
+        from slippage_tracker import SlippageInjector  # Tracker réel (slippage_injector.py supprimé)
+        _SLIPPAGE_OK = True
+    except ImportError:
+        _SLIPPAGE_OK = False
+        class SlippageInjector:  # stub transparent (pas de dégradation)
+            def __init__(self, *a, **kw): pass
+            def apply_market_slippage(self, entry, direction, ob_imbalance=0.5): return entry
+            def simulate_limit_fill(self, lp, cp, qty, direction="BUY"): return qty, lp
+            def compute_adjusted_pnl(self, pnl, *a, **kw): return pnl
+            def format_status(self): return "SlippageInjector: N/A"
+            def stats(self): return {}
 
 try:
     from latency_tracker import LatencyTracker
@@ -784,3 +983,326 @@ except ImportError:
         def get_profiler(self): return None
         def stats(self): return {}
         def format_report(self): return ""
+
+# ─── M38 : Convexity & Dynamic Trailing Stop ────────────────────────────────
+try:
+    from convexity_engine import ConvexityEngine, MIN_RR_RATIO
+    _CONVEXITY_OK = True
+except ImportError:
+    _CONVEXITY_OK = False
+    MIN_RR_RATIO = 1.0
+    class ConvexityEngine:
+        def __init__(self, *a, **kw): pass
+        def validate_rr(self, entry, sl, tp, instrument=""): return True, 3.0
+        def compute_atr_sl(self, df, entry, direction, instrument=""): return entry
+        def compute_atr_tp(self, entry, sl, direction, min_rr=3.0): return entry
+        def enforce_minimum_rr(self, entry, sl, tp, direction, instrument=""): return sl, tp
+        def register_trade(self, instrument, entry, sl, direction): pass
+        def update_trailing(self, instrument, current_price): return None
+        def unregister_trade(self, instrument): pass
+        def stats(self): return {}
+
+# ─── M39 : Kelly Criterion Kernel (per-engine) ──────────────────────────────
+try:
+    from kelly_criterion import KellyCriterionKernel
+    _KELLY_KERNEL_OK = True
+except ImportError:
+    _KELLY_KERNEL_OK = False
+    class KellyCriterionKernel:
+        def __init__(self, *a, **kw): pass
+        def record_engine_result(self, engine_id, won, rr_achieved=1.0): pass
+        def get_engine_fraction(self, engine_id): return 0.005
+        def compute_position_risk(self, engine_id, base_risk=0.005): return base_risk
+        def is_engine_dead(self, engine_id): return False
+        def get_engine_health(self): return {}
+        def stats(self): return {}
+
+# ─── M40 : Time-Based Capitulation & Dead Capital ───────────────────────────
+try:
+    from time_stop import DeadCapitalDetector
+    _DEAD_CAPITAL_OK = True
+except ImportError:
+    _DEAD_CAPITAL_OK = False
+    class DeadCapitalDetector:
+        def __init__(self, *a, **kw): pass
+        def check_stagnation(self, instrument, current_price, state, max_hold_min=720): return False, ""
+        def get_dead_capital_report(self, trades, prices): return []
+        def stats(self): return {}
+
+# ─── M41 : Fast Execution Core (HFT) ────────────────────────────────────────
+try:
+    from fast_exec import FastExecCore
+    _FAST_EXEC_OK = True
+except ImportError:
+    _FAST_EXEC_OK = False
+    class FastExecCore:
+        def __init__(self, *a, **kw): pass
+        def fast_market_order(self, *a, **kw): return None
+        def fast_confirm_deal(self, *a, **kw): return None
+        def pre_serialize_order(self, *a, **kw): return b""
+        def flush_pre_built(self, *a, **kw): return None
+        def warmup(self): pass
+        def shutdown(self): pass
+        def stats(self): return {}
+
+# ─── M42 : TCP Tuner + uvloop ───────────────────────────────────────────────
+try:
+    from tcp_tuner import TCPTuner, install_tcp_tuning, install_uvloop
+    _TCP_TUNER_OK = True
+except ImportError:
+    _TCP_TUNER_OK = False
+    class TCPTuner:
+        def __init__(self, *a, **kw): pass
+        def initialize(self): pass
+        def tune_ws(self, s): pass
+        def tune_session(self, s): pass
+        def stats(self): return {}
+    def install_tcp_tuning(): pass
+    def install_uvloop(): return False
+
+# ─── M43 : Predictive Pre-Builder ───────────────────────────────────────────
+try:
+    from pre_builder import PreBuilder
+    _PRE_BUILDER_OK = True
+except ImportError:
+    _PRE_BUILDER_OK = False
+    class PreBuilder:
+        def __init__(self, *a, **kw): pass
+        def pre_build(self, *a, **kw): return False
+        def get_pre_built(self, *a, **kw): return None
+        def consume(self, *a, **kw): return None
+        def invalidate(self, *a, **kw): pass
+        def has_pre_built(self, *a, **kw): return False
+        def stats(self): return {}
+
+# ─── Phase 1.1 : Dead-Man Switch + Watchdog ──────────────────────────────────
+try:
+    from watchdog import DeadManSwitch
+    _WATCHDOG_OK = True
+except ImportError:
+    _WATCHDOG_OK = False
+    class DeadManSwitch:
+        def __init__(self, *a, **kw): pass
+        def ping(self): pass
+        def ws_ping(self): pass
+        def start(self): pass
+        def stop(self): pass
+        @property
+        def ws_fallback(self): return False
+        @property
+        def seconds_since_last_tick(self): return 0
+
+# ─── Phase 1.2 : Order Guardian (Confirm + Orphan + Slippage + Margin) ───────
+try:
+    from order_guardian import OrderGuardian
+    _GUARDIAN_OK = True
+except ImportError:
+    _GUARDIAN_OK = False
+    class OrderGuardian:
+        def __init__(self, *a, **kw): pass
+        def confirm_order(self, *a, **kw): return True
+        def scan_orphans(self, *a, **kw): return []
+        def log_slippage(self, *a, **kw): pass
+        def check_margin(self, *a, **kw): return True
+        def get_slippage_stats(self): return {}
+
+# ─── Phase 2 : Portfolio Shield (Advanced Risk) ─────────────────────────────
+try:
+    from portfolio_shield import PortfolioShield
+    _SHIELD_OK = True
+except ImportError:
+    _SHIELD_OK = False
+    class PortfolioShield:
+        def __init__(self, *a, **kw): pass
+        def check_monthly_dd(self, bal): return False
+        def check_correlation(self, inst, trades): return False, ""
+        def check_sector_exposure(self, inst, trades, bal): return False, ""
+        def compute_atr_trailing_sl(self, price, atr, d, sl=0): return sl
+        def adjust_sl_for_regime(self, sl, e, d, r): return sl
+        def compute_var(self, pos, bal, **kw): return {"var_amount": 0, "var_pct": 0}
+        def should_friday_close(self, inst): return True
+        def format_status(self, *a, **kw): return ""
+
+# ─── Phase 3 : ML Retrain Pipeline ──────────────────────────────────────────
+try:
+    from ml_retrain_pipeline import MLRetrainPipeline
+    _ML_PIPELINE_OK = True
+except ImportError:
+    _ML_PIPELINE_OK = False
+    class MLRetrainPipeline:
+        def __init__(self, *a, **kw): pass
+        def retrain_m52(self, **kw): return {"status": "skip"}
+        def retest_pairs(self): return {"status": "skip"}
+        def attribute_performance(self): return {"status": "skip"}
+
+# ─── Phase 4 : Health Endpoint ──────────────────────────────────────────────
+try:
+    from health_endpoint import start_health_server
+    _HEALTH_ENDPOINT_OK = True
+except ImportError:
+    _HEALTH_ENDPOINT_OK = False
+    def start_health_server(*a, **kw): return 0
+
+# ─── Tâche 1 : State Sync (Orphan Reconciliation) ──────────────────────────
+try:
+    from state_sync import StateSync
+    _STATE_SYNC_OK = True
+except ImportError:
+    _STATE_SYNC_OK = False
+    class StateSync:
+        def __init__(self, *a, **kw): pass
+        def reconcile(self, capital_trades): return {"status": "skip"}
+        @property
+        def stats(self): return {}
+
+# ─── Tâche 2 : Spread Guard (Pre-Trade Filter) ─────────────────────────────
+try:
+    from spread_guard import SpreadGuard
+    _SPREAD_GUARD_OK = True
+except ImportError:
+    _SPREAD_GUARD_OK = False
+    class SpreadGuard:
+        def __init__(self, *a, **kw): pass
+        def check(self, inst, price=0): return True, 0.0, "stub"
+        @property
+        def stats(self): return {}
+
+# ─── Project Sentience : Affective Engine ───────────────────────────────────
+try:
+    from emotional_core import EmotionalCore, Mood
+    _SENTIENCE_OK = True
+except ImportError:
+    _SENTIENCE_OK = False
+    class Mood:
+        NEUTRAL = "NEUTRAL"; CONFIDENT = "CONFIDENT"; EUPHORIC = "EUPHORIC"
+        FEARFUL = "FEARFUL"; PANICKED = "PANICKED"; FRUSTRATED = "FRUSTRATED"
+    class EmotionalCore:
+        def __init__(self, *a, **kw): pass
+        @property
+        def current_mood(self): return Mood.NEUTRAL
+        @property
+        def mood_name(self): return "NEUTRAL"
+        @property
+        def mood_emoji(self): return "😐"
+        @property
+        def risk_multiplier(self): return 1.0
+        @property
+        def threshold_adjustment(self): return 0.0
+        @property
+        def tp_multiplier(self): return 1.0
+        def is_trading_allowed(self, engine=""): return True
+        def is_asset_traumatized(self, inst): return False
+        def on_trade_result(self, *a, **kw): pass
+        def on_balance_update(self, *a, **kw): pass
+        def tick(self): pass
+        def format_status(self): return ""
+        @property
+        def stats(self): return {}
+
+# ─── Project Argus : RSS Sensors + NLP Brain ────────────────────────────────
+try:
+    from argus_sensors import ArgusSensors
+    _ARGUS_SENSORS_OK = True
+except ImportError:
+    _ARGUS_SENSORS_OK = False
+    class ArgusSensors:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def stop(self): pass
+        def get_recent(self, limit=20): return []
+        def inject_headline(self, *a, **kw): pass
+        @property
+        def stats(self): return {}
+
+try:
+    from argus_brain import ArgusBrain
+    _ARGUS_BRAIN_OK = True
+except ImportError:
+    _ARGUS_BRAIN_OK = False
+    class ArgusBrain:
+        def __init__(self, *a, **kw): pass
+        def load_model(self): return False
+        def analyze(self, h, s=""): return {"sentiment":"neutral","confidence":0,"impact_score":0,"assets":[],"is_impulse":False}
+        def get_news_bias(self, inst): return 0.0
+        def get_active_impulses(self, inst=""): return []
+        def format_status(self): return ""
+        @property
+        def stats(self): return {}
+
+# ─── Apex Predator: L2 Microstructure + Hedge Manager + MLOps ───────────────
+try:
+    from l2_microstructure import L2Microstructure
+    _L2_OK = True
+except ImportError:
+    _L2_OK = False
+    class L2Microstructure:
+        def __init__(self, *a, **kw): pass
+        def check_entry(self, inst, d, df=None): return True, "L2 stub"
+        def snapshot(self, inst): return {}
+        def format_status(self): return ""
+        @property
+        def stats(self): return {}
+
+try:
+    from hedge_manager import HedgeManager
+    _HEDGE_OK = True
+except ImportError:
+    _HEDGE_OK = False
+    class HedgeManager:
+        def __init__(self, *a, **kw): pass
+        def evaluate_hedge(self, *a, **kw): return None
+        def execute_hedge(self, h): return None
+        def tick(self): pass
+        def is_hedged(self, inst): return False
+        def format_status(self): return ""
+        @property
+        def stats(self): return {}
+
+try:
+    from mlops_retrainer import MLOpsRetrainer
+    _MLOPS_OK = True
+except ImportError:
+    _MLOPS_OK = False
+    class MLOpsRetrainer:
+        def __init__(self, *a, **kw): pass
+        def start_scheduler(self): pass
+        def stop(self): pass
+        def run_pipeline(self): return {}
+        def format_status(self): return ""
+        @property
+        def stats(self): return {}
+
+# ─── Project Prometheus: Trade Journal + Shadow Tester + Core ───────────────
+try:
+    from trade_journal import TradeJournal
+except ImportError:
+    class TradeJournal:
+        def __init__(self, *a, **kw): pass
+        def log_close(self, *a, **kw): pass
+        def get_losers(self, **kw): return []
+        def get_stats(self, **kw): return {"total": 0}
+        def format_status(self): return ""
+        @property
+        def count(self): return 0
+
+try:
+    from shadow_tester import ShadowTester
+except ImportError:
+    class ShadowTester:
+        def __init__(self): pass
+        def backtest(self, df, params, **kw): return {"sharpe": 0, "total_trades": 0}
+        @property
+        def stats(self): return {}
+
+try:
+    from prometheus_core import PrometheusCore
+except ImportError:
+    class PrometheusCore:
+        def __init__(self, *a, **kw): pass
+        def start_nightly(self): pass
+        def stop(self): pass
+        def run_cycle(self, **kw): return {}
+        def format_status(self): return ""
+        @property
+        def stats(self): return {}
+
