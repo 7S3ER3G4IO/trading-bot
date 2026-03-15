@@ -407,12 +407,15 @@ class BotCommandsMixin:
         if mt5_ok:
             try: mt5_bal = self.mt5.get_balance() or 0.0
             except Exception: pass
-        checks.append(f"{'\u2705' if mt5_ok else '\u274c'} MT5 IC Markets {'(' + f'{mt5_bal:,.0f}$)' if mt5_ok else '(d\u00e9connect\u00e9)'}")
+        _mt5_icon = "✅" if mt5_ok else "❌"
+        _mt5_info = f"({mt5_bal:,.0f}$)" if mt5_ok else "(déconnecté)"
+        checks.append(f"{_mt5_icon} MT5 IC Markets {_mt5_info}")
 
         # WebSocket / Terminal state
         ts = getattr(getattr(self.mt5, '_account', None), 'terminal_state', None) if hasattr(self, 'mt5') else None
         ts_ok = ts is not None and getattr(ts, 'connected', False)
-        checks.append(f"{'\u2705' if ts_ok else '\u26a0\ufe0f'} Terminal State MT5")
+        _ts_icon = "✅" if ts_ok else "⚠️"
+        checks.append(f"{_ts_icon} Terminal State MT5")
 
         # Capital.com API
         api_ok = self.capital.available if hasattr(self, 'capital') else False
