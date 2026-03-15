@@ -13,15 +13,68 @@ class BotTickMixin:
     def run(self):
         logger.info(f"⏱  Boucle toutes les {LOOP_INTERVAL_SECONDS}s | CTRL+C pour arrêter\n")
         _err_count = 0
+        _last_tick_ok = time.monotonic()  # Dead-man switch timer
+        _DEAD_MAN_TIMEOUT = 300  # 5 minutes sans tick réussi = alerte critique
+
         while bot_running:
             try:
+                # Dead-man switch check — AVANT le tick, sur le dernier tick réussi
+                _elapsed = time.monotonic() - _last_tick_ok
+                if _elapsed > _DEAD_MAN_TIMEOUT:
+                    logger.critical(
+                        f"🚨 DEAD-MAN SWITCH : {_elapsed:.0f}s depuis le dernier tick OK "
+                        f"(limite={_DEAD_MAN_TIMEOUT}s) — boucle potentiellement bloquée !"
+                    )
                 self._tick()
                 _err_count = 0
+                _last_tick_ok = time.monotonic()  # Reset APRÈS tick réussi
+                # Phase 1.1: Heartbeat ping after successful tick
+                try:
+                    self.watchdog.ping()
+                except Exception:
+                    pass
+                # T1: State Sync — full broker ↔ local reconciliation every 5 min
+                try:
+                    if not hasattr(self, '_last_state_sync'):
+                        self._last_state_sync = 0
+                    if time.monotonic() - self._last_state_sync > 300:
+                        self._last_state_sync = time.monotonic()
+                        self.state_sync.reconcile(self.positions)
+                        # T1b: Orphan position detector — appelé après chaque reconciliation
+                        try:
+                            self._detect_orphan_positions()
+                        except Exception:
+                            pass
+                        # CHANTIER 3: Dead-Man Switch watchdog (vérifie que les ticks arrivent)
+                        try:
+                            self._check_dead_man_switch()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # T2: Monthly DD reset — le 1er de chaque mois à 01h UTC
+                try:
+                    _now_utc = datetime.now(timezone.utc)
+                    if _now_utc.day == 1 and _now_utc.hour == 1:
+                        if not hasattr(self, '_last_monthly_reset') or self._last_monthly_reset.month != _now_utc.month:
+                            _fresh_bal = self.broker.get_balance() if self.broker.available else 0.0
+                            if _fresh_bal > 0:
+                                self.risk.reset_monthly(_fresh_bal)
+                                self._last_monthly_reset = _now_utc
+                except Exception:
+                    pass
             except Exception as e:
                 _err_count += 1
+                # Dead-man check also on error path
+                elapsed = time.monotonic() - _last_tick_ok
+                if elapsed > _DEAD_MAN_TIMEOUT:
+                    logger.critical(
+                        f"🚨 DEAD-MAN SWITCH : {elapsed:.0f}s sans tick OK | "
+                        f"erreur #{_err_count} : {e}"
+                    )
                 bal = 0.0
                 try:
-                    bal = self.capital.get_balance() if self.capital.available else 0.0
+                    bal = self.broker.get_balance() if self.broker.available else 0.0
                 except Exception:
                     pass
                 logger.error(f"❌ Erreur boucle #{_err_count} : {e}")
@@ -36,6 +89,11 @@ class BotTickMixin:
         cet  = now + timedelta(hours=1)
         today = now.date()
 
+        # ─── HEARTBEAT — Dead-Man Switch pulse ───────────────────────────────
+        # Mis à jour au début de chaque tick réussi. Utilisé par bot_monitor
+        # pour détecter si le bot est freezé (aucun tick depuis >5min).
+        self._last_tick_ts = time.monotonic()
+
         # ─── A-2: Refresh stale OHLCV cache (only expired instruments) ────
         try:
             self.ohlcv_cache.refresh_stale(CAPITAL_INSTRUMENTS, strategy=self.strategy)
@@ -43,9 +101,9 @@ class BotTickMixin:
             logger.debug(f"OHLCVCache refresh: {_cache_e}")
 
         try:
-            balance = self.capital.get_balance() if self.capital.available else 0.0
+            balance = self.broker.get_balance() if self.broker.available else 0.0
             open_trades = []
-            for instr, state in self.capital_trades.items():
+            for instr, state in self.positions.items():
                 if state is None:
                     continue
                 name  = CAPITAL_NAMES.get(instr, instr)
@@ -53,7 +111,9 @@ class BotTickMixin:
                 # PnL non-réalisé en temps réel (prix actuel vs entrée)
                 unrealized_pnl = 0.0
                 try:
-                    px = self.capital.get_current_price(instr)
+                    px = (self.broker.get_current_price(instr)
+                          if self.broker.available else None) \
+                         or self.capital.get_current_price(instr)
                     if px:
                         mid = px["mid"]
                         direction = state.get("direction", "BUY")
@@ -153,13 +213,13 @@ class BotTickMixin:
                 logger.warning("⏸️  EquityCurve sous MA20 — circuit breaker déclenché")
                 self._dd_paused = True
                 pnl_pct = self.equity.total_pnl_pct()
+                # → Discord #monitoring uniquement (via INSERT alerts → monitor.py)
                 try:
-                    if self.telegram.router:
-                        self.telegram.router.send_risk(
-                            f"⏸️ <b>Circuit Breaker</b>\n"
-                            f"Equity sous MA20 — trading en pause.\n"
-                            f"Balance: {balance:,.2f}€ | PnL: {pnl_pct:+.1f}%"
-                        )
+                    self.db._execute(
+                        "INSERT INTO alerts(type,message) VALUES(%s,%s)",
+                        ("CIRCUIT_BREAKER",
+                         f"⏸️ Circuit Breaker — Equity sous MA20 — trading en pause. Balance: {balance:,.2f}€ | PnL: {pnl_pct:+.1f}%")
+                    )
                 except Exception:
                     pass
 
@@ -197,8 +257,8 @@ class BotTickMixin:
                 pass
             self.reporter.reset_for_new_day()  # remet rapport à zéro
             # BUG FIX #2 : met à jour le solde de début de journée pour le DD journalier
-            if self.capital.available:
-                self._daily_start_balance = self.capital.get_balance() or self._daily_start_balance
+            if self.broker.available:
+                self._daily_start_balance = self.broker.get_balance() or self._daily_start_balance
             logger.info("🔄 Reset quotidien — stats journalières effacées")
             self._last_session_push = ""    # reset push session pour le nouveau jour
 
@@ -207,31 +267,37 @@ class BotTickMixin:
             if cur_month != self._last_reset_month:
                 self._last_reset_month      = cur_month
                 self._monthly_dd_paused     = False
-                self._monthly_start_balance = self.capital.get_balance() or self._monthly_start_balance
+                self._monthly_start_balance = self.broker.get_balance() or self._monthly_start_balance
                 self._capital_closed_month.clear()  # F-6: Reset monthly list on new month
                 logger.info("📅 Reset mensuel — drawdown mensuel remis à zéro")
             else:
                 # Vérification DD mensuel (toujours dans le même mois)
                 if self._monthly_start_balance > 0 and not self._monthly_dd_paused:
-                    bal_now = self.capital.get_balance() or 0
+                    bal_now = self.broker.get_balance() or 0
                     monthly_dd_pct = (self._monthly_start_balance - bal_now) / self._monthly_start_balance * 100
                     if monthly_dd_pct >= 15:
                         self._monthly_dd_paused = True
                         self._dd_paused = True
                         logger.critical(f"🚨 DD MENSUEL CRITIQUE {monthly_dd_pct:.1f}% ≥ 15% — pause totale")
-                        if self.telegram.router:
-                            self.telegram.router.send_risk(
-                                f"🚨 <b>DD MENSUEL CRITIQUE — {monthly_dd_pct:.1f}%</b>\n"
-                                f"Seuil 15% atteint. Bot en pause jusqu'au 1er du mois."
+                        # → Discord #monitoring uniquement
+                        try:
+                            self.db._execute(
+                                "INSERT INTO alerts(type,message) VALUES(%s,%s)",
+                                ("DD_MENSUEL", f"🚨 DD MENSUEL CRITIQUE {monthly_dd_pct:.1f}% — pause totale")
                             )
+                        except Exception:
+                            pass
                     elif monthly_dd_pct >= 10:
                         self._dd_paused = True
                         logger.warning(f"⚠️ DD mensuel {monthly_dd_pct:.1f}% ≥ 10% — pause 48h")
-                        if self.telegram.router:
-                            self.telegram.router.send_risk(
-                                f"⚠️ <b>DD Mensuel — {monthly_dd_pct:.1f}%</b>\n"
-                                f"Seuil 10% atteint. Pause trading 48h. Reprise demain."
+                        # → Discord #monitoring uniquement
+                        try:
+                            self.db._execute(
+                                "INSERT INTO alerts(type,message) VALUES(%s,%s)",
+                                ("DD_MENSUEL", f"⚠️ DD Mensuel {monthly_dd_pct:.1f}% — pause 48h")
                             )
+                        except Exception:
+                            pass
 
         # ── SPRINT 4 : Backup Supabase automatique (toutes les 5 min) ──────────
         # Survie aux redémarrages Docker sans perdre l'état des positions.
@@ -239,9 +305,9 @@ class BotTickMixin:
         if elapsed_backup >= 300:  # 5 minutes
             self._last_backup_time = now
             try:
-                for inst, state in self.capital_trades.items():
+                for inst, state in self.positions.items():
                     if state is not None:
-                        self.db.save_capital_trade(inst, state)
+                        self.db.save_position(inst, state)
                 logger.debug("💾 Backup Supabase — états positions sauvegardés")
             except Exception as _bk_e:
                 logger.debug(f"Backup Supabase: {_bk_e}")
@@ -280,12 +346,19 @@ class BotTickMixin:
                     # Feature P : Entraîner le LSTM sur chaque instrument
                     try:
                         for _inst in CAPITAL_INSTRUMENTS:
-                            df_train = self.capital.fetch_ohlcv(_inst, timeframe="5m", count=400)
+                            df_train = (self.broker.fetch_ohlcv(_inst, timeframe="5m", count=400)
+                                        if self.broker.available else None) \
+                                       or self.capital.fetch_ohlcv(_inst, timeframe="5m", count=400)
                             if df_train is not None and len(df_train) >= 100:
                                 df_train = self.strategy.compute_indicators(df_train)
                                 ok = self.lstm.train(df_train)
                                 if ok:
                                     logger.info(f"🧠 LSTM Predictor entraîné sur {_inst}")
+                                    # FIX MAJEUR: charger le modèle après entraînement sinon inutile
+                                    try:
+                                        self.lstm.load()
+                                    except Exception:
+                                        pass
                     except Exception as _lstm_e:
                         logger.warning(f"LSTM training: {_lstm_e}")
 
@@ -314,7 +387,7 @@ class BotTickMixin:
         if current_session and current_session != self._last_session_push:
             self._last_session_push = current_session
             try:
-                bal_push = self.capital.get_balance() if self.capital.available else 0.0
+                bal_push = self.broker.get_balance() if self.broker.available else 0.0
                 pnl_push = round(bal_push - self.initial_balance, 2) if bal_push > 0 else 0.0
                 pnl_pct_push = (pnl_push / self.initial_balance * 100) if self.initial_balance > 0 else 0.0
                 session_icon = "🇬🇧" if current_session == "London" else "🇺🇸"
@@ -335,9 +408,9 @@ class BotTickMixin:
         if in_session and since_last >= 1800:  # 30 minutes
             self._last_heartbeat_push = now
             try:
-                bal_hb = self.capital.get_balance() if self.capital.available else 0.0
+                bal_hb = self.broker.get_balance() if self.broker.available else 0.0
                 pnl_today_hb = sum(t.get("pnl", 0) for t in self._capital_closed_today)
-                open_count = sum(1 for s in self.capital_trades.values() if s is not None)
+                open_count = sum(1 for s in self.positions.values() if s is not None)
                 equity_vals = [e["v"] for e in self._equity_history[-12:]] if hasattr(self, '_equity_history') and self._equity_history else []
                 conf = self.telegram.gamification.confidence_score() if self.telegram.gamification else None
                 # Wave 15: Pass system_stats to Hub
@@ -384,8 +457,8 @@ class BotTickMixin:
             logger.debug(f"VIX synthetic update: {_vix_e}")
 
         # ── Vérification drawdown journalier (R-4: dynamic limit) ─────────
-        if not self._dd_paused and self.capital.available:
-            cur_bal = self.capital.get_balance()
+        if not self._dd_paused and self.broker.available:
+            cur_bal = self.broker.get_balance()
             if cur_bal > 0 and self._daily_start_balance > 0:
                 dd_pct = (self._daily_start_balance - cur_bal) / self._daily_start_balance * 100
                 _dd_limit = self.risk.dynamic_dd_limit
@@ -397,19 +470,19 @@ class BotTickMixin:
                         self.db.save_bot_state("dd_paused_date", today.isoformat())
                     except Exception:
                         pass
-                    if self.telegram.router:
-                        self.telegram.router.send_risk(
-                            f"🚨 <b>DRAWDOWN JOURNALIER ATTEINT</b>\n"
-                            f"Balance : <code>{cur_bal:,.2f}€</code>\n"
-                            f"DD : <b>{dd_pct:.1f}%</b> (limite dynamique : {_dd_limit:.1f}%)\n"
-                            f"VIX synth : {self.risk.vix_synthetic:.2f}%\n"
-                            f"⏸️ Trading suspendu jusqu'à demain."
+                    try:
+                        self.db._execute(
+                            "INSERT INTO alerts(type,message) VALUES(%s,%s)",
+                            ("DD_JOURNALIER",
+                             f"🚨 DRAWDOWN JOURNALIER {dd_pct:.1f}% ≥ {_dd_limit:.1f}% — trading suspendu. Balance: {cur_bal:,.2f}€")
                         )
+                    except Exception:
+                        pass
                     logger.warning(f"🚨 DD journalier {dd_pct:.1f}% ≥ {_dd_limit:.1f}% — trading suspendu")
 
         # ── Morning Brief (07h00 UTC) ─────────────────────────────────────────
         if self.context.should_send_brief():
-            balance = self.capital.get_balance() if self.capital.available else 0.0
+            balance = self.broker.get_balance() if self.broker.available else 0.0
             _, reason = self.calendar.should_pause_trading()
             brief = self.context.build_morning_brief(balance, reason or None)
             self.telegram.notify_morning_brief(brief, nb_instruments=len(CAPITAL_INSTRUMENTS))
@@ -435,7 +508,7 @@ class BotTickMixin:
         # ── Wallet stats (toutes les 30 min) ─────────────────────────────
         wallet_interval = timedelta(minutes=30)
         if now - self._last_wallet_post >= wallet_interval:
-            balance_w = self.capital.get_balance() if self.capital.available else 0.0
+            balance_w = self.broker.get_balance() if self.broker.available else 0.0
             if balance_w > 0:
                 self._post_wallet_stats(balance_w)
             self._last_wallet_post = now
@@ -443,7 +516,6 @@ class BotTickMixin:
         # ── Rapport journalier (20h UTC) + hebdo (21h UTC) ───────────────
         if self.reporter.should_send_report():
             if self.telegram.router:
-                # Wave 15: Pass ML scorer and market context for enriched report
                 _ml = self.ml_scorer if hasattr(self, 'ml_scorer') else None
                 _ctx = self.context if hasattr(self, 'context') else None
                 self.telegram.router.send_performance(
@@ -454,6 +526,17 @@ class BotTickMixin:
             if self.telegram.router:
                 self.telegram.router.send_performance(self.reporter.build_weekly_report())
             self.reporter.mark_weekly_sent()
+
+        # ── Rapport mensuel (1er du mois 10h UTC) ─────────────────────────
+        try:
+            if hasattr(self, 'monthly_reporter') and self.monthly_reporter.should_send():
+                threading.Thread(
+                    target=self.monthly_reporter.send,
+                    daemon=True, name="monthly_report"
+                ).start()
+                logger.info("📅 Rapport mensuel envoyé en thread")
+        except Exception:
+            pass
 
         # ── Sprint 5 : Rapport visuel PNG journalier (20h UTC) ────────────
         if h_utc == 20 and today != self._last_daily_report_day:
@@ -467,7 +550,7 @@ class BotTickMixin:
         if h_utc == 22 and today != getattr(self, '_last_eod_summary_day', ''):
             self._last_eod_summary_day = today
             try:
-                bal_eod = self.capital.get_balance() if self.capital.available else 0.0
+                bal_eod = self.broker.get_balance() if self.broker.available else 0.0
                 pnl_eod = sum(t.get("pnl", 0) for t in self._capital_closed_today)
                 nb_trades = len(self._capital_closed_today)
                 wins_eod = sum(1 for t in self._capital_closed_today if t.get("pnl", 0) > 0)
@@ -489,13 +572,64 @@ class BotTickMixin:
                     f"🟢 Bot en veille — reprise London 08h UTC 🇬🇧\n"
                     f"<i>Bonne nuit ! 🌙</i>"
                 )
-                if self.telegram.router:
-                    self.telegram.router.send_dashboard(eod_text, silent=False)
+                # FIN DE JOURNÉE → Discord webhook admin (pas sur QUANT Access Bot Telegram)
+                import requests as _req, os as _os
+                _webhook_eod = _os.getenv("DISCORD_WEBHOOK_MONITORING", "")
+                if _webhook_eod:
+                    try:
+                        _eod_discord = eod_text.replace("<b>", "**").replace("</b>", "**")
+                        _eod_discord = _eod_discord.replace("<i>", "*").replace("</i>", "*")
+                        _eod_discord = _eod_discord.replace("<code>", "`").replace("</code>", "`")
+                        _req.post(_webhook_eod, json={"content": _eod_discord[:2000]}, timeout=10)
+                    except Exception as _e:
+                        logger.debug(f"EOD Discord: {_e}")
+                # NE PAS envoyer sur Telegram router (c'est le bot d'accès VIP, pas le monitoring)
             except Exception as _eod_e:
                 logger.debug(f"EOD summary: {_eod_e}")
 
 
         # ─── Moteur de trading Capital.com ───────────────────────────────────
+
+        # ── Time-Stop : Ferme positions sans TP1 après TIME_STOP_HOURS ──────
+        TIME_STOP_HOURS = float(os.getenv("TIME_STOP_HOURS", "12"))
+        try:
+            for _inst, _state in list(self.positions.items()):
+                if _state is None:
+                    continue
+                if _state.get("tp1_hit", False):
+                    continue  # TP1 atteint → trailing stop prend le relais
+                _open_time = _state.get("open_time")
+                if _open_time is None:
+                    continue
+                _elapsed_h = (now - _open_time).total_seconds() / 3600
+                if _elapsed_h >= TIME_STOP_HOURS:
+                    _refs = _state.get("refs", [])
+                    _deal = _refs[0] if _refs else None
+                    _dir  = _state.get("direction", "?")
+                    logger.warning(
+                        f"⏱️ TIME-STOP {_inst} {_dir}: "
+                        f"{_elapsed_h:.1f}h ouvert sans TP1 → fermeture"
+                    )
+                    if _deal and self.broker.available:
+                        try:
+                            self.broker.close_position(str(_deal))
+                        except Exception:
+                            pass
+                    # aussi fermer via capital si MT5 non dispo
+                    try:
+                        self.capital.close_position(_deal or "")
+                    except Exception:
+                        pass
+                    self.positions[_inst] = None
+                    try:
+                        self.db._execute(
+                            "INSERT INTO alerts(type,message) VALUES(%s,%s)",
+                            ("TIME_STOP", f"⏱️ Time-Stop {_inst} {_dir} après {_elapsed_h:.1f}h")
+                        )
+                    except Exception:
+                        pass
+        except Exception as _ts_e:
+            logger.debug(f"Time-stop check: {_ts_e}")
 
         # Pause manuelle ou drawdown
         if self._manual_pause or self._dd_paused:
@@ -503,8 +637,10 @@ class BotTickMixin:
             return
 
         # Capital.com non disponible → rien à faire
-        if not self.capital.available:
-            logger.warning("⚠️  Capital.com non disponible — skip ce tick")
+        # FIX MAJEUR: si MT5 est broker actif, on continue même si Capital.com est down
+        # (Capital.com n'est utilisé que pour les données, pas les ordres)
+        if not self.capital.available and not self.broker.available:
+            logger.warning("⚠️  Aucun broker disponible — skip ce tick")
             return
 
         # ── Surveillance des positions ouvertes ──────────────────────────
@@ -519,13 +655,13 @@ class BotTickMixin:
             return
 
         # ── Limite exposition (max 10 CFD simultanées) ───────────────────────
-        active_count = sum(1 for s in self.capital_trades.values() if s is not None)
+        active_count = sum(1 for s in self.positions.values() if s is not None)
         if active_count >= MAX_OPEN_TRADES:
             logger.debug(f"🔒 Positions max atteint ({active_count}/{MAX_OPEN_TRADES}) — skip ce tick")
             return  # Plafond atteint — on surveille mais on n'ouvre rien
 
         # ── Scan des instruments Capital.com ─────────────────────────────────
-        balance = self.capital.get_balance()
+        balance = self.broker.get_balance() if self.broker.available else 0.0
         if balance <= 0:
             logger.warning("⚠️  Balance = 0 ou inaccessible — skip ce tick")
             return
@@ -540,25 +676,30 @@ class BotTickMixin:
         )
 
         signals_found = 0
-        _scan_sem = threading.Semaphore(8)  # A-1: max 8 concurrent API calls
+        _scan_lock  = threading.Lock()   # FIX CRITIQUE: race condition sur signals_found
+        _scan_sem   = threading.Semaphore(8)  # A-1: max 8 concurrent API calls
+
+        # FIX MINEUR: cache drift result pour éviter double appel check_drift()
+        _drift_result_cache = None
 
         def _scan_instrument(instrument):
             """A-1: Scan a single instrument (runs in thread pool)."""
             nonlocal signals_found
-            if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
+            if sum(1 for s in self.positions.values() if s is not None) >= MAX_OPEN_TRADES:
                 return
             _cat = ASSET_PROFILES.get(instrument, {}).get("cat", "forex")
             if not self.strategy.is_session_ok_for(instrument, _cat):
                 return
             _scan_sem.acquire()
             try:
-                _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
+                _open_before = sum(1 for s in self.positions.values() if s is not None)
                 # ⏱️ Latency Tracker: mesure le cycle complet par instrument
                 with self.latency.measure(instrument):
                     self._process_capital_symbol(instrument, balance)
-                _open_after = sum(1 for s in self.capital_trades.values() if s is not None)
+                _open_after = sum(1 for s in self.positions.values() if s is not None)
                 if _open_after > _open_before:
-                    signals_found += 1
+                    with _scan_lock:  # FIX CRITIQUE: race condition — int += 1 pas atomique
+                        signals_found += 1
             except Exception as e:
                 logger.error(f"❌ _process_capital_symbol {instrument} : {e}")
             finally:
@@ -581,7 +722,7 @@ class BotTickMixin:
         # ── S-3: Micro-Timeframe Scan (5m/15m — additional signals) ──────
         if MICRO_TF_PROFILES and not self._dd_paused and not self._manual_pause:
             for micro_key, micro_profile in MICRO_TF_PROFILES.items():
-                if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
+                if sum(1 for s in self.positions.values() if s is not None) >= MAX_OPEN_TRADES:
                     break
                 epic = micro_profile.get("epic", micro_key.split("_")[0])
                 _cat = micro_profile.get("cat", "forex")
@@ -600,13 +741,15 @@ class BotTickMixin:
                     # Fetch micro-TF data directly (not from main cache)
                     _mtf = micro_profile.get("tf", "5m")
                     _count = {"5m": 300, "15m": 250}.get(_mtf, 200)
-                    df_micro = self.capital.fetch_ohlcv(epic, timeframe=_mtf, count=_count)
+                    df_micro = (self.broker.fetch_ohlcv(epic, timeframe=_mtf, count=_count)
+                                if self.broker.available else None) \
+                               or self.capital.fetch_ohlcv(epic, timeframe=_mtf, count=_count)
                     if df_micro is not None and len(df_micro) >= 50:
                         df_micro = self.strategy.compute_indicators(df_micro)
                         # Use micro profile for signal generation
-                        _open_before = sum(1 for s in self.capital_trades.values() if s is not None)
+                        _open_before = sum(1 for s in self.positions.values() if s is not None)
                         self._process_micro_signal(epic, micro_key, df_micro, micro_profile, balance)
-                        _open_after = sum(1 for s in self.capital_trades.values() if s is not None)
+                        _open_after = sum(1 for s in self.positions.values() if s is not None)
                         if _open_after > _open_before:
                             signals_found += 1
                 except Exception as e:
@@ -628,7 +771,7 @@ class BotTickMixin:
         # ── A-4: Set breakout levels for WS instant detection ──────────
         if hasattr(self, 'capital_ws') and self.capital_ws:
             for instrument in CAPITAL_INSTRUMENTS:
-                if self.capital_trades.get(instrument) is not None:
+                if self.positions.get(instrument) is not None:
                     continue  # Already has a position
                 _profile = ASSET_PROFILES.get(instrument, {})
                 if _profile.get("strat") != "BK":
@@ -658,13 +801,13 @@ class BotTickMixin:
         """
         if self._dd_paused or self._manual_pause:
             return
-        if self.capital_trades.get(epic) is not None:
+        if self.positions.get(epic) is not None:
             return  # Already has a position
-        if sum(1 for s in self.capital_trades.values() if s is not None) >= MAX_OPEN_TRADES:
+        if sum(1 for s in self.positions.values() if s is not None) >= MAX_OPEN_TRADES:
             return
 
         logger.info(f"🚀 A-4 WS BREAKOUT → trigger {epic} {direction} @ {price:.5f}")
-        balance = self.capital.get_balance() if self.capital.available else 0.0
+        balance = self.broker.get_balance() if self.broker.available else 0.0
         if balance <= 0:
             return
 

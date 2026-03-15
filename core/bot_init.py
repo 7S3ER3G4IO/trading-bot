@@ -8,7 +8,7 @@ class BotInitMixin:
     def __init__(self):
         setup_logger()
         logger.info("=" * 60)
-        logger.info("  ⚡  NEMESIS v2.0 — Capital.com CFD | London/NY Breakout")
+        logger.info("  ⚡  NEMESIS v2.0 — IC Markets MT5 | Prop Firm Mode")
         logger.info(f"  📊  {' | '.join(CAPITAL_INSTRUMENTS)}")
         logger.info("=" * 60)
 
@@ -21,41 +21,52 @@ class BotInitMixin:
         self.calendar = EconomicCalendar()
         self.context  = MarketContext()
 
-        # ─── Broker Capital.com ───────────────────────────────────────────
-        self.capital = CapitalClient()
-        if self.capital.available:
-            logger.info(f"🏦 Capital.com actif — {len(CAPITAL_INSTRUMENTS)} instruments : {', '.join(CAPITAL_INSTRUMENTS)}")
-            # Validation optionnelle : VALIDATE_EPICS=1 dans le .env local
-            if os.environ.get("VALIDATE_EPICS", "0") == "1":
-                self.capital.validate_epics()
+        # ─── Capital.com désactivé — MT5 est le broker actif ───────────────
+        # CapitalStub: même interface que CapitalClient, pas de connexion réseau
+        self.capital = CapitalClient()   # CapitalStub via imports.py
+        logger.info("ℹ️  Capital.com désactivé — CapitalStub actif (MT5 fait tout)")
+
+        # ─── Broker IC Markets MT5 via MetaApi ───────────────────────────
+        self.mt5 = MT5Client()
+        if self.mt5.available:
+            mt5_bal = self.mt5.get_balance()
+            logger.info(f"🏦 MT5 IC Markets actif ✅ — Balance: {mt5_bal:.2f} USD")
         else:
-            logger.info("⚠️  Capital.com non configuré — vérifier CAPITAL_API_KEY / EMAIL / PASSWORD dans le .env")
+            logger.info("ℹ️  MT5 IC Markets non configuré — METAAPI_TOKEN / METAAPI_ACCOUNT_ID manquants")
+
+        # ─── Broker actif : MT5 (ordres + données) ───────────────────────
+        if self.mt5.available:
+            self.broker = self.mt5
+            logger.info("🎯 BROKER ACTIF : IC Markets MT5 (spreads réduits)")
+        else:
+            self.broker = self.capital   # stub — aucun broker dispo
+            logger.warning("⚠️ MT5 non disponible — aucun broker actif !")
 
 
-        # ─── WebSocket Capital.com — BE temps réel (<500ms) ──────────────
-        self.capital_ws = CapitalWebSocket(
-            capital_client=self.capital,
-            on_be_triggered=self._on_ws_be_triggered,
-        )
-        if self.capital.available:
-            self.capital_ws.start()
-            # Feature R : Enregistre le callback de prix temps réel (<1s trigger)
-            self.capital_ws.register_signal_callback(self._on_ws_price_tick)
+        # ─── WebSocket Capital.com — désactivé (MT5 actif) ───────────────
+        # CapitalWebSocket est un stub no-op dans imports.py
+        self.capital_ws = CapitalWebSocket()
+        logger.info("ℹ️  Capital.com WebSocket désactivé — MT5 est le broker actif")
 
-
-        # ─── Solde initial ────────────────────────────────────────────────
-        # Sleep 3s : laisse le fallback Capital.com s'établir après 429
+        # MT5 si disponible, Capital.com en fallback
         time.sleep(3)
-        bal = self.capital.get_balance() if self.capital.available else 0.0
-        if bal == 0.0 and self.capital.available:
-            time.sleep(2)  # 2e tentative si session encore en cours d'auth
+        bal = 0.0
+        if self.broker.available:
+            bal = self.broker.get_balance() or 0.0
+            if bal == 0.0:
+                time.sleep(2)  # 2e tentative
+                bal = self.broker.get_balance() or 0.0
+        # Fallback Capital.com si MT5 n'a pas encore de balance
+        if bal == 0.0 and self.capital.available and self.broker is not self.capital:
             bal = self.capital.get_balance() or 0.0
-        # Si solde DEMO = 0 (compte non initialisé) → fallback 10 000€
-        self.risk                 = RiskManager(max(bal, 10_000.0))
-        self.initial_balance      = bal or 10_000.0
+        # Si solde DEMO = 0 → fallback 100 000$ (capital Prop Firm)
+        self.risk                 = RiskManager(max(bal, 100_000.0))
+        self.initial_balance      = bal or 100_000.0
         self._daily_start_balance = self.initial_balance
         self._dd_paused           = False
-        self.DAILY_DD_LIMIT       = float(os.getenv("DAILY_DD_LIMIT", "10.0"))  # 10% (was 3% — too tight)
+        # Prop Firm rule: DD journalier depuis config (5%)
+        from config import DAILY_DRAWDOWN_LIMIT
+        self.DAILY_DD_LIMIT       = float(os.getenv("DAILY_DD_LIMIT", str(DAILY_DRAWDOWN_LIMIT)))
         # ── Drawdown Mensuel (circuit breaker long terme) ─────────────────────
         self._monthly_start_balance = self.initial_balance
         self._monthly_dd_paused     = False
@@ -67,7 +78,7 @@ class BotInitMixin:
         self._bot_start_time        = datetime.now(timezone.utc)
 
         # ─── État Capital.com ─────────────────────────────────────────────
-        self.capital_trades: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
+        self.positions: Dict[str, Optional[dict]] = {s: None for s in CAPITAL_INSTRUMENTS}
         self._capital_closed_today: list = []
         self._capital_closed_month: list = []  # F-6: monthly leaderboard data
         self._london_tracker = SessionTracker()
@@ -78,7 +89,7 @@ class BotInitMixin:
 
 
         # ─── État général ─────────────────────────────────────────────────
-        self.last_report_hour      = -1  # réservé
+        self._last_leaderboard_day: Optional[date] = None  # FIX: était '' (str) → comparaison date != str toujours True
         self._last_reset_day       = datetime.now(timezone.utc).date()
         self._manual_pause         = False
         self._news_paused          = False
@@ -103,7 +114,7 @@ class BotInitMixin:
         self.drift      = DriftDetector()
         self.protection = ProtectionModel()  # Blacklist auto après 3 SL consécutifs
         self.mtf        = MTFFilter(capital_client=self.capital)  # Filtre 1h/4h
-        self.hmm        = MarketRegimeHMM()  # Détecteur de régime HMM (TREND/RANGING)
+        self.hmm_regime = MarketRegimeHMM()  # FIX: homonyme avec HMMPortfolio — renommé en hmm_regime
         try:
             self.equity = EquityCurve(initial_balance=self.initial_balance or 10_000.0)
         except Exception as _e:
@@ -154,12 +165,14 @@ class BotInitMixin:
             ohlcv_cache=None,   # sera injecté après OHLCVCache warmup
             db=self.db,
             telegram_router=tg_router,
+            broker=self.broker,
         )
         self.pairs.start()  # démarre le daemon thread de scan
         self.smart_router = SmartRouter(                      # Moteur 7: TWAP/Iceberg
             capital_client=self.capital,
             db=self.db,
             telegram_router=tg_router,
+            broker=self.broker,
         )
         self.health = HealthCheck(                            # DevOps: Health Check
             capital=self.capital,
@@ -171,22 +184,15 @@ class BotInitMixin:
         import threading as _thr
         _thr.Thread(target=self.health.run, daemon=True, name="startup_healthcheck").start()
 
-        self.latency = LatencyTracker(                        # Étape 2: Latency Tracker
-            telegram_router=tg_router,
-        )
-
-        self.golive = GoLiveChecker(                          # Étape 3: Go-Live Checklist
-            db=self.db,
-            rate_limiter=self.rate_limiter,
-            telegram_router=tg_router,
-        )
-
+        # FIX MAJEUR: self.latency et self.golive étaient instanciés en double
+        # (lignes 168-169 avaient déjà les versions avec tg_router paramètre)
+        # Les duplications sans paramètres ci-dessous sont supprimées.
 
 
         # ─── Singularité Algorithmique ────────────────────────────────────────
         self.vpin    = VPINGuard(                           # Moteur 9: VPIN Toxicity
             capital_client=self.capital,
-            capital_trades_ref=self.capital_trades,
+            positions_ref=self.positions,
             db=self.db,
             telegram_router=tg_router,
             close_fn=None,   # sera injecté après bot_monitor init
@@ -234,7 +240,7 @@ class BotInitMixin:
             capital_client=self.capital,
             db=self.db,
             telegram_router=tg_router,
-            capital_trades_ref=self.capital_trades,
+            positions_ref=self.positions,
         )
         self.sleep_guard.ensure_table()
         self.sleep_guard.start()
@@ -355,7 +361,28 @@ class BotInitMixin:
         )
         self.fpga.start()
 
-        # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
+        # ─── Risk Tribunal Override Layer (Moteurs 38-40) ─────────────
+        self.convexity = ConvexityEngine()               # Moteur 38: Convexity
+        self.kelly_kernel = KellyCriterionKernel()       # Moteur 39: Kelly per-engine
+        self.dead_capital = DeadCapitalDetector()         # Moteur 40: Time Stop++
+
+        # ─── HFT Latency Layer (Moteurs 41-43) ───────────────────────
+        # M42: TCP Tuning — doit être installé AVANT toute connexion
+        self.tcp_tuner = TCPTuner()
+        self.tcp_tuner.initialize()
+        # Tune la session requests existante de Capital.com
+        if hasattr(self.capital, '_session'):
+            self.tcp_tuner.tune_session(self.capital._session)
+
+        # M41: Fast Exec Core — pool TCP pré-chauffé
+        _cap_url = getattr(self.capital, '_base_url', '')
+        self.fast_exec = FastExecCore(base_url=_cap_url)  # Moteur 41: FFI
+        self.fast_exec.warmup()
+
+        # M43: Pre-Builder — pré-compilation des requêtes
+        _api_path = _cap_url.replace('https://', '').split('/', 1)
+        _base_path = '/' + _api_path[1] if len(_api_path) > 1 else ''
+        self.pre_builder = PreBuilder(base_path=_base_path)  # Moteur 43
 
         # BUG FIX #C : Le refresh calendrier se fait en thread daemon (non bloquant)
         self.calendar.start_background_refresh()
@@ -424,6 +451,7 @@ class BotInitMixin:
             telegram_router=tg_router,
             capital_client=self.capital,
             arb_engine=self.spatial_arb,
+            broker=self.broker,
         )
         self.cluster.start()
 
@@ -434,10 +462,133 @@ class BotInitMixin:
         # ─── S-4: ML Scorer (self-learning) ──────────────────────────────
         self.ml_scorer = MLScorer()
 
+        # ─── Phase 1.1: Dead-Man Switch ──────────────────────────────────
+        self.watchdog = DeadManSwitch(
+            telegram_router=tg_router,
+            mt5_checker=getattr(self, 'mt5', None),
+        )
+        self.watchdog.start()
+
+        # ─── Phase 1.2: Order Guardian ───────────────────────────────────
+        self.guardian = OrderGuardian(
+            capital=self.capital,
+            telegram_router=tg_router,
+            db=self.db,
+        )
+
+        # ─── Phase 2: Portfolio Shield (Advanced Risk) ────────────────
+        self.shield = PortfolioShield(
+            initial_balance=self.initial_balance,
+            telegram_router=tg_router,
+        )
+
+        # ─── Phase 3: ML Retrain Pipeline ─────────────────────────────
+        self.ml_pipeline = MLRetrainPipeline(
+            db=self.db,
+            ohlcv_cache=None,  # injected after warmup
+            telegram_router=tg_router,
+        )
+
+        # ─── Phase 4.2: Health Endpoint ───────────────────────────────
+        try:
+            start_health_server(port=8081, watchdog=self.watchdog)
+        except Exception as _he:
+            logger.debug(f"Health endpoint: {_he}")
+
+        # ─── T1: State Sync (Orphan Reconciliation) ──────────────────
+        self.state_sync = StateSync(
+            capital=self.capital,
+            db=self.db,
+            telegram_router=tg_router,
+        )
+
+        # ─── T2: Spread Guard (Pre-Trade Filter) ─────────────────────
+        self.spread_guard = SpreadGuard(capital_client=self.capital)
+
+        # ─── Project Sentience: Affective Engine ─────────────────────
+        self.emotions = EmotionalCore(telegram_router=tg_router)
+        self.emotions.on_balance_update(self.initial_balance)
+
+        # ─── Project Argus: Free NLP News Engine ─────────────────────
+        self.argus_sensors = ArgusSensors()
+        self.argus_sensors.start()
+        self.argus_brain = ArgusBrain(telegram_router=tg_router)
+        try:
+            self.argus_brain.load_model()
+        except Exception as _ab:
+            logger.debug(f"Argus Brain: {_ab} — using keyword fallback")
+
+        # ─── Apex Predator: L2 + Hedge + MLOps ────────────────────────
+        self.l2 = L2Microstructure(capital_client=self.capital, telegram_router=tg_router)
+        self.hedge_mgr = HedgeManager(capital_client=self.capital, telegram_router=tg_router, broker=self.broker)
+        self.mlops = MLOpsRetrainer(capital_client=self.capital, telegram_router=tg_router)
+        self.mlops.start_scheduler()
+
+        # ─── Project Prometheus: Cognitive Loop ───────────────────────
+        self.journal = TradeJournal()
+        self.shadow_tester = ShadowTester()
+        self.prometheus = PrometheusCore(
+            capital_client=self.capital,
+            journal=self.journal,
+            shadow_tester=self.shadow_tester,
+            telegram_router=tg_router,
+        )
+        self.prometheus.start_nightly()
+
+        # ─── Nouveaux modules Round 2 ──────────────────────────────────────
+        # Trailing Stop Réel MT5 (après TP1)
+        try:
+            from trailing_stop_manager import TrailingStopManager
+            self.trailing = TrailingStopManager(
+                broker=self.broker,
+                positions_ref=self.positions,
+                db=self.db,
+            )
+            self.trailing.start()
+            logger.info("📈 TrailingStopManager actif")
+        except Exception as _tr_e:
+            logger.debug(f"TrailingStopManager: {_tr_e}")
+            class _TrailingStub:
+                def start(self): pass
+                def stop(self): pass
+                def register_position(self, *a, **kw): pass
+                def stats(self): return {}
+            self.trailing = _TrailingStub()
+
+        # Filtre de Corrélation
+        try:
+            from correlation_filter import CorrelationFilter
+            self.corr_filter = CorrelationFilter(max_per_group=2)
+            logger.info("🔗 CorrelationFilter actif (max 2 corrélés simultanés)")
+        except Exception as _cf_e:
+            logger.debug(f"CorrelationFilter: {_cf_e}")
+            class _CorrStub:
+                def can_open(self, *a, **kw): return True, ""
+                def same_direction_check(self, *a, **kw): return True, ""
+                def currency_exposure(self, *a, **kw): return True, ""
+                def format_status(self, *a): return ""
+            self.corr_filter = _CorrStub()
+
+        # Rapport Mensuel
+        try:
+            from monthly_report import MonthlyReporter
+            self.monthly_reporter = MonthlyReporter(
+                db=self.db,
+                telegram_router=tg_router,
+            )
+            logger.info("📅 MonthlyReporter actif (envoi le 1er du mois 10h UTC)")
+        except Exception as _mr_e:
+            logger.debug(f"MonthlyReporter: {_mr_e}")
+            class _MonthlyStub:
+                def should_send(self): return False
+                def send(self): pass
+                def mark_sent(self): pass
+            self.monthly_reporter = _MonthlyStub()
+
         self.calendar.refresh()
-        start_bal = self.capital.get_balance() if self.capital.available else 0.0
+        start_bal = self.broker.get_balance() if self.broker.available else 0.0
         self.telegram.notify_start(start_bal, CAPITAL_INSTRUMENTS)
-        logger.info(f"💰 Solde initial Capital.com : {start_bal:.2f}€")
+        logger.info(f"💰 Solde initial MT5 IC Markets : {start_bal:.2f}$")
 
         # ─── Dashboard Web ────────────────────────────────────────────────
         if DASHBOARD_OK and os.getenv("DASHBOARD_ENABLED", "true").lower() == "true":
@@ -447,14 +598,14 @@ class BotInitMixin:
 
     def _restore_from_db(self):
         """Restaure les trades Capital.com ouverts après redémarrage."""
-        cap_trades = self.db.load_open_capital_trades()
+        cap_trades = self.db.load_open_positions()
         for t_dict in cap_trades:
             instrument = t_dict["instrument"]
             # Filtre les instruments connus seulement
             if instrument not in CAPITAL_INSTRUMENTS:
                 continue
             try:
-                self.capital_trades[instrument] = {
+                self.positions[instrument] = {
                     "refs":      [t_dict.get("ref1"), t_dict.get("ref2"), t_dict.get("ref3")],
                     "entry":     t_dict["entry"],
                     "sl":        t_dict["sl"],
@@ -475,7 +626,7 @@ class BotInitMixin:
                     "ab_variant":    t_dict.get("ab_variant", "A"),
                 }
                 # Relance la surveillance WebSocket
-                state = self.capital_trades[instrument]
+                state = self.positions[instrument]
                 self.capital_ws.watch(
                     instrument=instrument,
                     entry=state["entry"],
@@ -538,15 +689,15 @@ class BotInitMixin:
             # Apply live state: only for instruments NOT already restored from DB
             synced = 0
             for epic, state in epic_to_data.items():
-                if epic in CAPITAL_INSTRUMENTS and self.capital_trades.get(epic) is None:
-                    self.capital_trades[epic] = state
+                if epic in CAPITAL_INSTRUMENTS and self.positions.get(epic) is None:
+                    self.positions[epic] = state
                     synced += 1
-                    logger.info(f"🔄 Live sync: {epic} {state['direction']} @ {state['entry']} déjà ouvert → capital_trades restauré")
+                    logger.info(f"🔄 Live sync: {epic} {state['direction']} @ {state['entry']} déjà ouvert → positions restauré")
 
             if synced:
                 logger.warning(f"⚠️ Live sync: {synced} position(s) restaurée(s) depuis Capital.com (DB était vide)")
             elif open_epics:
-                logger.info(f"✅ Live sync: {len(open_epics)} position(s) déjà dans capital_trades (DB OK)")
+                logger.info(f"✅ Live sync: {len(open_epics)} position(s) déjà dans positions (DB OK)")
             else:
                 logger.info("✅ Live sync: aucune position ouverte sur Capital.com")
 
